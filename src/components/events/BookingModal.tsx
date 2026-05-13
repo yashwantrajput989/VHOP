@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Minus, Plus, CreditCard, ShieldCheck, CheckCircle2, Loader2, Mail, Users, ArrowRight, User } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { X, Minus, Plus, CreditCard, CheckCircle2, Loader2, Mail, Users, ArrowRight, User } from 'lucide-react';
 import { GlassCard } from '../ui/GlassCard';
 import { GlowButton } from '../ui/GlowButton';
 import { useAuthStore } from '../../store/authStore';
@@ -21,12 +22,10 @@ interface GuestDetail {
 }
 
 export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, event, selectedTicketId }) => {
+  const navigate = useNavigate();
   const [step, setStep] = useState<'details' | 'guests' | 'processing' | 'success'>('details');
   const [quantity, setQuantity] = useState(1);
   const [guests, setGuests] = useState<GuestDetail[]>([{ name: '', age: '' }]);
-  const [couponCode, setCouponCode] = useState('');
-  const [discount, setDiscount] = useState(0);
-  const [isCouponApplied, setIsCouponApplied] = useState(false);
   const { user } = useAuthStore();
   const { addTicket } = useTicketStore();
   const { openModal } = useUIStore();
@@ -35,27 +34,13 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, eve
   
   const subtotal = (ticket?.price || 0) * quantity;
   const platformFee = 49;
-  const vCoinsEarned = Math.floor(subtotal * 0.1);
-  const totalAmount = subtotal - discount + platformFee;
-
-  const handleApplyCoupon = () => {
-    if (couponCode.toUpperCase() === 'VHOP20') {
-      setDiscount(Math.floor(subtotal * 0.2));
-      setIsCouponApplied(true);
-    } else {
-      alert('Invalid coupon code');
-      setCouponCode('');
-    }
-  };
+  const totalAmount = subtotal + platformFee;
 
   useEffect(() => {
     if (!isOpen) {
       setStep('details');
       setQuantity(1);
       setGuests([{ name: '', age: '' }]);
-      setCouponCode('');
-      setDiscount(0);
-      setIsCouponApplied(false);
     }
   }, [isOpen]);
 
@@ -321,7 +306,14 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, eve
                   </div>
 
                   <div className="w-full pt-6 space-y-3">
-                    <GlowButton onClick={onClose} variant="secondary" className="w-full py-4">
+                    <GlowButton 
+                      onClick={() => {
+                        onClose();
+                        navigate('/profile');
+                      }} 
+                      variant="secondary" 
+                      className="w-full py-4"
+                    >
                       View My Tickets
                     </GlowButton>
                     <button 

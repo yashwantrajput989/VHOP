@@ -34,11 +34,11 @@ export const SuperDashboard: React.FC = () => {
       // Fetch events
       const { data: events } = await dbClient.from('events').select('*');
       
-      const totalRevenue = events?.reduce((acc, ev) => acc + (ev.price * ev.tickets_sold), 0) || 0;
+      const totalRevenue = events?.reduce((acc: number, ev: any) => acc + (ev.price * (ev.tickets_sold || 0)), 0) || 0;
 
       setStats({
         totalUsers: userCount || 0,
-        activeCompanies: companies?.filter(c => c.verified).length || 0,
+        activeCompanies: companies?.filter((c: any) => c.verified).length || 0,
         totalEvents: events?.length || 0,
         grossRevenue: totalRevenue
       });

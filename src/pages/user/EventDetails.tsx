@@ -147,7 +147,7 @@ export const EventDetails: React.FC = () => {
             </div>
 
             <div className="space-y-3 mb-6">
-              {event.ticket_types?.map((type) => (
+              {event.ticket_types?.map((type: any) => (
                 <div 
                   key={type.id}
                   onClick={() => setSelectedTicket(type.id)}
@@ -178,7 +178,7 @@ export const EventDetails: React.FC = () => {
               <div className="flex items-center justify-between text-lg font-bold pt-4 border-t border-white/5">
                 <span>Total</span>
                 <span className="text-gradient">
-                  ₹{selectedTicket ? (event.ticket_types?.find(t => t.id === selectedTicket)?.price || 0) + 49 : 0}
+                  ₹{selectedTicket ? (event.ticket_types?.find((t: any) => t.id === selectedTicket)?.price || 0) + 49 : 0}
                 </span>
               </div>
 

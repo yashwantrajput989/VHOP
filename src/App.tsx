@@ -20,11 +20,10 @@ import { Dashboard } from './pages/user/Dashboard';
 import { useAuthStore } from './store/authStore';
 import { useEffect } from 'react';
 import ScrollToTop from './components/utils/ScrollToTop';
-import { LoadingScreen } from './components/ui/LoadingScreen';
 
 function App() {
   const location = useLocation();
-  const { initialize, isInitializing, user } = useAuthStore();
+  const { initialize, user } = useAuthStore();
   const navigate = useNavigate();
   
   useEffect(() => {

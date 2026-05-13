@@ -1,20 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { PageWrapper } from '../../components/layout/PageWrapper';
 import { GlassCard } from '../../components/ui/GlassCard';
-import { Users, Search, Download, Mail } from 'lucide-react';
-import { mockDb as dbClient } from '../../lib/mockDb';
+import { Search, Download, Mail } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 
 export const GuestList: React.FC = () => {
   const { user } = useAuthStore();
   const [guests, setGuests] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const fetchGuests = async () => {
       // In a real app, we'd join bookings with events and profiles
       // For now, let's show a mock but professional-looking list
-      setIsLoading(false);
       setGuests([
         { id: '1', name: 'Sarah Chen', email: 'sarah@example.com', event: 'Neon Night', ticket: 'VIP', status: 'checked-in' },
         { id: '2', name: 'Alex Rivera', email: 'alex@example.com', event: 'Neon Night', ticket: 'General', status: 'pending' },

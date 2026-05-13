@@ -14,7 +14,7 @@ export const LoadingScreen: React.FC = () => {
       opacity: 0,
       scale: 1.1,
       filter: 'blur(20px)',
-      transition: { duration: 0.8, ease: "easeInOut" }
+      transition: { duration: 0.8, ease: "easeInOut" as const }
     }
   };
 
@@ -25,7 +25,7 @@ export const LoadingScreen: React.FC = () => {
       opacity: 1, 
       scale: 1,
       transition: { 
-        type: "spring",
+        type: "spring" as const,
         stiffness: 200,
         damping: 10
       }

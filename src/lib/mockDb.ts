@@ -14,14 +14,14 @@ export const mockDb = {
   from: (table: string) => {
     const builder: any = {
       currentData: null,
-      select: (fields?: any) => builder,
+      select: (_fields?: any) => builder,
       eq: (field: string, value: any) => {
         const allData = getLocalStorage(`vhop_mock_${table}`, table === 'events' ? MOCK_EVENTS : []);
         builder.currentData = allData.filter((item: any) => item[field] === value);
         return builder;
       },
-      ilike: (field?: any, value?: any) => builder,
-      order: (field?: any, options?: any) => builder,
+      ilike: (_field?: any, _value?: any) => builder,
+      order: (_field?: any, _options?: any) => builder,
       single: async () => {
         const allData = builder.currentData || getLocalStorage(`vhop_mock_${table}`, []);
         return { data: allData[0] || null, error: null };
@@ -33,7 +33,7 @@ export const mockDb = {
         localStorage.setItem(storageKey, JSON.stringify(updated));
         return { data: data[0], error: null };
       },
-      update: (data: any) => builder,
+      update: (_data: any) => builder,
       delete: () => builder,
       then: (resolve: any) => {
         const data = builder.currentData || getLocalStorage(`vhop_mock_${table}`, table === 'events' ? MOCK_EVENTS : []);
@@ -43,9 +43,9 @@ export const mockDb = {
     return builder;
   },
   storage: {
-    from: (bucket?: any) => ({
-      upload: async (path?: any, file?: any) => ({ data: { path: '' }, error: null }),
-      getPublicUrl: (path?: any) => ({ data: { publicUrl: 'https://images.unsplash.com/photo-1514525253361-bee8718a74a2?q=80&w=1000&auto=format&fit=crop' } })
+    from: (_bucket?: any) => ({
+      upload: async (_path?: any, _file?: any) => ({ data: { path: '' }, error: null }),
+      getPublicUrl: (_path?: any) => ({ data: { publicUrl: 'https://images.unsplash.com/photo-1514525253361-bee8718a74a2?q=80&w=1000&auto=format&fit=crop' } })
     })
   }
 };

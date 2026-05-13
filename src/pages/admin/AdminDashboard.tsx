@@ -49,9 +49,9 @@ export const AdminDashboard: React.FC = () => {
           setEvents(eventsData);
           
           // Calculate basic stats (mocked logic for now, could be real aggregation)
-          const totalRevenue = eventsData.reduce((acc, ev) => acc + (ev.price * ev.tickets_sold), 0);
-          const totalBookings = eventsData.reduce((acc, ev) => acc + ev.tickets_sold, 0);
-          const activeEvents = eventsData.filter(ev => ev.status === 'published').length;
+          const totalRevenue = eventsData.reduce((acc: number, ev: any) => acc + (ev.price * (ev.tickets_sold || 0)), 0);
+          const totalBookings = eventsData.reduce((acc: number, ev: any) => acc + (ev.tickets_sold || 0), 0);
+          const activeEvents = eventsData.filter((ev: any) => ev.status === 'published').length;
           
           setStats({
             totalRevenue,

@@ -31,8 +31,8 @@ export const FloatingOrb: React.FC<FloatingOrbProps> = ({
       transition={{
         duration: 15,
         repeat: Infinity,
-        repeatType: "reverse",
-        ease: "easeInOut",
+        repeatType: "reverse" as const,
+        ease: "easeInOut" as const,
         delay: delay
       }}
       className={cn(

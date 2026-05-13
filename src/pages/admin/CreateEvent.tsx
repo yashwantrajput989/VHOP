@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { PageWrapper } from '../../components/layout/PageWrapper';
 import { GlassCard } from '../../components/ui/GlassCard';
 import { GlowButton } from '../../components/ui/GlowButton';
-import { Sparkles, Image as ImageIcon, Calendar, MapPin, Tag, ArrowLeft } from 'lucide-react';
+import { Sparkles, Image as ImageIcon, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router-dom';
 import { mockDb as dbClient } from '../../lib/mockDb';

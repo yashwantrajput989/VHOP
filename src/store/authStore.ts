@@ -33,7 +33,7 @@ interface AuthState {
   setUser: (user: UserProfile | null) => void;
   setSession: (session: any | null) => void;
   setLoading: (loading: boolean) => void;
-  loginWithGoogle: () => Promise<void>;
+  loginWithGoogle: () => Promise<UserProfile | void>;
   loginAdmin: (role: 'admin' | 'superadmin', password: string) => Promise<void>;
   loginWithPhone: (phone: string) => Promise<void>;
   verifyOTP: (phone: string, token: string, fullName?: string) => Promise<void>;

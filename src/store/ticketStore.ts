@@ -17,6 +17,7 @@ export interface Ticket {
   bookingId: string;
   qrCode: string;
   bookedAt: string;
+  guests?: { name: string; age: string }[];
 }
 
 interface TicketState {
