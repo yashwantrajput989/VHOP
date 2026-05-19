@@ -329,15 +329,28 @@ app.post('/api/companies/:id/verify', async (req, res) => {
 });
 
 // --- RAZORPAY INTEGRATION ---
-const razorpay = new Razorpay({
-    key_id: process.env.RAZORPAY_KEY_ID || '',
-    key_secret: process.env.RAZORPAY_KEY_SECRET || ''
-});
+let razorpay = null;
+try {
+    if (process.env.RAZORPAY_KEY_ID) {
+        razorpay = new Razorpay({
+            key_id: process.env.RAZORPAY_KEY_ID,
+            key_secret: process.env.RAZORPAY_KEY_SECRET || ''
+        });
+        console.log('🟢 Razorpay initialized successfully.');
+    } else {
+        console.warn('⚠️ Razorpay initialization skipped: RAZORPAY_KEY_ID is missing in environment variables.');
+    }
+} catch (error) {
+    console.error('🔴 Razorpay initialization failed:', error.message);
+}
 
 // Create Razorpay Order
 app.post('/api/payments/order', async (req, res) => {
     const { amount, currency } = req.body;
     try {
+        if (!razorpay) {
+            return res.status(500).json({ error: 'Razorpay is not configured on this server. Please set RAZORPAY_KEY_ID in environment variables.' });
+        }
         const options = {
             amount: Math.round(amount * 100), // Amount in paise
             currency: currency || 'INR',
