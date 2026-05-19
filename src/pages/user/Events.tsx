@@ -8,7 +8,6 @@ import { LocationPrompt } from '../../components/events/LocationPrompt';
 import { ComingSoon } from '../../components/ui/ComingSoon';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
-import { Avatar } from '../../components/ui/Avatar';
 import { API_BASE_URL, getImageUrl } from '../../config';
 
 const CATEGORIES = [
@@ -65,7 +64,7 @@ export const Events: React.FC = () => {
       <FloatingOrb className="bottom-0 right-0 pointer-events-none" color="cyan" size={300} delay={2} />
 
       {/* Added max-width control and responsive X padding directly to the main layout engine */}
-      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full block">
+      <div className="relative z-10 w-full block">
 
         {/* ━━━ MOBILE HEADER ━━━ */}
         <div className="md:hidden pt-4 mb-6 space-y-4">
@@ -133,14 +132,6 @@ export const Events: React.FC = () => {
                 className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 text-sm text-white outline-none focus:bg-white/10 focus:border-[var(--violet-bright)]/40 transition-all placeholder:text-[var(--text-muted)]"
               />
             </div>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <button className="relative p-3 rounded-xl bg-white/5 border border-white/10 text-white hover:bg-white/10 transition-colors">
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-[var(--accent-pink)] rounded-full border border-[var(--bg-primary)]" />
-            </button>
-            {user && <Avatar src={user.avatar_url} size="sm" ring />}
           </div>
         </div>
 

@@ -19,10 +19,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../../store/authStore';
 import { AdminLogin } from '../admin/AdminLogin';
 import { API_BASE_URL } from '../../config';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 type TabType = 'dashboard' | 'events' | 'partners' | 'issues';
 
 export const SuperDashboard: React.FC = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [stats, setStats] = useState({
     totalUsers: 0,
@@ -74,6 +77,28 @@ export const SuperDashboard: React.FC = () => {
       fetchStats();
     }
   }, [user]);
+
+  // Sync active tab with location path
+  useEffect(() => {
+    if (location.pathname.endsWith('/events')) {
+      setActiveTab('events');
+    } else if (location.pathname.endsWith('/partners')) {
+      setActiveTab('partners');
+    } else if (location.pathname.endsWith('/issues')) {
+      setActiveTab('issues');
+    } else {
+      setActiveTab('dashboard');
+    }
+  }, [location.pathname]);
+
+  const handleTabChange = (tabId: TabType) => {
+    setActiveTab(tabId);
+    if (tabId === 'dashboard') {
+      navigate('/superadmin');
+    } else {
+      navigate(`/superadmin/${tabId}`);
+    }
+  };
 
   // Approve a pending draft event
   const handleApproveEvent = async (eventId: string) => {
@@ -156,6 +181,10 @@ export const SuperDashboard: React.FC = () => {
     { name: 'Club', value: events.filter(e => e.category === 'Club').length || 1, color: 'var(--accent-gold)' },
   ];
 
+  if (!user || user.role !== 'superadmin') {
+    return <AdminLogin forcedRole="superadmin" />;
+  }
+
   if (isLoading && !events.length) {
     return (
       <PageWrapper>
@@ -164,10 +193,6 @@ export const SuperDashboard: React.FC = () => {
         </div>
       </PageWrapper>
     );
-  }
-
-  if (!user || user.role !== 'superadmin') {
-    return <AdminLogin forcedRole="superadmin" />;
   }
 
   const pendingEvents = events.filter(e => e.status === 'draft' || e.status === 'pending');
@@ -193,7 +218,7 @@ export const SuperDashboard: React.FC = () => {
         </header>
 
         {/* Tab Selector */}
-        <div className="flex bg-white/5 border border-white/10 p-1.5 rounded-2xl w-fit">
+        <div className="flex bg-white/5 border border-white/10 p-1.5 rounded-2xl w-fit max-w-full overflow-x-auto scrollbar-none flex-nowrap">
           {[
             { id: 'dashboard', label: 'Overview', icon: Users },
             { id: 'events', label: `Events (${pendingEvents.length} Pending)`, icon: Calendar },
@@ -202,8 +227,8 @@ export const SuperDashboard: React.FC = () => {
           ].map(tab => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as TabType)}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
+              onClick={() => handleTabChange(tab.id as TabType)}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex-shrink-0 ${
                 activeTab === tab.id 
                   ? 'bg-[var(--violet-primary)] text-white shadow-glow' 
                   : 'text-[var(--text-muted)] hover:text-white'

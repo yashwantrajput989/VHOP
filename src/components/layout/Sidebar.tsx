@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Home, Users, Map, User, Zap, Settings, LayoutDashboard, LogOut } from 'lucide-react';
+import { Home, Users, Map, User, Zap, Settings, LayoutDashboard, LogOut, Calendar, Building } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../../store/authStore';
@@ -11,6 +11,8 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ isAdmin = false }) => {
   const { logout, user } = useAuthStore();
+  const isSuperAdmin = user?.role === 'superadmin';
+
   const userNavItems = [
     { label: 'Events', path: '/events', icon: Home },
     { label: 'Social', path: '/social', icon: Users },
@@ -25,14 +27,27 @@ export const Sidebar: React.FC<SidebarProps> = ({ isAdmin = false }) => {
     { label: 'Settings', path: '/admin/settings', icon: Settings },
   ];
 
-  const navItems = isAdmin ? adminNavItems : userNavItems;
+  const superAdminNavItems = [
+    { label: 'Dashboard', path: '/superadmin', icon: LayoutDashboard },
+    { label: 'Events', path: '/superadmin/events', icon: Calendar },
+    { label: 'Partners', path: '/superadmin/partners', icon: Building },
+    { label: 'View Website', path: '/events', icon: Home },
+  ];
+
+  const navItems = isSuperAdmin 
+    ? superAdminNavItems 
+    : (isAdmin ? adminNavItems : userNavItems);
 
   return (
     <aside className="hidden md:flex flex-col fixed top-0 left-0 bottom-0 w-64 glass-card rounded-none border-y-0 border-l-0 border-r border-[var(--border-subtle)] bg-[var(--bg-card)] z-50">
       <div className="p-8">
         <h1 className="font-display font-bold text-3xl tracking-wider text-transparent bg-clip-text bg-[image:var(--gradient-hero)] flex items-center gap-2">
           VHOP
-          {isAdmin && <span className="text-xs bg-[var(--accent-pink)]/20 text-[var(--accent-pink)] px-2 py-1 rounded-md font-sans">ADMIN</span>}
+          {isSuperAdmin ? (
+            <span className="text-[10px] bg-[var(--violet-bright)]/20 text-[var(--violet-bright)] px-2 py-1 rounded-md font-sans font-bold">SUPER</span>
+          ) : (
+            isAdmin && <span className="text-xs bg-[var(--accent-pink)]/20 text-[var(--accent-pink)] px-2 py-1 rounded-md font-sans">ADMIN</span>
+          )}
         </h1>
       </div>
 
@@ -41,7 +56,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isAdmin = false }) => {
           <NavLink
             key={item.path}
             to={item.path}
-            end={item.path === '/admin'}
+            end={item.path === '/admin' || item.path === '/superadmin'}
             className={({ isActive }) =>
               cn(
                 "relative flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-300 group",

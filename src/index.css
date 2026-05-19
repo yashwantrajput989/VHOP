@@ -116,10 +116,12 @@ h1, h2, h3, h4, h5, h6 {
     background-clip: text;
   }
 
-  .scrollbar-hide::-webkit-scrollbar {
+  .scrollbar-hide::-webkit-scrollbar,
+  .scrollbar-none::-webkit-scrollbar {
     display: none;
   }
-  .scrollbar-hide {
+  .scrollbar-hide,
+  .scrollbar-none {
     -ms-overflow-style: none;
     scrollbar-width: none;
   }

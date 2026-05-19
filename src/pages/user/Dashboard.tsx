@@ -88,7 +88,7 @@ export const Dashboard: React.FC = () => {
 
   return (
     <PageWrapper>
-      <div className="max-w-4xl mx-auto space-y-8 px-4 md:px-0">
+      <div className="max-w-4xl mx-auto space-y-8 px-0">
         {/* Welcome Header */}
         <section className="relative py-6">
           <motion.div

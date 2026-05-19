@@ -78,6 +78,9 @@ function App() {
             
             {/* Super Admin Routes */}
             <Route path="/superadmin" element={<SuperDashboard />} />
+            <Route path="/superadmin/events" element={<SuperDashboard />} />
+            <Route path="/superadmin/partners" element={<SuperDashboard />} />
+            <Route path="/superadmin/issues" element={<SuperDashboard />} />
 
             {/* Fallback */}
             <Route path="*" element={<Navigate to="/events" replace />} />
