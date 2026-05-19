@@ -27,15 +27,23 @@ export const EventCard: React.FC<EventCardProps> = ({ event }) => {
       onClick={() => navigate(`/events/${event.id}`)}
       className="group cursor-pointer space-y-2 md:space-y-4"
     >
-      <div className="relative aspect-[3/4] overflow-hidden rounded-[1.5rem] md:rounded-[2rem] border border-white/5 transition-all duration-500 group-hover:border-[var(--violet-bright)]/30 group-hover:shadow-glow">
+      <div className="relative aspect-[4/3] overflow-hidden rounded-[1.5rem] md:rounded-[2rem] border border-white/5 bg-black/40 transition-all duration-500 group-hover:border-[var(--violet-bright)]/30 group-hover:shadow-glow flex items-center justify-center">
+        {/* Background Blurred Underlay for zero truncation visual bleed */}
+        <img 
+          src={event.cover_image?.startsWith('/uploads') ? `${API_BASE_URL}${event.cover_image}` : event.cover_image} 
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover blur-xl opacity-30 scale-110 pointer-events-none"
+        />
+
+        {/* Foreground High-Fidelity Contained Flyer (Zero Truncation) */}
         <motion.img 
           src={event.cover_image?.startsWith('/uploads') ? `${API_BASE_URL}${event.cover_image}` : event.cover_image} 
           alt={event.title}
-          className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+          className="relative z-10 w-full h-full object-contain transition-transform duration-700 group-hover:scale-102"
         />
         
         {/* Date Overlay - Simplified */}
-        <div className="absolute top-3 left-3 z-10 backdrop-blur-xl bg-black/40 border border-white/10 px-2 py-1 rounded-xl text-center min-w-[40px]">
+        <div className="absolute top-3 left-3 z-20 backdrop-blur-xl bg-black/40 border border-white/10 px-2 py-1 rounded-xl text-center min-w-[40px]">
           <p className="text-xs font-bold text-white leading-none">{date.getDate()}</p>
           <p className="text-[8px] font-bold text-[var(--violet-bright)] uppercase tracking-widest mt-0.5">
             {date.toLocaleDateString('en-IN', { month: 'short' })}
@@ -43,13 +51,13 @@ export const EventCard: React.FC<EventCardProps> = ({ event }) => {
         </div>
 
         {/* Price Tag Overlay - Bottom Right */}
-        <div className="absolute bottom-3 right-3 z-10 backdrop-blur-xl bg-white/10 border border-white/10 px-3 py-1 rounded-xl">
+        <div className="absolute bottom-3 right-3 z-20 backdrop-blur-xl bg-white/10 border border-white/10 px-3 py-1 rounded-xl">
           <span className="text-[10px] font-bold text-white">
             {event.price === 0 ? 'FREE' : `₹${event.price}+`}
           </span>
         </div>
 
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60 group-hover:opacity-90 transition-opacity duration-500" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-40 group-hover:opacity-70 transition-opacity duration-500 z-15 pointer-events-none" />
       </div>
 
       <div className="space-y-1 px-1">

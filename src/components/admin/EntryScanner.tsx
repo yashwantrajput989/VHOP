@@ -48,11 +48,9 @@ export const EntryScanner: React.FC = () => {
   const { user: adminUser } = useAuthStore();
   const [visitors, setVisitors] = useState<Visitor[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
-  const [selectedSimUser, setSelectedSimUser] = useState<string>('');
   
   // Camera & view states
   const [isCameraActive, setIsCameraActive] = useState(false);
-  const [isScanning, setIsScanning] = useState(false);
   const [scannedUser, setScannedUser] = useState<UserProfile | null>(null);
   
   // Table search & logs
@@ -143,7 +141,7 @@ export const EntryScanner: React.FC = () => {
       }
     } catch (err: any) {
       console.error('Camera access error:', err);
-      setError('Could not access camera. Please verify camera permissions or use the Simulator Fallback.');
+      setError('Could not access camera. Please verify camera permissions.');
       setIsCameraActive(false);
     }
   };
@@ -246,33 +244,6 @@ export const EntryScanner: React.FC = () => {
     };
   }, [isCameraActive, users]);
 
-  // Process Simulated Check-in Scan (Desktop Fallback)
-  const handleSimulateScan = () => {
-    setError('');
-    setSuccessMsg('');
-    if (!selectedSimUser) {
-      setError('Please select a registered user to simulate.');
-      return;
-    }
-
-    const matchedUser = users.find(u => u.id === selectedSimUser);
-    if (!matchedUser) {
-      setError('User not found.');
-      return;
-    }
-
-    setIsScanning(true);
-    playBeep();
-
-    setTimeout(() => {
-      setIsScanning(false);
-      setScannedUser(matchedUser);
-      if (isCameraActive) {
-        stopCamera();
-      }
-    }, 850);
-  };
-
 
   // Log visitor scan to persistent visitors table
   const handleApproveEntry = async () => {
@@ -350,7 +321,7 @@ export const EntryScanner: React.FC = () => {
         <div>
           <h4 className="text-sm font-bold text-white uppercase tracking-wider">VHOP Visitor Logs Terminal</h4>
           <p className="text-xs text-[var(--text-secondary)]">
-            Scan V-Card pass QRs or simulate check-ins to verify entries and log visitor details.
+            Scan V-Card pass QRs to verify entries and log visitor details.
           </p>
         </div>
         <GlowButton 
@@ -429,22 +400,6 @@ export const EntryScanner: React.FC = () => {
                 </div>
               )}
 
-              {/* Scanning visual state flash */}
-              <AnimatePresence>
-                {isScanning && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: [0, 0.8, 0] }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.8 }}
-                    className="absolute inset-0 bg-green-500/35 z-20 pointer-events-none flex items-center justify-center"
-                  >
-                    <span className="text-xl font-display font-extrabold uppercase tracking-widest text-green-300 drop-shadow-md animate-ping">
-                      DECODING
-                    </span>
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </div>
 
             {isCameraActive && (
@@ -456,39 +411,6 @@ export const EntryScanner: React.FC = () => {
                 Close Camera Feed
               </GlowButton>
             )}
-
-            {/* SIMULATOR QUICK SELECTION */}
-            <div className="border-t border-white/5 pt-5 space-y-4">
-              <div>
-                <h4 className="text-sm font-bold text-white">V-Card Scan Simulator</h4>
-                <p className="text-[10px] text-[var(--text-secondary)]">
-                  Desktop Fallback: Pick a registered user profile to simulate an instant scan check-in.
-                </p>
-              </div>
-
-              <div className="space-y-3">
-                <select
-                  value={selectedSimUser}
-                  onChange={(e) => setSelectedSimUser(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white text-xs focus:border-[var(--violet-bright)] focus:outline-none transition-colors"
-                >
-                  <option value="" className="bg-[var(--bg-card)]">-- Choose User V-Card --</option>
-                  {users.map(u => (
-                    <option key={u.id} value={u.id} className="bg-[var(--bg-card)]">
-                      {u.full_name} ({u.age || '50% complete'} - {u.email})
-                    </option>
-                  ))}
-                </select>
-
-                <GlowButton 
-                  onClick={handleSimulateScan}
-                  disabled={isScanning || !selectedSimUser}
-                  className="w-full text-xs py-3"
-                >
-                  Simulate QR Scan ⚡
-                </GlowButton>
-              </div>
-            </div>
           </GlassCard>
         </div>
 

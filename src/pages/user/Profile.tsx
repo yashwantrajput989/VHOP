@@ -10,17 +10,21 @@ import { GlassCard } from '../../components/ui/GlassCard';
 import { useAuthStore } from '../../store/authStore';
 import { useTicketStore } from '../../store/ticketStore';
 import type { Ticket } from '../../store/ticketStore';
-import { Settings, MapPin, Mail, Phone, ShieldCheck, QrCode, Calendar } from 'lucide-react';
+import { Settings, MapPin, Mail, Phone, ShieldCheck, QrCode, Calendar, Lock, LogIn, Coins, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { API_BASE_URL } from '../../config';
 import { ProfileCompletionBanner, isProfileComplete } from '../../components/profile/ProfileCompletionBanner';
 import { VCardPass } from '../../components/profile/VCardPass';
+import { useUIStore } from '../../store/uiStore';
+import { FloatingOrb } from '../../components/ui/FloatingOrb';
+
 
 export const Profile: React.FC = () => {
   const { user } = useAuthStore();
   const navigate = useNavigate();
   const { tickets, addTicket } = useTicketStore();
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
+  const { openModal } = useUIStore();
 
   const parsedInterests = React.useMemo(() => {
     if (!user?.interests) return [];
@@ -74,10 +78,65 @@ export const Profile: React.FC = () => {
 
   if (!user) {
     return (
-      <PageWrapper className="flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <h1 className="text-2xl font-bold">Please login to view your profile</h1>
-        </div>
+      <PageWrapper className="relative flex items-center justify-center min-h-[80vh] overflow-hidden px-4">
+        {/* Floating background glowing orbs */}
+        <FloatingOrb className="-top-20 -left-20 pointer-events-none" color="violet" size={350} />
+        <FloatingOrb className="bottom-10 right-0 pointer-events-none" color="pink" size={300} delay={2} />
+
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+          className="relative z-10 w-full max-w-md"
+        >
+          <GlassCard className="p-8 text-center border border-white/10 shadow-[0_0_30px_rgba(139,92,246,0.15)] space-y-6 relative overflow-hidden group">
+            {/* Ambient inner card glow */}
+            <div className="absolute -top-24 -left-24 w-48 h-48 bg-[var(--violet-primary)]/10 blur-3xl rounded-full pointer-events-none" />
+
+            <div className="mx-auto w-16 h-16 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center relative group-hover:scale-105 transition-transform duration-300">
+              <Lock className="w-8 h-8 text-[var(--violet-bright)] animate-pulse" />
+              <div className="absolute inset-0 rounded-2xl bg-[var(--violet-bright)]/20 blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+            </div>
+
+            <div className="space-y-2">
+              <h2 className="text-2xl font-bold font-display text-white tracking-wide">
+                Unlock Your VHOP Profile
+              </h2>
+              <p className="text-xs text-[var(--text-secondary)] leading-relaxed max-w-[280px] mx-auto">
+                Sign in to customize your nightlife experience, view active tickets, and claim your exclusive V-Card rewards.
+              </p>
+            </div>
+
+            {/* List of Benefits */}
+            <div className="py-4 border-y border-white/5 space-y-3.5 text-left max-w-[290px] mx-auto">
+              <div className="flex items-center gap-3">
+                <div className="w-6 h-6 rounded-lg bg-[var(--violet-primary)]/10 flex items-center justify-center shrink-0">
+                  <Coins className="w-3.5 h-3.5 text-[var(--violet-bright)]" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-white leading-none">Claim 100 V-Coins</p>
+                  <p className="text-[9px] text-[var(--text-muted)] mt-0.5">Finish your profile to get initial rewards.</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-6 h-6 rounded-lg bg-pink-500/10 flex items-center justify-center shrink-0">
+                  <Sparkles className="w-3.5 h-3.5 text-pink-400" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-white leading-none">Attractive QR V-Card</p>
+                  <p className="text-[9px] text-[var(--text-muted)] mt-0.5">Sleek visual check-in passes for partner venues.</p>
+                </div>
+              </div>
+            </div>
+
+            <GlowButton
+              onClick={() => openModal('auth')}
+              className="w-full py-4 text-xs font-bold flex items-center justify-center gap-2 relative group overflow-hidden shadow-glow"
+            >
+              <LogIn className="w-4 h-4" /> Sign In or Register
+            </GlowButton>
+          </GlassCard>
+        </motion.div>
       </PageWrapper>
     );
   }
