@@ -7,6 +7,8 @@ const path = require('path');
 const morgan = require('morgan');
 const multer = require('multer');
 const { sendBookingEmail } = require('./utils/email');
+const Razorpay = require('razorpay');
+const crypto = require('crypto');
 
 dotenv.config();
 
@@ -324,6 +326,79 @@ app.post('/api/companies/:id/verify', async (req, res) => {
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
+});
+
+// --- RAZORPAY INTEGRATION ---
+const razorpay = new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID || '',
+    key_secret: process.env.RAZORPAY_KEY_SECRET || ''
+});
+
+// Create Razorpay Order
+app.post('/api/payments/order', async (req, res) => {
+    const { amount, currency } = req.body;
+    try {
+        const options = {
+            amount: Math.round(amount * 100), // Amount in paise
+            currency: currency || 'INR',
+            receipt: `rcpt_${Math.random().toString(36).substring(2, 15)}`
+        };
+        const order = await razorpay.orders.create(options);
+        res.status(200).json(order);
+    } catch (error) {
+        console.error('Error creating Razorpay order:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Verify Payment Signature
+app.post('/api/payments/verify', async (req, res) => {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+    
+    const generated_signature = crypto
+        .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || '')
+        .update(razorpay_order_id + '|' + razorpay_payment_id)
+        .digest('hex');
+
+    if (generated_signature === razorpay_signature) {
+        res.status(200).json({ status: 'success', message: 'Payment verified successfully' });
+    } else {
+        res.status(400).json({ status: 'failure', message: 'Signature verification failed' });
+    }
+});
+
+// Razorpay Webhook Endpoint
+app.post('/api/payments/webhook', async (req, res) => {
+    const signature = req.headers['x-razorpay-signature'];
+    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || '';
+
+    if (!signature) {
+        return res.status(400).json({ error: 'Missing x-razorpay-signature header' });
+    }
+
+    // Verify signature
+    const shasum = crypto.createHmac('sha256', webhookSecret);
+    shasum.update(JSON.stringify(req.body));
+    const digest = shasum.digest('hex');
+
+    if (digest !== signature) {
+        console.error('⚠️ Webhook Signature Verification Failed!');
+        return res.status(400).json({ error: 'Signature mismatch' });
+    }
+
+    const event = req.body.event;
+    console.log(`🔔 Razorpay Webhook Event: ${event}`);
+
+    if (event === 'order.paid' || event === 'payment.captured') {
+        const paymentEntity = req.body.payload.payment.entity;
+        const orderId = paymentEntity.order_id;
+        const paymentId = paymentEntity.id;
+        const amount = paymentEntity.amount / 100;
+        
+        logActivity({ type: 'webhook_payment_received', orderId, paymentId, amount });
+    }
+
+    res.status(200).json({ status: 'ok' });
 });
 
 // --- STATUS & LOGS CONSOLE ---
