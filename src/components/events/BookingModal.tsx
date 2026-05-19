@@ -7,7 +7,7 @@ import { GlowButton } from '../ui/GlowButton';
 import { useAuthStore } from '../../store/authStore';
 import { useTicketStore } from '../../store/ticketStore';
 import { useUIStore } from '../../store/uiStore';
-import { API_BASE_URL, RAZORPAY_KEY_ID } from '../../config';
+import { API_BASE_URL } from '../../config';
 
 interface BookingModalProps {
   isOpen: boolean;
@@ -76,118 +76,61 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, eve
     setStep('processing');
     
     try {
-      // 1. Create Razorpay order on backend
-      const orderRes = await fetch(`${API_BASE_URL}/api/payments/order`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: totalAmount })
-      });
-
-      if (!orderRes.ok) throw new Error('Failed to create payment order');
-      const orderData = await orderRes.json();
-
-      // 2. Configure and Open Razorpay Checkout modal
-      const options = {
-        key: RAZORPAY_KEY_ID,
-        amount: orderData.amount,
-        currency: orderData.currency,
-        name: 'VHOP',
-        description: `Ticket Booking for ${event.title}`,
-        order_id: orderData.id,
-        prefill: {
-          name: user.full_name || '',
-          email: user.email || '',
-        },
-        theme: {
-          color: '#8b5cf6', // Elegant Violet Branding
-        },
-        handler: async (response: any) => {
-          setStep('processing');
-          try {
-            // 3. Verify Payment signature on backend
-            const verifyRes = await fetch(`${API_BASE_URL}/api/payments/verify`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                razorpay_order_id: response.razorpay_order_id,
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_signature: response.razorpay_signature
-              })
-            });
-
-            if (!verifyRes.ok) throw new Error('Payment signature verification failed');
-
-            // 4. Save Booking to Database
-            const bookingId = `VH-${Math.random().toString(36).substring(2, 11).toUpperCase()}`;
-            const qrCode = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${bookingId}`;
-            
-            const bookingData = {
-              event_id: event.id,
-              event_title: event.title,
-              venue_name: event.venue_name,
-              city: event.city,
-              start_date: event.start_date,
-              cover_image: event.cover_image,
-              user_id: user.id,
-              quantity: quantity,
-              total_amount: totalAmount,
-              ticket_name: ticket.name,
-              price: ticket.price,
-              payment_id: response.razorpay_payment_id,
-              payment_status: 'paid',
-              booking_status: 'confirmed',
-              booking_id: bookingId,
-              qr_code: qrCode,
-              booked_at: new Date().toISOString(),
-              guests: guests
-            };
-
-            const saveRes = await fetch(`${API_BASE_URL}/api/bookings`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(bookingData)
-            });
-
-            if (!saveRes.ok) throw new Error('Failed to save booking');
-            const result = await saveRes.json();
-            
-            addTicket({
-              id: result.id,
-              eventId: event.id,
-              eventTitle: event.title,
-              venueName: event.venue_name,
-              city: event.city,
-              startDate: event.start_date,
-              coverImage: event.cover_image,
-              ticketName: ticket.name,
-              price: ticket.price,
-              quantity: quantity,
-              bookingId: bookingId,
-              qrCode: qrCode,
-              bookedAt: bookingData.booked_at,
-              guests: guests
-            });
-
-            setStep('success');
-          } catch (verifyErr) {
-            console.error('Verification/Save error:', verifyErr);
-            alert('Could not verify payment. Please contact support.');
-            setStep('details');
-          }
-        },
-        modal: {
-          ondismiss: () => {
-            setStep('details');
-          }
-        }
+      const bookingId = `VH-${Math.random().toString(36).substring(2, 11).toUpperCase()}`;
+      const qrCode = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${bookingId}`;
+      
+      const bookingData = {
+        event_id: event.id,
+        event_title: event.title,
+        venue_name: event.venue_name,
+        city: event.city,
+        start_date: event.start_date,
+        cover_image: event.cover_image,
+        user_id: user.id,
+        quantity: quantity,
+        total_amount: totalAmount,
+        ticket_name: ticket.name,
+        price: ticket.price,
+        payment_id: `pay_simulated_${Math.random().toString(36).substring(7)}`,
+        payment_status: 'paid',
+        booking_status: 'confirmed',
+        booking_id: bookingId,
+        qr_code: qrCode,
+        booked_at: new Date().toISOString(),
+        guests: guests
       };
 
-      const rzp = new (window as any).Razorpay(options);
-      rzp.open();
+      // Save to MySQL Backend
+      const response = await fetch(`${API_BASE_URL}/api/bookings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bookingData)
+      });
 
+      if (!response.ok) throw new Error('Failed to save booking');
+      const result = await response.json();
+      
+      addTicket({
+        id: result.id,
+        eventId: event.id,
+        eventTitle: event.title,
+        venueName: event.venue_name,
+        city: event.city,
+        startDate: event.start_date,
+        coverImage: event.cover_image,
+        ticketName: ticket.name,
+        price: ticket.price,
+        quantity: quantity,
+        bookingId: bookingId,
+        qrCode: qrCode,
+        bookedAt: bookingData.booked_at,
+        guests: guests
+      });
+
+      setStep('success');
     } catch (error) {
       console.error('Error during booking payment:', error);
-      alert('Failed to initiate checkout. Please try again.');
+      alert('Failed to complete booking. Please try again.');
       setStep('details');
     }
   };
