@@ -22,7 +22,6 @@ import {
 } from 'lucide-react';
 import { useUIStore } from '../../store/uiStore';
 import { useAuthStore } from '../../store/authStore';
-import { logToBackend } from '../../lib/logger';
 import { API_BASE_URL } from '../../config';
 
 const INTERESTS = [
