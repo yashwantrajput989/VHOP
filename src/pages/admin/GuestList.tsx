@@ -3,6 +3,7 @@ import { PageWrapper } from '../../components/layout/PageWrapper';
 import { GlassCard } from '../../components/ui/GlassCard';
 import { Search, Download, Mail } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
+import { AdminLogin } from './AdminLogin';
 
 export const GuestList: React.FC = () => {
   const { user } = useAuthStore();
@@ -21,7 +22,12 @@ export const GuestList: React.FC = () => {
     fetchGuests();
   }, [user]);
 
+  if (!user || user.role !== 'admin') {
+    return <AdminLogin forcedRole="admin" />;
+  }
+
   return (
+
     <PageWrapper>
       <div className="space-y-8 pb-12">
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">

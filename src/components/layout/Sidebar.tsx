@@ -1,14 +1,16 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Home, Users, Map, User, Zap, Settings, LayoutDashboard } from 'lucide-react';
+import { Home, Users, Map, User, Zap, Settings, LayoutDashboard, LogOut } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { motion } from 'framer-motion';
+import { useAuthStore } from '../../store/authStore';
 
 interface SidebarProps {
   isAdmin?: boolean;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ isAdmin = false }) => {
+  const { logout, user } = useAuthStore();
   const userNavItems = [
     { label: 'Events', path: '/events', icon: Home },
     { label: 'Social', path: '/social', icon: Users },
@@ -67,6 +69,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ isAdmin = false }) => {
           </NavLink>
         ))}
       </div>
+
+      {user && (
+        <div className="p-4 border-t border-white/5">
+          <button 
+            onClick={() => logout()}
+            className="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-all duration-300 font-medium text-sm group cursor-pointer"
+          >
+            <LogOut className="w-5 h-5 text-red-400 group-hover:text-red-300 transition-colors" />
+            <span>Logout</span>
+          </button>
+        </div>
+      )}
     </aside>
   );
 };
+

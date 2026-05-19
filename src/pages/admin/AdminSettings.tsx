@@ -4,6 +4,7 @@ import { GlassCard } from '../../components/ui/GlassCard';
 import { GlowButton } from '../../components/ui/GlowButton';
 import { Building2, Mail, Phone, Globe, CreditCard, Save } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
+import { AdminLogin } from './AdminLogin';
 
 export const AdminSettings: React.FC = () => {
   const { user } = useAuthStore();
@@ -87,7 +88,12 @@ export const AdminSettings: React.FC = () => {
     }
   };
 
+  if (!user || user.role !== 'admin') {
+    return <AdminLogin forcedRole="admin" />;
+  }
+
   return (
+
     <PageWrapper>
       <div className="max-w-4xl mx-auto space-y-8 pb-12">
         <header>

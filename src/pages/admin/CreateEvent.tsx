@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { API_BASE_URL, getImageUrl } from '../../config';
+import { AdminLogin } from './AdminLogin';
 
 export const CreateEvent: React.FC = () => {
   const { id } = useParams();
@@ -140,7 +141,12 @@ export const CreateEvent: React.FC = () => {
     setIsSubmitting(false);
   };
 
+  if (!user || user.role !== 'admin') {
+    return <AdminLogin forcedRole="admin" />;
+  }
+
   return (
+
     <PageWrapper>
       <div className="max-w-4xl mx-auto space-y-8">
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">

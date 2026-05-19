@@ -6,9 +6,11 @@ import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, A
 import { useNavigate } from 'react-router-dom';
 import { GlowButton } from '../../components/ui/GlowButton';
 import { API_BASE_URL, getImageUrl } from '../../config';
+import { useAuthStore } from '../../store/authStore';
+import { AdminLogin } from './AdminLogin';
 
 export const AdminDashboard: React.FC = () => {
-  // const { user } = useAuthStore();
+  const { user } = useAuthStore();
   const navigate = useNavigate();
   // const [company, setCompany] = useState<any>(null);
   const [events, setEvents] = useState<any[]>([]);
@@ -30,9 +32,9 @@ export const AdminDashboard: React.FC = () => {
           setEvents(data.events || []);
           
           setStats({
-            totalRevenue: data.stats.totalRevenue || 0,
-            totalBookings: data.stats.totalBookings || 0,
-            activeEvents: data.stats.activeEvents || 0,
+            totalRevenue: Number(data.stats.totalRevenue) || 0,
+            totalBookings: Number(data.stats.totalBookings) || 0,
+            activeEvents: Number(data.stats.activeEvents) || 0,
             avgAttendance: 85
           });
         }
@@ -99,12 +101,12 @@ export const AdminDashboard: React.FC = () => {
     );
   }
 
-  // Simplified: No role check for development ease
-  // if (!user || user.role !== 'admin') {
-  //   return <AdminLogin forcedRole="admin" />;
-  // }
+  if (!user || user.role !== 'admin') {
+    return <AdminLogin forcedRole="admin" />;
+  }
 
   // Removed Legal Verification Check
+
 
   return (
     <PageWrapper>
