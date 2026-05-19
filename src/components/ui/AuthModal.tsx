@@ -38,7 +38,7 @@ const INTERESTS = [
 export const AuthModal: React.FC = () => {
   const navigate = useNavigate();
   const { activeModal, closeModal } = useUIStore();
-  const { loginWithGoogle, isLoading, user, setUser } = useAuthStore();
+  const { loginWithGoogle, loginWithEmail, registerWithEmail, isLoading, user, setUser } = useAuthStore();
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   
   // Onboarding State
@@ -67,14 +67,15 @@ export const AuthModal: React.FC = () => {
 
   const handleGoogleLogin = async () => {
     try {
-      const profile = await loginWithGoogle();
+      const profile = await loginWithGoogle(email || undefined);
       if (profile && profile.onboarded) {
         closeModal();
       } else {
         setOnboardingStep('policy');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
+      alert(error.message || 'Google Login failed');
     }
   };
 
@@ -108,44 +109,29 @@ export const AuthModal: React.FC = () => {
     }
   };
 
-
-
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Simulate login and sync with MySQL for email sending
-    const profile = {
-      id: `email-${Math.random().toString(36).substring(2, 11)}`,
-      full_name: mode === 'signup' ? fullName : (email.split('@')[0] || 'Demo User'),
-      username: email.split('@')[0] || 'demouser',
-      email: email || 'demo@vhop.in',
-      avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${email || 'Demo'}`,
-      role: 'user' as const,
-      v_coins: 500,
-      city: 'Mumbai',
-      phone: '+91 99999 88888',
-      onboarded: false
-    };
-
     try {
-      // Sync with MySQL Backend so booking email worker can find the user!
-      const syncRes = await fetch(`${API_BASE_URL}/api/auth/sync`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(profile)
-      });
-      const syncData = await syncRes.json();
-      if (syncData.onboarded !== undefined) {
-        profile.onboarded = syncData.onboarded;
+      let profile;
+      if (mode === 'signup') {
+        if (!fullName.trim()) {
+          alert('Please enter your full name to sign up.');
+          return;
+        }
+        profile = await registerWithEmail(email, password, fullName);
+      } else {
+        profile = await loginWithEmail(email, password);
       }
-    } catch (syncError) {
-      console.error('Failed to sync email user with MySQL:', syncError);
-    }
 
-    useAuthStore.getState().setUser(profile);
-    const newUser = useAuthStore.getState().user;
-    logToBackend(mode === 'signup' ? 'signup_email' : 'login_email', newUser);
-    // Don't set onboardingStep here, let the useEffect handle it, or just closeModal
-    closeModal();
+      if (profile && profile.onboarded) {
+        closeModal();
+      } else {
+        setOnboardingStep('policy');
+      }
+    } catch (error: any) {
+      console.error('Auth error:', error);
+      alert(error.message || 'Authentication failed. Please check your credentials.');
+    }
   };
 
   return (

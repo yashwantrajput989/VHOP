@@ -28,6 +28,29 @@ const pool = mysql.createPool({
     queueLimit: 0
 });
 
+// Ensure profiles table has a password column for local login/signup
+(async () => {
+    try {
+        await pool.execute(`
+            ALTER TABLE profiles 
+            ADD COLUMN IF NOT EXISTS password VARCHAR(255) NULL
+        `);
+        console.log('🟢 Database schema verified (profiles.password column is ready).');
+    } catch (err) {
+        // Fallback for older MySQL versions that do not support "ADD COLUMN IF NOT EXISTS"
+        try {
+            await pool.execute(`ALTER TABLE profiles ADD COLUMN password VARCHAR(255) NULL`);
+            console.log('🟢 password column added to profiles table.');
+        } catch (innerErr) {
+            if (innerErr.code === 'ER_DUP_COLUMN_NAME') {
+                console.log('🟢 password column already exists in profiles table.');
+            } else {
+                console.error('🔴 Error altering profiles table:', innerErr.message);
+            }
+        }
+    }
+})();
+
 // Configure Multer for file uploads
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -112,6 +135,90 @@ app.post('/api/auth/sync', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
+// Register standard user
+app.post('/api/auth/register', async (req, res) => {
+    const { email, password, full_name } = req.body;
+    try {
+        const [existing] = await pool.execute('SELECT * FROM profiles WHERE email = ?', [email]);
+        if (existing.length > 0) {
+            return res.status(400).json({ error: 'Email is already registered' });
+        }
+
+        const id = `usr_${Math.random().toString(36).substring(2, 11)}`;
+        const username = email.split('@')[0] || `user_${id}`;
+        const avatar_url = `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`;
+        
+        await pool.execute(
+            'INSERT INTO profiles (id, full_name, username, email, password, avatar_url, role, v_coins, city, phone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [id, full_name || 'New User', username, email, password || null, avatar_url, 'user', 500, 'Mumbai', '']
+        );
+
+        logActivity({ type: 'profile_created', userId: id });
+        
+        const [userRows] = await pool.execute('SELECT * FROM profiles WHERE id = ?', [id]);
+        res.status(201).json(userRows[0]);
+    } catch (error) {
+        console.error('Registration error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Login standard user
+app.post('/api/auth/login', async (req, res) => {
+    const { email, password } = req.body;
+    try {
+        const [rows] = await pool.execute('SELECT * FROM profiles WHERE email = ?', [email]);
+        if (rows.length === 0) {
+            return res.status(400).json({ error: 'No account found with this email' });
+        }
+
+        const userProfile = rows[0];
+        if (userProfile.password !== password) {
+            return res.status(400).json({ error: 'Incorrect password' });
+        }
+
+        res.status(200).json(userProfile);
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Google Sign-in Sync/Simulated Login
+app.post('/api/auth/google-login', async (req, res) => {
+    const { email, full_name, avatar_url, id: googleId } = req.body;
+    try {
+        const [rows] = await pool.execute('SELECT * FROM profiles WHERE email = ?', [email]);
+        if (rows.length > 0) {
+            const userProfile = rows[0];
+            // Update details if they changed
+            await pool.execute(
+                'UPDATE profiles SET full_name = ?, avatar_url = ? WHERE id = ?',
+                [full_name || userProfile.full_name, avatar_url || userProfile.avatar_url, userProfile.id]
+            );
+            const [updatedRows] = await pool.execute('SELECT * FROM profiles WHERE id = ?', [userProfile.id]);
+            return res.status(200).json(updatedRows[0]);
+        }
+
+        // Create new user profile for Google login
+        const id = googleId || `usr_g_${Math.random().toString(36).substring(2, 11)}`;
+        const username = email.split('@')[0] || `user_${id}`;
+        
+        await pool.execute(
+            'INSERT INTO profiles (id, full_name, username, email, avatar_url, role, v_coins, city, phone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [id, full_name || 'Google User', username, email, avatar_url || '', 'user', 500, 'Mumbai', '']
+        );
+
+        logActivity({ type: 'profile_created', userId: id });
+        const [userRows] = await pool.execute('SELECT * FROM profiles WHERE id = ?', [id]);
+        res.status(201).json(userRows[0]);
+    } catch (error) {
+        console.error('Google login sync error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 
 // Update Onboarding Status
 app.post('/api/auth/onboard', async (req, res) => {

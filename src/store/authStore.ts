@@ -1,18 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { auth, googleProvider, db, RecaptchaVerifier, signInWithPhoneNumber } from '../lib/firebase';
-import { signInWithPopup, signOut, onAuthStateChanged, type User } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { logToBackend } from '../lib/logger';
 import { API_BASE_URL } from '../config';
-
-declare global {
-  interface Window {
-    recaptchaVerifier: any;
-  }
-}
-
-let confirmationResult: any = null;
 
 interface UserProfile {
   id: string;
@@ -36,10 +25,10 @@ interface AuthState {
   setUser: (user: UserProfile | null) => void;
   setSession: (session: any | null) => void;
   setLoading: (loading: boolean) => void;
-  loginWithGoogle: () => Promise<UserProfile | void>;
+  loginWithGoogle: (email?: string) => Promise<UserProfile>;
+  loginWithEmail: (email: string, password: string) => Promise<UserProfile>;
+  registerWithEmail: (email: string, password: string, fullName: string) => Promise<UserProfile>;
   loginAdmin: (role: 'admin' | 'superadmin', password: string) => Promise<void>;
-  loginWithPhone: (phone: string) => Promise<void>;
-  verifyOTP: (phone: string, token: string, fullName?: string) => Promise<void>;
   logout: () => Promise<void>;
   initialize: () => Promise<void>;
 }
@@ -61,19 +50,21 @@ export const useAuthStore = create<AuthState>()(
         await new Promise(resolve => setTimeout(resolve, 1000));
         
         if (password === 'vhop1234') {
+          const mockUser: UserProfile = {
+            id: `mock-${role}-123`,
+            full_name: role === 'admin' ? 'Admin User' : 'Super Admin',
+            username: role,
+            email: `${role}@vhop.in`,
+            avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${role}`,
+            role: role,
+            v_coins: 9999,
+            city: 'Mumbai',
+            onboarded: true
+          };
           set({
-            user: {
-              id: `mock-${role}-123`,
-              full_name: role === 'admin' ? 'Admin User' : 'Super Admin',
-              username: role,
-              email: `${role}@vhop.in`,
-              avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${role}`,
-              role: role,
-              v_coins: 9999,
-              city: 'Mumbai',
-            },
+            user: mockUser,
             isLoading: false,
-            session: { user: { id: `mock-${role}-123` } }
+            session: { user: { id: mockUser.id } }
           });
           logToBackend('admin_login_success', { role });
         } else {
@@ -83,263 +74,112 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      loginWithGoogle: async () => {
+      loginWithEmail: async (email, password) => {
         set({ isLoading: true });
         try {
-          const result = await signInWithPopup(auth, googleProvider);
-          const firebaseUser = result.user;
-          
-          // Check if profile exists with a timeout/resiliency
-          let profile: UserProfile;
-          try {
-            const userDoc = await getDoc(doc(db, 'profiles', firebaseUser.uid));
-            if (userDoc.exists()) {
-              profile = userDoc.data() as UserProfile;
-            } else {
-              // Create new profile
-              profile = {
-                id: firebaseUser.uid,
-                full_name: firebaseUser.displayName || 'Google User',
-                username: firebaseUser.email?.split('@')[0] || `user${firebaseUser.uid.substring(0,5)}`,
-                email: firebaseUser.email || '',
-                avatar_url: firebaseUser.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${firebaseUser.uid}`,
-                role: 'user',
-                v_coins: 500,
-                city: 'Mumbai',
-                phone: ''
-              };
-              try {
-                await setDoc(doc(db, 'profiles', firebaseUser.uid), profile);
-              } catch (e) {
-                console.warn('Failed to save profile to Firestore, continuing with local profile:', e);
-              }
-            }
-          } catch (e) {
-            console.warn('Firestore unreachable, using auth data for profile:', e);
-            // Fallback profile if Firestore is offline
-            profile = {
-              id: firebaseUser.uid,
-              full_name: firebaseUser.displayName || 'User',
-              username: firebaseUser.email?.split('@')[0] || 'user',
-              email: firebaseUser.email || '',
-              avatar_url: firebaseUser.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${firebaseUser.uid}`,
-              role: 'user',
-              v_coins: 500,
-              city: 'Mumbai',
-            };
-          }
-          
-          // Sync with MySQL Backend
-          try {
-            const syncRes = await fetch(`${API_BASE_URL}/api/auth/sync`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(profile)
-            });
-            const syncData = await syncRes.json();
-            if (syncData.onboarded !== undefined) {
-              profile = { ...profile, onboarded: syncData.onboarded };
-            }
-          } catch (syncError) {
-            console.error('Failed to sync with MySQL:', syncError);
+          const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+          });
+
+          if (!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.error || 'Login failed');
           }
 
-          set({ user: profile, session: firebaseUser, isLoading: false });
+          const profile = await response.json();
+          set({ user: profile, session: { uid: profile.id }, isLoading: false });
+          logToBackend('login_email_success', profile);
+          return profile;
+        } catch (error: any) {
+          set({ isLoading: false });
+          logToBackend('login_email_error', null, { error: error.message });
+          throw error;
+        }
+      },
 
+      registerWithEmail: async (email, password, fullName) => {
+        set({ isLoading: true });
+        try {
+          const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password, full_name: fullName })
+          });
+
+          if (!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.error || 'Registration failed');
+          }
+
+          const profile = await response.json();
+          set({ user: profile, session: { uid: profile.id }, isLoading: false });
+          logToBackend('signup_email_success', profile);
+          return profile;
+        } catch (error: any) {
+          set({ isLoading: false });
+          logToBackend('signup_email_error', null, { error: error.message });
+          throw error;
+        }
+      },
+
+      loginWithGoogle: async (email) => {
+        set({ isLoading: true });
+        try {
+          const googleEmail = email || `google_${Math.random().toString(36).substring(2, 7)}@gmail.com`;
+          const googleName = googleEmail.split('@')[0].split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || 'Google User';
+          
+          const profileData = {
+            email: googleEmail,
+            full_name: googleName,
+            avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${googleEmail}`,
+            id: `g_${Math.random().toString(36).substring(2, 15)}`
+          };
+
+          const response = await fetch(`${API_BASE_URL}/api/auth/google-login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(profileData)
+          });
+
+          if (!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.error || 'Google login failed');
+          }
+
+          const profile = await response.json();
+          set({ user: profile, session: { uid: profile.id }, isLoading: false });
           logToBackend('google_login_success', profile);
           return profile;
         } catch (error: any) {
-          console.error('Error logging in with Google:', error);
+          set({ isLoading: false });
           logToBackend('google_login_error', null, { error: error.message });
-          set({ isLoading: false });
-          throw error;
-        }
-      },
-
-      loginWithPhone: async (phone: string) => {
-        set({ isLoading: true });
-        try {
-          if (!window.recaptchaVerifier) {
-            window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
-              size: 'invisible',
-            });
-          }
-          const appVerifier = window.recaptchaVerifier;
-          confirmationResult = await signInWithPhoneNumber(auth, phone, appVerifier);
-          set({ isLoading: false });
-        } catch (error) {
-          console.error('Error in phone auth', error);
-          set({ isLoading: false });
-          throw error;
-        }
-      },
-
-      verifyOTP: async (phone: string, token: string, fullName?: string) => {
-        set({ isLoading: true });
-        try {
-          if (!confirmationResult) throw new Error("No confirmation result");
-          const result = await confirmationResult.confirm(token);
-          const firebaseUser = result.user;
-          
-           let profile: UserProfile;
-          try {
-            const userDoc = await getDoc(doc(db, 'profiles', firebaseUser.uid));
-            if (userDoc.exists()) {
-              profile = userDoc.data() as UserProfile;
-            } else {
-              // Create new profile
-              profile = {
-                id: firebaseUser.uid,
-                full_name: fullName || firebaseUser.displayName || 'Phone User',
-                username: `user${firebaseUser.uid.substring(0,5)}`,
-                email: firebaseUser.email || '',
-                avatar_url: firebaseUser.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${firebaseUser.uid}`,
-                role: 'user',
-                v_coins: 500,
-                city: 'Mumbai',
-                phone: phone
-              };
-              try {
-                await setDoc(doc(db, 'profiles', firebaseUser.uid), profile);
-              } catch (e) {
-                console.warn('Failed to save phone profile to Firestore:', e);
-              }
-            }
-          } catch (e) {
-            console.warn('Firestore offline during OTP verification, using fallback profile:', e);
-            profile = {
-              id: firebaseUser.uid,
-              full_name: fullName || 'Phone User',
-              username: `user${firebaseUser.uid.substring(0,5)}`,
-              email: '',
-              avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${firebaseUser.uid}`,
-              role: 'user',
-              v_coins: 500,
-              city: 'Mumbai',
-              phone: phone
-            };
-          }
-
-          // Sync with MySQL Backend
-          try {
-            const syncRes = await fetch(`${API_BASE_URL}/api/auth/sync`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(profile)
-            });
-            const syncData = await syncRes.json();
-            if (syncData.onboarded !== undefined) {
-              profile = { ...profile, onboarded: syncData.onboarded };
-            }
-          } catch (syncError) {
-            console.error('Failed to sync phone user with MySQL:', syncError);
-          }
-          
-          set({ user: profile, session: firebaseUser, isLoading: false });
-          logToBackend('phone_login_success', profile);
-        } catch (error: any) {
-          console.error("Error verifying OTP", error);
-          logToBackend('phone_login_error', null, { error: error.message });
-          set({ isLoading: false });
           throw error;
         }
       },
 
       logout: async () => {
         const currentUser = useAuthStore.getState().user;
-        if (auth.app.options.apiKey !== 'dummy_api_key') {
-          await signOut(auth);
-        }
         logToBackend('logout', currentUser);
         set({ user: null, session: null });
       },
 
-       initialize: async () => {
+      initialize: async () => {
         set({ isInitializing: true });
-
-        // Safety timeout to prevent stuck loading screen
-        const safetyTimeout = setTimeout(() => {
-          const { isInitializing } = useAuthStore.getState();
-          if (isInitializing) {
-            console.warn("Auth initialization timed out, clearing loading state.");
-            set({ isInitializing: false, isLoading: false });
+        try {
+          const { user } = useAuthStore.getState();
+          if (user) {
+            set({ user, session: { uid: user.id } });
           }
-        }, 5000);
-        
-        onAuthStateChanged(auth, async (firebaseUser: User | null) => {
-          clearTimeout(safetyTimeout);
-          try {
-            if (firebaseUser) {
-               try {
-                 const userDoc = await getDoc(doc(db, 'profiles', firebaseUser.uid));
-                 if (userDoc.exists()) {
-                   const profileData = userDoc.data() as UserProfile;
-                   set({ user: profileData, session: firebaseUser });
-                   
-                   // Sync with MySQL to get onboarding status
-                   try {
-                     const syncRes = await fetch(`${API_BASE_URL}/api/auth/sync`, {
-                       method: 'POST',
-                       headers: { 'Content-Type': 'application/json' },
-                       body: JSON.stringify(profileData)
-                     });
-                     const syncData = await syncRes.json();
-                     if (syncData.onboarded !== undefined) {
-                       set({ user: { ...profileData, onboarded: syncData.onboarded } });
-                     }
-                   } catch (e) {
-                     console.error('Initial sync failed:', e);
-                   }
-                 } else {
-                   // Create minimal profile if not exists
-                    const profile: UserProfile = {
-                       id: firebaseUser.uid,
-                       full_name: firebaseUser.displayName || 'User',
-                       username: firebaseUser.email?.split('@')[0] || 'user',
-                       email: firebaseUser.email || '',
-                       avatar_url: firebaseUser.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${firebaseUser.uid}`,
-                       role: 'user',
-                       v_coins: 500,
-                       city: 'Mumbai',
-                       onboarded: false
-                    };
-                    set({ user: profile, session: firebaseUser });
-                    
-                    // Sync with MySQL
-                    fetch(`${API_BASE_URL}/api/auth/sync`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify(profile)
-                    }).catch(console.error);
-                 }
-               } catch (firestoreError) {
-                 console.warn('Firestore error during initialization, using auth fallback:', firestoreError);
-                 set({ 
-                   user: {
-                      id: firebaseUser.uid,
-                      full_name: firebaseUser.displayName || 'User',
-                      username: firebaseUser.email?.split('@')[0] || 'user',
-                      email: firebaseUser.email || '',
-                      avatar_url: firebaseUser.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${firebaseUser.uid}`,
-                      role: 'user',
-                      v_coins: 500,
-                      city: 'Mumbai'
-                   },
-                   session: firebaseUser 
-                 });
-               }
-            } else {
-              set({ user: null, session: null });
-            }
-          } finally {
-            set({ isInitializing: false, isLoading: false });
-          }
-        });
+        } finally {
+          set({ isInitializing: false, isLoading: false });
+        }
       },
     }),
     {
       name: 'vhop-auth',
-      partialize: (state) => ({ user: state.user }), // Only persist user profile
+      partialize: (state) => ({ user: state.user }),
     }
   )
 );
