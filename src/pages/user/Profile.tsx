@@ -13,8 +13,6 @@ import type { Ticket } from '../../store/ticketStore';
 import { Settings, MapPin, Mail, Phone, ShieldCheck, QrCode, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-import { mockDb as dbClient } from '../../lib/mockDb';
-
 export const Profile: React.FC = () => {
   const { user } = useAuthStore();
   const navigate = useNavigate();
@@ -24,36 +22,33 @@ export const Profile: React.FC = () => {
   useEffect(() => {
     const fetchTickets = async () => {
       if (!user) return;
-      const isDbConfigured = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
       
-      if (isDbConfigured) {
-        const { data, error } = await dbClient
-          .from('tickets')
-          .select('*, events(title, venue_name, city, start_date, cover_image)')
-          .eq('user_id', user.id);
+      try {
+        const response = await fetch(`https://vhop.in/api/bookings/user/${user.id}`);
+        const data = await response.json();
         
-        if (!error && data) {
-          // Sync database tickets with local store if not already present
-          data.forEach((dbTicket: any) => {
-            if (!tickets.find(t => t.id === dbTicket.id)) {
-              addTicket({
-                id: dbTicket.id,
-                eventId: dbTicket.event_id,
-                eventTitle: dbTicket.events?.title || 'Event',
-                venueName: dbTicket.events?.venue_name || 'Venue',
-                city: dbTicket.events?.city || 'City',
-                startDate: dbTicket.events?.start_date || new Date().toISOString(),
-                coverImage: dbTicket.events?.cover_image || '',
-                ticketName: dbTicket.ticket_name,
-                price: dbTicket.price_paid,
-                quantity: dbTicket.quantity,
-                bookingId: dbTicket.booking_id,
-                qrCode: dbTicket.qr_code,
-                bookedAt: dbTicket.booked_at
-              });
-            }
-          });
-        }
+        data.forEach((dbTicket: any) => {
+          if (!tickets.find(t => t.id === dbTicket.id)) {
+            addTicket({
+              id: dbTicket.id,
+              eventId: dbTicket.event_id,
+              eventTitle: dbTicket.event_title || 'Event',
+              venueName: dbTicket.venue_name || 'Venue',
+              city: dbTicket.city || 'City',
+              startDate: dbTicket.start_date || new Date().toISOString(),
+              coverImage: dbTicket.cover_image || '',
+              ticketName: dbTicket.ticket_name,
+              price: dbTicket.price,
+              quantity: dbTicket.quantity,
+              bookingId: dbTicket.booking_id || dbTicket.id,
+              qrCode: dbTicket.qr_code || `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${dbTicket.id}`,
+              bookedAt: dbTicket.booked_at || new Date().toISOString(),
+              guests: typeof dbTicket.guests === 'string' ? JSON.parse(dbTicket.guests) : (dbTicket.guests || [])
+            });
+          }
+        });
+      } catch (error) {
+        console.error('Error fetching tickets from MySQL:', error);
       }
     };
 
@@ -86,8 +81,19 @@ export const Profile: React.FC = () => {
             </div>
             <p className="text-[var(--violet-bright)] font-bold text-sm">@{user.username}</p>
             <p className="text-[var(--text-secondary)] text-sm md:text-base max-w-md mx-auto md:mx-0">
-              Nightlife enthusiast | Techno lover | VHOP explorer | {user.city || 'Global'}
+              {user.interests && user.interests.length > 0 
+                ? `Interests: ${user.interests.join(', ').replace(/_/g, ' ')}`
+                : `Nightlife enthusiast | Techno lover | VHOP explorer | ${user.city || 'Global'}`}
             </p>
+            {user.interests && (
+              <div className="flex flex-wrap gap-2 justify-center md:justify-start mt-4">
+                {user.interests.map(interest => (
+                  <span key={interest} className="px-3 py-1 rounded-full bg-[var(--violet-primary)]/10 border border-[var(--violet-primary)]/20 text-[var(--violet-bright)] text-[10px] font-bold uppercase tracking-wider">
+                    {interest.replace(/_/g, ' ')}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
           <button className="absolute top-6 right-6 md:relative md:top-0 md:right-0 p-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
             <Settings className="w-5 h-5 text-[var(--text-muted)]" />
@@ -160,7 +166,7 @@ export const Profile: React.FC = () => {
                       onClick={() => setSelectedTicket(ticket)}
                       className="p-4 flex gap-4 cursor-pointer hover:bg-white/[0.07]"
                     >
-                      <img src={ticket.coverImage} className="w-20 h-20 rounded-xl object-cover" alt="" />
+                      <img src={ticket.coverImage?.startsWith('/uploads') ? `https://vhop.in${ticket.coverImage}` : ticket.coverImage} className="w-20 h-20 rounded-xl object-cover" alt="" />
                       <div className="flex-1 flex justify-between items-center">
                         <div>
                           <h4 className="font-bold text-white">{ticket.eventTitle}</h4>

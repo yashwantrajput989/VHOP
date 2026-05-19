@@ -3,12 +3,12 @@ import { PageWrapper } from '../../components/layout/PageWrapper';
 import { GlassCard } from '../../components/ui/GlassCard';
 import { GlowButton } from '../../components/ui/GlowButton';
 import { Building2, Mail, Phone, Globe, CreditCard, Save } from 'lucide-react';
-import { mockDb as dbClient } from '../../lib/mockDb';
 import { useAuthStore } from '../../store/authStore';
 
 export const AdminSettings: React.FC = () => {
   const { user } = useAuthStore();
   const [isLoading, setIsLoading] = useState(false);
+  const [company, setCompany] = useState<any>(null);
   const [formData, setFormData] = useState({
     companyName: '',
     email: '',
@@ -21,21 +21,33 @@ export const AdminSettings: React.FC = () => {
   useEffect(() => {
     const fetchSettings = async () => {
       if (!user) return;
-      const { data: company } = await dbClient
-        .from('companies')
-        .select('*')
-        .eq('admin_user_id', user.id)
-        .single();
-      
-      if (company) {
-        setFormData({
-          companyName: company.name || '',
-          email: user.email || '',
-          phone: company.phone || '',
-          website: company.website || '',
-          bio: company.description || '',
-          payoutUpi: company.payout_upi || '',
-        });
+      try {
+        const response = await fetch(`https://vhop.in/api/admin/dashboard/${user.id}`);
+        if (response.ok) {
+          const data = await response.json();
+          const comp = data.company;
+          setCompany(comp);
+          setFormData({
+            companyName: comp.name || '',
+            email: comp.contact_email || user.email || '',
+            phone: comp.phone || '',
+            website: comp.website || '',
+            bio: comp.description || '',
+            payoutUpi: comp.payout_upi || '',
+          });
+        } else {
+            // Default global settings if no specific company exists
+            setFormData({
+                companyName: 'Global Admin',
+                email: user.email || '',
+                phone: '',
+                website: 'https://vhop.in',
+                bio: 'Platform wide settings',
+                payoutUpi: '',
+            });
+        }
+      } catch (error) {
+        console.error('Error fetching admin settings from MySQL:', error);
       }
     };
     fetchSettings();
@@ -43,12 +55,36 @@ export const AdminSettings: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) return;
     setIsLoading(true);
-    // Simulate update
-    setTimeout(() => {
+    
+    const targetId = company?.id || 'vhop_official';
+    
+    try {
+      const response = await fetch(`https://vhop.in/api/companies/${targetId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            name: formData.companyName,
+            phone: formData.phone,
+            website: formData.website,
+            description: formData.bio,
+            payout_upi: formData.payoutUpi,
+            contact_email: formData.email
+        })
+      });
+
+      if (response.ok) {
+        alert('Settings updated successfully!');
+      } else {
+        throw new Error('Failed to update settings');
+      }
+    } catch (error) {
+      console.error('Error updating settings:', error);
+      alert('Failed to update settings.');
+    } finally {
       setIsLoading(false);
-      alert('Settings updated successfully!');
-    }, 1000);
+    }
   };
 
   return (
@@ -60,7 +96,6 @@ export const AdminSettings: React.FC = () => {
         </header>
 
         <form onSubmit={handleSubmit} className="space-y-8">
-          {/* Organization Profile */}
           <GlassCard className="p-8 space-y-6">
             <div className="flex items-center gap-3 pb-4 border-b border-white/5">
               <Building2 className="w-5 h-5 text-[var(--violet-bright)]" />
@@ -85,8 +120,8 @@ export const AdminSettings: React.FC = () => {
                   <input 
                     type="email" 
                     value={formData.email}
-                    disabled
-                    className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 opacity-50 cursor-not-allowed"
+                    onChange={(e) => setFormData({...formData, email: e.target.value})}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] outline-none transition-all"
                   />
                 </div>
               </div>
@@ -129,7 +164,6 @@ export const AdminSettings: React.FC = () => {
             </div>
           </GlassCard>
 
-          {/* Payout Details */}
           <GlassCard className="p-8 space-y-6">
             <div className="flex items-center gap-3 pb-4 border-b border-white/5">
               <CreditCard className="w-5 h-5 text-[var(--accent-cyan)]" />
@@ -152,15 +186,8 @@ export const AdminSettings: React.FC = () => {
             </div>
           </GlassCard>
 
-          {/* Action Buttons */}
           <div className="flex justify-end gap-4">
-            <button 
-              type="button"
-              className="px-8 py-4 rounded-xl bg-white/5 hover:bg-white/10 font-bold transition-all"
-            >
-              Cancel
-            </button>
-            <GlowButton type="submit" isLoading={isLoading} className="px-12 py-4">
+            <GlowButton type="submit" disabled={isLoading} className="px-12 py-4">
               <Save className="w-5 h-5 mr-2" /> Save Changes
             </GlowButton>
           </div>

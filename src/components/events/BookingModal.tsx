@@ -7,7 +7,6 @@ import { GlowButton } from '../ui/GlowButton';
 import { useAuthStore } from '../../store/authStore';
 import { useTicketStore } from '../../store/ticketStore';
 import { useUIStore } from '../../store/uiStore';
-import { mockDb as dbClient } from '../../lib/mockDb';
 
 interface BookingModalProps {
   isOpen: boolean;
@@ -63,11 +62,11 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, eve
         alert('Please fill in all guest details');
         return;
       }
-      handleMockPayment();
+      handlePayment();
     }
   };
 
-  const handleMockPayment = async () => {
+  const handlePayment = async () => {
     if (!user) {
       openModal('auth');
       return;
@@ -75,46 +74,64 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, eve
 
     setStep('processing');
     
-    const bookingId = `VH-${Math.random().toString(36).substring(2, 11).toUpperCase()}`;
-    
-    // Save to Mock DB (Simulating Supabase)
-    await dbClient
-      .from('bookings')
-      .insert([{
+    try {
+      const bookingId = `VH-${Math.random().toString(36).substring(2, 11).toUpperCase()}`;
+      const qrCode = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${bookingId}`;
+      
+      const bookingData = {
         event_id: event.id,
+        event_title: event.title,
+        venue_name: event.venue_name,
+        city: event.city,
+        start_date: event.start_date,
+        cover_image: event.cover_image,
         user_id: user.id,
         quantity: quantity,
         total_amount: totalAmount,
-        payment_id: `pay_mock_${Math.random().toString(36).substring(7)}`,
+        ticket_name: ticket.name,
+        price: ticket.price,
+        payment_id: `pay_firebase_${Math.random().toString(36).substring(7)}`,
         payment_status: 'paid',
         booking_status: 'confirmed',
-        guests: guests // Storing guest info
-      }]);
+        booking_id: bookingId,
+        qr_code: qrCode,
+        booked_at: new Date().toISOString(),
+        guests: guests
+      };
 
-    // Update tickets sold count
-    await dbClient
-      .from('events')
-      .update({ tickets_sold: (event.tickets_sold || 0) + quantity })
-      .eq('id', event.id);
-    
-    addTicket({
-      id: bookingId,
-      eventId: event.id,
-      eventTitle: event.title,
-      venueName: event.venue_name,
-      city: event.city,
-      startDate: event.start_date,
-      coverImage: event.cover_image,
-      ticketName: ticket.name,
-      price: ticket.price,
-      quantity: quantity,
-      bookingId: bookingId,
-      qrCode: `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${bookingId}`,
-      bookedAt: new Date().toISOString(),
-      guests: guests
-    });
+      // Save to MySQL Backend
+      const response = await fetch('https://vhop.in/api/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bookingData)
+      });
 
-    setStep('success');
+      if (!response.ok) throw new Error('Failed to save booking');
+      const result = await response.json();
+      
+      addTicket({
+        id: result.id,
+        eventId: event.id,
+        eventTitle: event.title,
+        venueName: event.venue_name,
+        city: event.city,
+        startDate: event.start_date,
+        coverImage: event.cover_image,
+        ticketName: ticket.name,
+        price: ticket.price,
+        quantity: quantity,
+        bookingId: bookingId,
+        qrCode: qrCode,
+        bookedAt: bookingData.booked_at,
+        guests: guests
+      });
+
+      setStep('success');
+    } catch (error) {
+      console.error('Error during booking payment:', error);
+      alert('Payment simulation failed. Please try again.');
+      setStep('details');
+    }
   };
 
   if (!isOpen || !ticket) return null;
@@ -161,6 +178,15 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, eve
                       <h4 className="font-bold text-white">{event.title}</h4>
                       <p className="text-xs text-[var(--text-secondary)] mt-1">{event.venue_name}, {event.city}</p>
                       <div className="mt-2 text-[var(--violet-glow)] font-bold text-sm">{ticket.name}</div>
+                      {ticket.benefits && (
+                        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                          {ticket.benefits.map((benefit: string, idx: number) => (
+                            <span key={idx} className="text-[10px] text-[var(--text-muted)] flex items-center gap-1">
+                              • {benefit}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
 

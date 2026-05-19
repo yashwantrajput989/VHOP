@@ -10,7 +10,6 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ isAdmin = false }) => {
   const userNavItems = [
-    { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { label: 'Events', path: '/events', icon: Home },
     { label: 'Social', path: '/social', icon: Users },
     { label: 'Community', path: '/community', icon: Map },

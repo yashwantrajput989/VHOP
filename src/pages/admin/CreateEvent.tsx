@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { PageWrapper } from '../../components/layout/PageWrapper';
 import { GlassCard } from '../../components/ui/GlassCard';
 import { GlowButton } from '../../components/ui/GlowButton';
-import { Sparkles, Image as ImageIcon, ArrowLeft } from 'lucide-react';
+import { Sparkles, Image as ImageIcon, ArrowLeft, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router-dom';
-import { mockDb as dbClient } from '../../lib/mockDb';
 import { useAuthStore } from '../../store/authStore';
+import { API_BASE_URL, getImageUrl } from '../../config';
 
 export const CreateEvent: React.FC = () => {
   const { id } = useParams();
@@ -22,41 +22,46 @@ export const CreateEvent: React.FC = () => {
     description: '',
     category: '',
     price: '',
-    city: 'Mumbai',
+    city: 'Visakhapatnam',
     venue_name: '',
     cover_image: '',
     start_date: '',
     total_tickets: '100',
+    ticket_types: [] as any[],
+  });
+
+  const [newTicketType, setNewTicketType] = useState({
+    name: '',
+    price: '',
+    benefits: '',
   });
 
   useEffect(() => {
     const init = async () => {
       if (!user) return;
 
-      // Get admin's company
-      const { data: companyData } = await dbClient
-        .from('companies')
-        .select('*')
-        .eq('admin_user_id', user.id)
-        .single();
-      
-      if (companyData) {
-        setCompany(companyData);
-      } else {
-        alert('You need a verified company to create events.');
-        navigate('/admin');
-        return;
-      }
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/admin/dashboard/${user.id}`);
+        if (response.ok) {
+          const data = await response.json();
+          setCompany(data.company);
+        } else {
+          // Default company for simplified admin mode
+          setCompany({ id: 'vhop_official', name: 'Global Admin' });
+        }
+      } catch (error) {
+        console.error('Error fetching company:', error);
+        setCompany({ id: 'vhop_official', name: 'Global Admin' });
+      } 
 
       if (id) {
-        // Fetch existing event for editing
-        const { data: eventData } = await dbClient
-          .from('events')
-          .select('*')
-          .eq('id', id)
-          .single();
-        
-        if (eventData) {
+        try {
+          const response = await fetch(`${API_BASE_URL}/api/events/${id}`);
+          if (response.ok) {
+            const eventData = await response.json();
+            if (typeof eventData.ticket_types === 'string') {
+              eventData.ticket_types = JSON.parse(eventData.ticket_types);
+            }
           setFormData({
             title: eventData.title,
             short_description: eventData.short_description || '',
@@ -68,10 +73,14 @@ export const CreateEvent: React.FC = () => {
             cover_image: eventData.cover_image || '',
             start_date: eventData.start_date ? new Date(eventData.start_date).toISOString().slice(0, 16) : '',
             total_tickets: eventData.total_tickets?.toString() || '100',
+            ticket_types: eventData.ticket_types || [],
           });
         }
+      } catch (error) {
+        console.error('Error fetching event details:', error);
       }
-    };
+    }
+  };
 
     init();
   }, [id, user, navigate]);
@@ -84,7 +93,7 @@ export const CreateEvent: React.FC = () => {
         title: 'Cyberpunk Rooftop Rave',
         short_description: 'A neon-drenched night of futuristic beats.',
         description: 'Get ready for the most immersive cyberpunk experience Mumbai has ever seen. We\'re taking over the highest rooftop in the city for a night of underground techno, interactive light installations, and synthwave vibes. 🌃🔊🚀',
-        category: 'Music',
+        city: 'Visakhapatnam',
         price: '1999',
         cover_image: 'https://images.unsplash.com/photo-1541701494587-cb58502866ab?q=80&w=1000',
       }));
@@ -105,25 +114,28 @@ export const CreateEvent: React.FC = () => {
       total_tickets: parseInt(formData.total_tickets) || 100,
       status: 'published',
       start_date: new Date(formData.start_date).toISOString(),
+      ticket_types: formData.ticket_types.map((t: any) => ({
+        ...t,
+        id: t.id || `t-${Math.random().toString(36).substring(2, 9)}`,
+        price: parseFloat(t.price) || 0,
+      })),
     };
 
-    let result;
-    if (id) {
-      result = await dbClient
-        .from('events')
-        .update(eventPayload)
-        .eq('id', id);
-    } else {
-      result = await dbClient
-        .from('events')
-        .insert([eventPayload]);
-    }
-
-    if (!result.error) {
-      navigate('/admin');
-    } else {
-      console.error('Error saving event:', result.error);
-      alert('Error saving event. Please check all fields.');
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(eventPayload)
+      });
+      
+      if (response.ok) {
+        navigate('/admin');
+      } else {
+        throw new Error('Failed to save event');
+      }
+    } catch (error) {
+      console.error('Error saving event to MySQL:', error);
+      alert('Error saving event. Please check your connection.');
     }
     setIsSubmitting(false);
   };
@@ -221,8 +233,118 @@ export const CreateEvent: React.FC = () => {
             </GlassCard>
 
             <GlassCard className="p-8 space-y-6">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-bold font-display text-white">Ticket Types</h3>
+                <p className="text-xs text-[var(--text-secondary)]">Define your pricing tiers</p>
+              </div>
+
+              {/* Add Ticket Type Form */}
+              <div className="p-6 rounded-2xl bg-white/5 border border-white/10 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">Type Name</label>
+                    <input 
+                      type="text" 
+                      value={newTicketType.name}
+                      onChange={(e) => setNewTicketType({...newTicketType, name: e.target.value})}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:border-[var(--violet-bright)] outline-none"
+                      placeholder="e.g. VIP Access"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">Price (INR)</label>
+                    <input 
+                      type="number" 
+                      value={newTicketType.price}
+                      onChange={(e) => setNewTicketType({...newTicketType, price: e.target.value})}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:border-[var(--violet-bright)] outline-none"
+                      placeholder="999"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">Benefits (One per line)</label>
+                  <textarea 
+                    rows={3}
+                    value={newTicketType.benefits}
+                    onChange={(e) => setNewTicketType({...newTicketType, benefits: e.target.value})}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:border-[var(--violet-bright)] outline-none resize-none"
+                    placeholder="Unlimited Drinks&#10;VIP Lounge Access&#10;After Party Entry"
+                  />
+                </div>
+                <GlowButton 
+                  type="button"
+                  onClick={() => {
+                    if (!newTicketType.name || !newTicketType.price) return;
+                    setFormData({
+                      ...formData,
+                      ticket_types: [
+                        ...formData.ticket_types,
+                        {
+                          ...newTicketType,
+                          benefits: newTicketType.benefits.split('\n').filter(b => b.trim() !== '')
+                        }
+                      ]
+                    });
+                    setNewTicketType({ name: '', price: '', benefits: '' });
+                  }}
+                  className="w-full py-2.5 text-sm"
+                >
+                  Add Ticket Type
+                </GlowButton>
+              </div>
+
+              {/* List of Added Ticket Types */}
+              <div className="space-y-3">
+                {formData.ticket_types.map((type: any, index: number) => (
+                  <div key={index} className="p-4 rounded-xl bg-[var(--violet-bright)]/5 border border-[var(--violet-bright)]/20 flex items-center justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-white">{type.name}</span>
+                        <span className="text-[var(--violet-bright)] font-bold">₹{type.price}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-x-3 mt-1">
+                        {type.benefits.map((benefit: string, bIndex: number) => (
+                          <span key={bIndex} className="text-[10px] text-[var(--text-secondary)] flex items-center gap-1">
+                            • {benefit}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        const updated = [...formData.ticket_types];
+                        updated.splice(index, 1);
+                        setFormData({...formData, ticket_types: updated});
+                      }}
+                      className="p-2 text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </GlassCard>
+
+            <GlassCard className="p-8 space-y-6">
               <h3 className="text-xl font-bold font-display">Logistics</h3>
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-[var(--text-secondary)]">City</label>
+                  <select 
+                    required
+                    value={formData.city}
+                    onChange={(e) => setFormData({...formData, city: e.target.value})}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:border-[var(--violet-bright)] outline-none"
+                  >
+                    <option value="Visakhapatnam">Visakhapatnam</option>
+                    <option value="Mumbai">Mumbai</option>
+                    <option value="Bangalore">Bangalore</option>
+                    <option value="Hyderabad">Hyderabad</option>
+                    <option value="Delhi">Delhi</option>
+                  </select>
+                </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-[var(--text-secondary)]">Venue Name</label>
                   <input 
@@ -249,23 +371,47 @@ export const CreateEvent: React.FC = () => {
           </div>
 
           <div className="space-y-6">
-            <GlassCard className="p-6 border-dashed border-2 border-white/10 hover:border-[var(--violet-bright)] transition-colors">
+            <GlassCard className="p-6 border-dashed border-2 border-white/10 hover:border-[var(--violet-bright)] transition-colors relative group">
+              <input 
+                type="file" 
+                accept="image/*"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    const formData = new FormData();
+                    formData.append('image', file);
+                    try {
+                      const response = await fetch(`${API_BASE_URL}/api/upload`, {
+                        method: 'POST',
+                        body: formData
+                      });
+                      const data = await response.json();
+                      if (data.url) {
+                        setFormData(prev => ({ ...prev, cover_image: data.url }));
+                      }
+                    } catch (error) {
+                      console.error('Upload failed:', error);
+                    }
+                  }
+                }}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+              />
               <div className="space-y-4">
                 <div className="p-4 rounded-2xl bg-white/5 text-[var(--text-muted)] flex flex-col items-center">
                   {formData.cover_image ? (
-                    <img src={formData.cover_image} className="w-full h-32 object-cover rounded-lg mb-4" alt="Preview" />
+                    <img 
+                      src={getImageUrl(formData.cover_image)} 
+                      className="w-full h-32 object-cover rounded-lg mb-4" 
+                      alt="Preview" 
+                    />
                   ) : (
-                    <ImageIcon className="w-10 h-10" />
+                    <ImageIcon className="w-10 h-10 mb-2" />
                   )}
-                  <p className="text-xs font-medium">Cover Image URL</p>
+                  <p className="text-xs font-bold text-white group-hover:text-[var(--violet-bright)] transition-colors">
+                    {formData.cover_image ? 'Change Image' : 'Upload Cover Image'}
+                  </p>
+                  <p className="text-[10px] text-[var(--text-muted)] mt-1">PNG, JPG or WebP (Max 5MB)</p>
                 </div>
-                <input 
-                  type="url" 
-                  value={formData.cover_image}
-                  onChange={(e) => setFormData({...formData, cover_image: e.target.value})}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs focus:border-[var(--violet-bright)] outline-none"
-                  placeholder="Paste image URL here"
-                />
               </div>
             </GlassCard>
 

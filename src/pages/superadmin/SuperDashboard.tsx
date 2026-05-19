@@ -3,7 +3,8 @@ import { PageWrapper } from '../../components/layout/PageWrapper';
 import { GlassCard } from '../../components/ui/GlassCard';
 import { Users, Building, Calendar, IndianRupee, CheckCircle, XCircle } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
-import { mockDb as dbClient } from '../../lib/mockDb';
+import { db } from '../../lib/firebase';
+import { collection, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../../store/authStore';
 import { AdminLogin } from '../admin/AdminLogin';
@@ -23,54 +24,60 @@ export const SuperDashboard: React.FC = () => {
   useEffect(() => {
     const fetchPlatformStats = async () => {
       setIsLoading(true);
-      
-      // Fetch users count
-      const { count: userCount } = await dbClient.from('profiles').select('*', { count: 'exact', head: true });
-      
-      // Fetch companies
-      const { data: companies } = await dbClient.from('companies').select('*');
-      const { data: pending } = await dbClient.from('companies').select('*').eq('verified', false);
-      
-      // Fetch events
-      const { data: events } = await dbClient.from('events').select('*');
-      
-      const totalRevenue = events?.reduce((acc: number, ev: any) => acc + (ev.price * (ev.tickets_sold || 0)), 0) || 0;
+      try {
+        // Fetch users (Simulated count for now)
+        const usersRef = collection(db, 'profiles');
+        const usersSnapshot = await getDocs(usersRef);
+        
+        // Fetch companies
+        const companiesRef = collection(db, 'companies');
+        const companiesSnapshot = await getDocs(companiesRef);
+        const companies = companiesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const pending = companies.filter((c: any) => !c.verified);
+        
+        // Fetch events
+        const eventsRef = collection(db, 'events');
+        const eventsSnapshot = await getDocs(eventsRef);
+        const events = eventsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        const totalRevenue = events.reduce((acc: number, ev: any) => acc + (ev.price * (ev.tickets_sold || 0)), 0);
 
-      setStats({
-        totalUsers: userCount || 0,
-        activeCompanies: companies?.filter((c: any) => c.verified).length || 0,
-        totalEvents: events?.length || 0,
-        grossRevenue: totalRevenue
-      });
-      
-      setPendingCompanies(pending || []);
-      setIsLoading(false);
+        setStats({
+          totalUsers: usersSnapshot.size || 0,
+          activeCompanies: companies.filter((c: any) => c.verified).length || 0,
+          totalEvents: events.length || 0,
+          grossRevenue: totalRevenue
+        });
+        
+        setPendingCompanies(pending);
+      } catch (error) {
+        console.error('Error fetching platform stats:', error);
+      } finally {
+        setIsLoading(false);
+      }
     };
 
     fetchPlatformStats();
   }, []);
 
   const handleApproveCompany = async (id: string) => {
-    const { error } = await dbClient
-      .from('companies')
-      .update({ verified: true })
-      .eq('id', id);
-    
-    if (!error) {
+    try {
+      const companyRef = doc(db, 'companies', id);
+      await updateDoc(companyRef, { verified: true });
       setPendingCompanies(prev => prev.filter(c => c.id !== id));
       setStats(prev => ({ ...prev, activeCompanies: prev.activeCompanies + 1 }));
+    } catch (error) {
+      console.error('Error approving company:', error);
     }
   };
 
   const handleRejectCompany = async (id: string) => {
     if (window.confirm('Reject this company application?')) {
-      const { error } = await dbClient
-        .from('companies')
-        .delete()
-        .eq('id', id);
-      
-      if (!error) {
+      try {
+        await deleteDoc(doc(db, 'companies', id));
         setPendingCompanies(prev => prev.filter(c => c.id !== id));
+      } catch (error) {
+        console.error('Error rejecting company:', error);
       }
     }
   };

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PageWrapper } from '../../components/layout/PageWrapper';
+
 import { GlassCard } from '../../components/ui/GlassCard';
 import { GlowButton } from '../../components/ui/GlowButton';
 import { Mail, Lock, LayoutDashboard, ShieldCheck } from 'lucide-react';
@@ -51,8 +51,7 @@ export const AdminLogin: React.FC<{ forcedRole?: 'admin' | 'superadmin' }> = ({ 
   };
 
   return (
-    <PageWrapper>
-      <div className="min-h-[80vh] flex items-center justify-center p-4">
+    <div className="min-h-screen bg-[var(--bg-primary)] flex items-center justify-center p-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -242,7 +241,6 @@ export const AdminLogin: React.FC<{ forcedRole?: 'admin' | 'superadmin' }> = ({ 
             </div>
           </GlassCard>
         </motion.div>
-      </div>
-    </PageWrapper>
+    </div>
   );
 };

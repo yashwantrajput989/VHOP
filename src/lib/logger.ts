@@ -1,4 +1,4 @@
-const BACKEND_URL = 'http://localhost:5000/api/log';
+const BACKEND_URL = 'https://vhop.in/api/log';
 
 export const logToBackend = async (type: string, user: any, details: any = {}) => {
     try {

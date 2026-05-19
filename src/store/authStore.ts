@@ -23,6 +23,8 @@ interface UserProfile {
   v_coins: number;
   city?: string;
   phone?: string;
+  onboarded?: boolean;
+  interests?: string[];
 }
 
 interface AuthState {
@@ -83,26 +85,6 @@ export const useAuthStore = create<AuthState>()(
       loginWithGoogle: async () => {
         set({ isLoading: true });
         try {
-          // If firebase is not configured with actual keys, use dummy login
-          if (auth.app.options.apiKey === 'dummy_api_key') {
-             await new Promise(resolve => setTimeout(resolve, 1000));
-             set({ 
-                user: {
-                  id: 'mock-google-123',
-                  full_name: 'Google User',
-                  username: 'googleuser',
-                  email: 'demo@google.com',
-                  avatar_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Demo',
-                  role: 'user',
-                  v_coins: 1000,
-                  city: 'Mumbai',
-                },
-                isLoading: false,
-                session: { user: { id: 'mock-google-123' } }
-              });
-            return;
-          }
-
           const result = await signInWithPopup(auth, googleProvider);
           const firebaseUser = result.user;
           
@@ -146,7 +128,23 @@ export const useAuthStore = create<AuthState>()(
             };
           }
           
+          // Sync with MySQL Backend
+          try {
+            const syncRes = await fetch('https://vhop.in/api/auth/sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(profile)
+            });
+            const syncData = await syncRes.json();
+            if (syncData.onboarded !== undefined) {
+              profile = { ...profile, onboarded: syncData.onboarded };
+            }
+          } catch (syncError) {
+            console.error('Failed to sync with MySQL:', syncError);
+          }
+
           set({ user: profile, session: firebaseUser, isLoading: false });
+
           logToBackend('google_login_success', profile);
           return profile;
         } catch (error: any) {
@@ -220,6 +218,21 @@ export const useAuthStore = create<AuthState>()(
               phone: phone
             };
           }
+
+          // Sync with MySQL Backend
+          try {
+            const syncRes = await fetch('https://vhop.in/api/auth/sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(profile)
+            });
+            const syncData = await syncRes.json();
+            if (syncData.onboarded !== undefined) {
+              profile = { ...profile, onboarded: syncData.onboarded };
+            }
+          } catch (syncError) {
+            console.error('Failed to sync phone user with MySQL:', syncError);
+          }
           
           set({ user: profile, session: firebaseUser, isLoading: false });
           logToBackend('phone_login_success', profile);
@@ -241,12 +254,6 @@ export const useAuthStore = create<AuthState>()(
       },
 
        initialize: async () => {
-        if (auth.app.options.apiKey === 'dummy_api_key') {
-          await new Promise(resolve => setTimeout(resolve, 1500));
-          set({ isInitializing: false, isLoading: false });
-          return;
-        }
-
         set({ isInitializing: true });
 
         // Safety timeout to prevent stuck loading screen
@@ -265,20 +272,44 @@ export const useAuthStore = create<AuthState>()(
                try {
                  const userDoc = await getDoc(doc(db, 'profiles', firebaseUser.uid));
                  if (userDoc.exists()) {
-                   set({ user: userDoc.data() as UserProfile, session: firebaseUser });
+                   const profileData = userDoc.data() as UserProfile;
+                   set({ user: profileData, session: firebaseUser });
+                   
+                   // Sync with MySQL to get onboarding status
+                   try {
+                     const syncRes = await fetch('https://vhop.in/api/auth/sync', {
+                       method: 'POST',
+                       headers: { 'Content-Type': 'application/json' },
+                       body: JSON.stringify(profileData)
+                     });
+                     const syncData = await syncRes.json();
+                     if (syncData.onboarded !== undefined) {
+                       set({ user: { ...profileData, onboarded: syncData.onboarded } });
+                     }
+                   } catch (e) {
+                     console.error('Initial sync failed:', e);
+                   }
                  } else {
                    // Create minimal profile if not exists
-                   const profile: UserProfile = {
-                      id: firebaseUser.uid,
-                      full_name: firebaseUser.displayName || 'User',
-                      username: firebaseUser.email?.split('@')[0] || 'user',
-                      email: firebaseUser.email || '',
-                      avatar_url: firebaseUser.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${firebaseUser.uid}`,
-                      role: 'user',
-                      v_coins: 500,
-                      city: 'Mumbai'
-                   };
-                   set({ user: profile, session: firebaseUser });
+                    const profile: UserProfile = {
+                       id: firebaseUser.uid,
+                       full_name: firebaseUser.displayName || 'User',
+                       username: firebaseUser.email?.split('@')[0] || 'user',
+                       email: firebaseUser.email || '',
+                       avatar_url: firebaseUser.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${firebaseUser.uid}`,
+                       role: 'user',
+                       v_coins: 500,
+                       city: 'Mumbai',
+                       onboarded: false
+                    };
+                    set({ user: profile, session: firebaseUser });
+                    
+                    // Sync with MySQL
+                    fetch('https://vhop.in/api/auth/sync', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(profile)
+                    }).catch(console.error);
                  }
                } catch (firestoreError) {
                  console.warn('Firestore error during initialization, using auth fallback:', firestoreError);

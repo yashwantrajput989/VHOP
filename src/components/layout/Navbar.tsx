@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Home, Users, Map, User, Bell, LogIn, LogOut, LayoutDashboard } from 'lucide-react';
+import { Home, Users, Map, User, Bell, LogIn, LogOut } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useUIStore } from '../../store/uiStore';
@@ -16,7 +16,6 @@ export const Navbar: React.FC = () => {
   const { openModal } = useUIStore();
 
   const navItems = [
-    { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { label: 'Events', path: '/events', icon: Home },
     { label: 'Social', path: '/social', icon: Users },
     { label: 'Community', path: '/community', icon: Map },
@@ -70,7 +69,7 @@ export const Navbar: React.FC = () => {
               className="relative p-2 rounded-full hover:bg-white/10 transition-colors text-[var(--text-muted)] hover:text-white"
             >
               <Bell className="w-5 h-5" />
-              {tickets.length > 0 && (
+              {(tickets.length > 0 || (user && !user.onboarded)) && (
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[var(--accent-pink)] border border-[var(--bg-primary)]" />
               )}
             </button>
@@ -86,7 +85,24 @@ export const Navbar: React.FC = () => {
                   <GlassCard className="p-4 shadow-glow border-[var(--violet-primary)]/20">
                     <h4 className="font-display font-bold mb-4">Notifications</h4>
                     <div className="space-y-3 max-h-96 overflow-y-auto">
-                      {tickets.length === 0 ? (
+                      {user && !user.onboarded && (
+                        <div 
+                          className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 flex gap-3 cursor-pointer hover:bg-amber-500/20 transition-colors"
+                          onClick={() => {
+                            setShowNotifications(false);
+                            openModal('auth');
+                          }}
+                        >
+                          <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center flex-shrink-0">
+                            <User className="w-5 h-5 text-amber-500" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-xs font-bold text-amber-500">Complete Your Profile</p>
+                            <p className="text-[10px] text-amber-200/80 mt-1">Add your interests to personalize your experience.</p>
+                          </div>
+                        </div>
+                      )}
+                      {tickets.length === 0 && (!user || user.onboarded) ? (
                         <p className="text-sm text-[var(--text-muted)] text-center py-4">No new notifications</p>
                       ) : (
                         tickets.map(ticket => (

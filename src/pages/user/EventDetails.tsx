@@ -1,14 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Calendar, MapPin, ArrowLeft, ShieldCheck, Share2, Info, Globe } from 'lucide-react';
-import { MOCK_EVENTS } from '../../lib/mockData';
+import { Calendar, MapPin, ArrowLeft, ShieldCheck, Share2, Info, Globe, CheckCircle2 } from 'lucide-react';
 import { PageWrapper } from '../../components/layout/PageWrapper';
 import { GlassCard } from '../../components/ui/GlassCard';
 import { GlowButton } from '../../components/ui/GlowButton';
 import { Badge } from '../../components/ui/Badge';
 import { BookingModal } from '../../components/events/BookingModal';
-import { mockDb as dbClient } from '../../lib/mockDb';
 
 export const EventDetails: React.FC = () => {
   const { id } = useParams();
@@ -20,19 +18,26 @@ export const EventDetails: React.FC = () => {
 
   useEffect(() => {
     const fetchEvent = async () => {
+      if (!id) return;
       setIsLoading(true);
-      const { data, error } = await dbClient
-        .from('events')
-        .select('*')
-        .eq('id', id)
-        .single();
-      
-      if (!error && data) {
-        setEvent(data);
-      } else {
-        setEvent(MOCK_EVENTS.find(e => e.id === id));
+      try {
+        const response = await fetch(`https://vhop.in/api/events/${id}`);
+        if (response.ok) {
+          const data = await response.json();
+          // MySQL might return ticket_types as stringified JSON
+          if (typeof data.ticket_types === 'string') {
+            data.ticket_types = JSON.parse(data.ticket_types);
+          }
+          setEvent(data);
+        } else {
+          setEvent(null);
+        }
+      } catch (error) {
+        console.error('Error fetching event from MySQL:', error);
+        setEvent(null);
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
 
     fetchEvent();
@@ -81,9 +86,9 @@ export const EventDetails: React.FC = () => {
             className="relative h-[300px] md:h-[400px] rounded-[2rem] overflow-hidden border border-white/10"
           >
             <img 
-              src={event.cover_image} 
-              alt={event.title}
-              className="w-full h-full object-cover"
+              src={event.cover_image?.startsWith('/uploads') ? `https://vhop.in${event.cover_image}` : event.cover_image} 
+              className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" 
+              alt={event.title} 
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
             <div className="absolute bottom-6 left-6 right-6">
@@ -146,26 +151,43 @@ export const EventDetails: React.FC = () => {
               </div>
             </div>
 
-            <div className="space-y-3 mb-6">
+            <div className="space-y-4 mb-6">
               {event.ticket_types?.map((type: any) => (
                 <div 
                   key={type.id}
                   onClick={() => setSelectedTicket(type.id)}
-                  className={`p-4 rounded-xl border transition-all cursor-pointer group ${
+                  className={`p-5 rounded-[1.5rem] border transition-all cursor-pointer group relative overflow-hidden ${
                     selectedTicket === type.id 
-                    ? 'bg-[var(--violet-primary)]/10 border-[var(--violet-bright)]' 
+                    ? 'bg-[var(--violet-primary)]/10 border-[var(--violet-bright)] ring-1 ring-[var(--violet-bright)]/30' 
                     : 'bg-white/5 border-white/5 hover:border-white/20'
                   }`}
                 >
-                  <div className="flex justify-between items-start mb-1">
-                    <span className="font-bold text-white group-hover:text-[var(--violet-glow)] transition-colors">
+                  {selectedTicket === type.id && (
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-[var(--violet-bright)]/10 blur-3xl -z-10" />
+                  )}
+                  
+                  <div className="flex justify-between items-center mb-3">
+                    <span className={`font-bold text-lg ${selectedTicket === type.id ? 'text-[var(--violet-glow)]' : 'text-white'} transition-colors`}>
                       {type.name}
                     </span>
-                    <span className="font-display font-bold text-lg text-white">
-                      ₹{type.price}
-                    </span>
+                    <div className="flex flex-col items-end">
+                      <span className="font-display font-bold text-xl text-white">
+                        ₹{type.price}
+                      </span>
+                      {type.price > 0 && <span className="text-[8px] text-[var(--text-muted)] uppercase tracking-tighter">+ Taxes & Fees</span>}
+                    </div>
                   </div>
-                  <p className="text-xs text-[var(--text-secondary)]">{type.description}</p>
+
+                  {type.benefits && type.benefits.length > 0 && (
+                    <ul className="space-y-1.5 mt-2">
+                      {type.benefits.map((benefit: string, idx: number) => (
+                        <li key={idx} className="flex items-start gap-2 text-[11px] text-[var(--text-secondary)]">
+                          <CheckCircle2 className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${selectedTicket === type.id ? 'text-[var(--violet-bright)]' : 'text-[var(--text-muted)]'}`} />
+                          <span>{benefit}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               ))}
             </div>

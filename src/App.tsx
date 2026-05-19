@@ -37,8 +37,7 @@ function App() {
   // Global redirect when user logs in
   useEffect(() => {
     if (user && location.pathname === '/') {
-      console.log('User authenticated, redirecting to dashboard from:', location.pathname);
-      navigate('/dashboard', { replace: true });
+      navigate('/events', { replace: true });
     }
   }, [user, location.pathname, navigate]);
 
@@ -50,19 +49,18 @@ function App() {
       {/* Loading screen removed for faster transitions */}
 
       <ScrollToTop />
-      {/* Sidebar for desktop */}
-      {location.pathname !== '/admin/login' && (
-        <Sidebar isAdmin={isAdminPath || isSuperAdminPath} />
-      )}
+      {/* Sidebar for desktop - only show for non-admin or verified admin paths */}
+      {!isAdminPath && !isSuperAdminPath && <Sidebar isAdmin={false} />}
+      { (isAdminPath || isSuperAdminPath) && user?.role === 'admin' && location.pathname !== '/admin/login' && <Sidebar isAdmin={true} />}
       
-      {/* Navbar for mobile and top-level desktop */}
-      <Navbar />
+      {/* Navbar for mobile and top-level desktop - HIDE for admin */}
+      {!isAdminPath && !isSuperAdminPath && <Navbar />}
 
-      <main className="flex-1 relative">
+      <main className={`flex-1 relative ${isAdminPath || isSuperAdminPath ? 'w-full' : ''}`}>
         <AnimatePresence mode="wait">
           <Routes location={location} key={location.pathname}>
             {/* User Routes */}
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/" element={<Navigate to="/events" replace />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/events" element={<Events />} />
             <Route path="/events/:id" element={<EventDetails />} />
@@ -82,7 +80,7 @@ function App() {
             <Route path="/superadmin" element={<SuperDashboard />} />
 
             {/* Fallback */}
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<Navigate to="/events" replace />} />
           </Routes>
         </AnimatePresence>
       </main>
