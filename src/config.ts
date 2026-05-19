@@ -1,10 +1,6 @@
 // VHOP Frontend Configuration
 
-const isProduction = import.meta.env.PROD;
-
-export const API_BASE_URL = isProduction 
-  ? 'https://api.vhop.in' // Replace with your backend subdomain once setup
-  : 'https://vhop.in';
+export const API_BASE_URL = 'https://vhop.in';
 
 export const IMAGE_BASE_URL = API_BASE_URL;
 
