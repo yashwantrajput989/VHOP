@@ -17,6 +17,7 @@
     "clsx": "^2.1.1",
     "firebase": "^12.13.0",
     "framer-motion": "^12.38.0",
+    "jsqr": "^1.4.0",
     "lucide-react": "^1.14.0",
     "mapbox-gl": "^3.23.1",
     "react": "^19.2.6",

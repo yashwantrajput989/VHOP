@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { API_BASE_URL } from '../../config';
+import jsQR from 'jsqr';
 
 interface Visitor {
   id: string;
@@ -130,6 +131,7 @@ export const EntryScanner: React.FC = () => {
   // Launch camera view finder
   const startCamera = async () => {
     setError('');
+    setSuccessMsg('');
     setIsCameraActive(true);
     setScannedUser(null);
     try {
@@ -154,7 +156,97 @@ export const EntryScanner: React.FC = () => {
     setIsCameraActive(false);
   };
 
-  // Process Simulated Check-in Scan
+  // Continuous real-time frame scanning loop using jsQR
+  useEffect(() => {
+    let animationFrameId: number;
+    let isActive = true;
+
+    const scanFrame = () => {
+      if (!isActive || !isCameraActive) return;
+
+      if (videoRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
+        const video = videoRef.current;
+
+        // Create offscreen canvas to capture current video stream frame
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+          try {
+            // Run high-performance jsQR decoder
+            const code = jsQR(imageData.data, imageData.width, imageData.height, {
+              inversionAttempts: 'dontInvert',
+            });
+
+            if (code && code.data) {
+              console.log('🎯 Decoded QR Code data:', code.data);
+
+              // 1. Try parsing direct V-Card JSON pass format
+              try {
+                const parsed = JSON.parse(code.data);
+                if (parsed && parsed.id && parsed.name) {
+                  const visitorProfile: UserProfile = {
+                    id: parsed.id,
+                    full_name: parsed.name,
+                    username: parsed.username || parsed.name.toLowerCase().replace(/\s+/g, ''),
+                    email: parsed.email || '',
+                    avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(parsed.email || parsed.id)}`,
+                    role: 'user',
+                    v_coins: 100,
+                    phone: parsed.phone || '',
+                    age: Number(parsed.age) || undefined,
+                    address: parsed.address || ''
+                  };
+
+                  playBeep();
+                  setScannedUser(visitorProfile);
+                  setSuccessMsg(`Successfully scanned QR V-Card for ${visitorProfile.full_name}!`);
+                  setError('');
+                  stopCamera();
+                  isActive = false;
+                  return;
+                }
+              } catch (jsonErr) {
+                // Not a direct JSON V-Card, proceed to match by ID or Email below
+              }
+
+              // 2. Try looking up user ID/Email in users directory
+              const matchedUser = users.find(u => u.id === code.data || u.email === code.data);
+              if (matchedUser) {
+                playBeep();
+                setScannedUser(matchedUser);
+                setSuccessMsg(`Successfully verified Ticket/ID for ${matchedUser.full_name}!`);
+                setError('');
+                stopCamera();
+                isActive = false;
+                return;
+              }
+            }
+          } catch (qrErr) {
+            console.error('jsQR processing error:', qrErr);
+          }
+        }
+      }
+
+      animationFrameId = requestAnimationFrame(scanFrame);
+    };
+
+    if (isCameraActive) {
+      animationFrameId = requestAnimationFrame(scanFrame);
+    }
+
+    return () => {
+      isActive = false;
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, [isCameraActive, users]);
+
+  // Process Simulated Check-in Scan (Desktop Fallback)
   const handleSimulateScan = () => {
     setError('');
     setSuccessMsg('');
@@ -175,35 +267,12 @@ export const EntryScanner: React.FC = () => {
     setTimeout(() => {
       setIsScanning(false);
       setScannedUser(matchedUser);
-      // Automatically pause camera view if active
       if (isCameraActive) {
         stopCamera();
       }
     }, 850);
   };
 
-  // Process Camera Scan Trigger
-  const handleCameraScanTrigger = () => {
-    setError('');
-    setSuccessMsg('');
-    if (users.length === 0) {
-      setError('No registered users available to simulate scan.');
-      return;
-    }
-
-    // Pick a random user to simulate scanning a real V-Card QR from webcam
-    const randomIndex = Math.floor(Math.random() * users.length);
-    const matchedUser = users[randomIndex];
-
-    setIsScanning(true);
-    playBeep();
-
-    setTimeout(() => {
-      setIsScanning(false);
-      setScannedUser(matchedUser);
-      stopCamera();
-    }, 1000);
-  };
 
   // Log visitor scan to persistent visitors table
   const handleApproveEntry = async () => {
@@ -338,15 +407,11 @@ export const EntryScanner: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Trigger Simulation Tap overlay */}
+                  {/* Auto-scanning active badge overlay */}
                   <div className="absolute bottom-4 z-20">
-                    <button 
-                      onClick={handleCameraScanTrigger}
-                      disabled={isScanning}
-                      className="px-4 py-2 rounded-xl bg-black/75 hover:bg-black text-xs font-bold text-white border border-white/20 hover:border-white/40 active:scale-95 transition-all"
-                    >
-                      {isScanning ? 'Decoding...' : '⚡ Press to Scan V-Card'}
-                    </button>
+                    <span className="px-3.5 py-1.5 rounded-full bg-green-500/20 backdrop-blur-md text-[9px] font-extrabold text-[var(--accent-green)] border border-[var(--accent-green)]/30 tracking-widest uppercase shadow-glow animate-pulse">
+                      🟢 Auto-Scanning Active
+                    </span>
                   </div>
                 </>
               ) : (

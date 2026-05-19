@@ -28,38 +28,95 @@ const pool = mysql.createPool({
     queueLimit: 0
 });
 
-// Ensure profiles table has necessary columns and initialize visitors table
+// Ensure profiles, companies, events, bookings, and visitors tables exist, and perform necessary migrations
 (async () => {
-    const addColumnSafely = async (columnName, columnDefinition) => {
-        try {
-            await pool.execute(`
-                ALTER TABLE profiles 
-                ADD COLUMN IF NOT EXISTS ${columnName} ${columnDefinition}
-            `);
-            console.log(`🟢 profiles.${columnName} column is verified/ready.`);
-        } catch (err) {
-            // Fallback for older MySQL versions that do not support "ADD COLUMN IF NOT EXISTS"
-            try {
-                await pool.execute(`ALTER TABLE profiles ADD COLUMN ${columnName} ${columnDefinition}`);
-                console.log(`🟢 profiles.${columnName} column added.`);
-            } catch (innerErr) {
-                if (innerErr.code === 'ER_DUP_COLUMN_NAME') {
-                    console.log(`🟢 profiles.${columnName} column already exists.`);
-                } else {
-                    console.error(`🔴 Error adding profiles.${columnName} column:`, innerErr.message);
-                }
-            }
-        }
-    };
-
     try {
-        // Verify profiles columns
-        await addColumnSafely('password', 'VARCHAR(255) NULL');
-        await addColumnSafely('age', 'INT NULL');
-        await addColumnSafely('address', 'TEXT NULL');
-        await addColumnSafely('v_coins_rewarded', 'BOOLEAN DEFAULT FALSE');
+        // 1. Verify/Create profiles table if not exists
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS profiles (
+                id VARCHAR(255) PRIMARY KEY,
+                full_name VARCHAR(255),
+                username VARCHAR(255) UNIQUE,
+                email VARCHAR(255) UNIQUE,
+                avatar_url TEXT,
+                role ENUM('user', 'admin', 'superadmin') DEFAULT 'user',
+                v_coins INT DEFAULT 100,
+                city VARCHAR(100) DEFAULT 'Mumbai',
+                phone VARCHAR(20),
+                onboarded BOOLEAN DEFAULT FALSE,
+                interests JSON,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log('🟢 Profiles table verified/created.');
 
-        // Verify/Create visitors table
+        // 2. Verify/Create companies table if not exists
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS companies (
+                id VARCHAR(255) PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                admin_user_id VARCHAR(255),
+                city VARCHAR(100),
+                description TEXT,
+                website VARCHAR(255),
+                contact_email VARCHAR(255),
+                phone VARCHAR(20),
+                payout_upi VARCHAR(255),
+                verified BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (admin_user_id) REFERENCES profiles(id)
+            )
+        `);
+        console.log('🟢 Companies table verified/created.');
+
+        // 3. Verify/Create events table if not exists
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS events (
+                id VARCHAR(255) PRIMARY KEY,
+                company_id VARCHAR(255),
+                title VARCHAR(255) NOT NULL,
+                short_description TEXT,
+                description TEXT,
+                venue_name VARCHAR(255),
+                city VARCHAR(100),
+                category VARCHAR(50),
+                price DECIMAL(10, 2),
+                cover_image TEXT,
+                start_date DATETIME,
+                end_date DATETIME,
+                status ENUM('draft', 'published', 'completed', 'cancelled') DEFAULT 'draft',
+                tickets_sold INT DEFAULT 0,
+                ticket_types JSON,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (company_id) REFERENCES companies(id)
+            )
+        `);
+        console.log('🟢 Events table verified/created.');
+
+        // 4. Verify/Create bookings table if not exists
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS bookings (
+                id VARCHAR(255) PRIMARY KEY,
+                event_id VARCHAR(255),
+                user_id VARCHAR(255),
+                quantity INT,
+                total_amount DECIMAL(10, 2),
+                ticket_name VARCHAR(255),
+                price DECIMAL(10, 2),
+                payment_id VARCHAR(255),
+                payment_status VARCHAR(50),
+                booking_status VARCHAR(50) DEFAULT 'confirmed',
+                booking_id VARCHAR(50),
+                qr_code TEXT,
+                guests JSON,
+                booked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (event_id) REFERENCES events(id),
+                FOREIGN KEY (user_id) REFERENCES profiles(id)
+            )
+        `);
+        console.log('🟢 Bookings table verified/created.');
+
+        // 5. Verify/Create visitors table if not exists
         await pool.execute(`
             CREATE TABLE IF NOT EXISTS visitors (
                 id VARCHAR(255) PRIMARY KEY,
@@ -72,9 +129,135 @@ const pool = mysql.createPool({
                 scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
-        console.log('🟢 Visitors database table is verified/ready.');
+        console.log('🟢 Visitors table verified/created.');
+
+        // 6. Check existing columns in profiles table (database-agnostic method)
+        const [columns] = await pool.execute('DESCRIBE profiles');
+        const existingColumns = columns.map(c => c.Field.toLowerCase());
+
+        const addColumnIfNeeded = async (columnName, columnDefinition) => {
+            if (!existingColumns.includes(columnName.toLowerCase())) {
+                try {
+                    await pool.execute(`ALTER TABLE profiles ADD COLUMN ${columnName} ${columnDefinition}`);
+                    console.log(`🟢 Added missing column: profiles.${columnName}`);
+                } catch (alterErr) {
+                    console.error(`🔴 Error adding profiles.${columnName} column:`, alterErr);
+                }
+            } else {
+                console.log(`🟢 Column profiles.${columnName} is verified/ready.`);
+            }
+        };
+
+        // Verify required columns in profiles
+        await addColumnIfNeeded('password', 'VARCHAR(255) NULL');
+        await addColumnIfNeeded('age', 'INT NULL');
+        await addColumnIfNeeded('address', 'TEXT NULL');
+        await addColumnIfNeeded('v_coins_rewarded', 'BOOLEAN DEFAULT FALSE');
+
+        // 7. Seed default admin profile (using INSERT IGNORE for safety in production)
+        await pool.execute(`
+            INSERT IGNORE INTO profiles (id, full_name, username, email, password, role, v_coins, city, onboarded)
+            VALUES ('test-admin-123', 'Demo Admin', 'demoadmin', 'admin@vhop.in', 'vhop1234', 'admin', 500, 'Mumbai', true)
+        `);
+        console.log('🟢 Demo admin account seeded/verified.');
+
+        // 8. Seed default verified company and admin company for events
+        await pool.execute(`
+            INSERT IGNORE INTO companies (id, name, admin_user_id, city, description, verified)
+            VALUES ('comp_test_1', 'VHOP Events Mumbai', 'test-admin-123', 'Mumbai', 'The official demo company for testing.', true)
+        `);
+        await pool.execute(`
+            INSERT IGNORE INTO companies (id, name, admin_user_id, city, description, verified)
+            VALUES ('vhop_official', 'Global Admin', NULL, 'Mumbai', 'VHOP official organization.', true)
+        `);
+        console.log('🟢 Demo companies seeded/verified.');
+
+        // 9. Seed multiple complete mock user profiles for scan simulator (using INSERT IGNORE for safety in production)
+        const mockUsers = [
+            { id: 'usr_demo_1', name: 'Kabir Sharma', username: 'kabir', email: 'kabir@gmail.com', phone: '+91 98765 43210', age: 24, address: 'Bandra West, Mumbai, MH' },
+            { id: 'usr_demo_2', name: 'Riya Sen', username: 'riya', email: 'riya@yahoo.com', phone: '+91 98123 45678', age: 22, address: 'Jubilee Hills, Hyderabad, TS' },
+            { id: 'usr_demo_3', name: 'Aarav Rajput', username: 'aarav', email: 'aarav@vhop.in', phone: '+91 99887 76655', age: 26, address: 'Gachibowli, Hyderabad, TS' }
+        ];
+
+        for (const u of mockUsers) {
+            await pool.execute(`
+                INSERT IGNORE INTO profiles (id, full_name, username, email, password, role, v_coins, city, phone, age, address, onboarded)
+                VALUES (?, ?, ?, ?, 'user123', 'user', 100, 'Mumbai', ?, ?, ?, true)
+            `, [u.id, u.name, u.username, u.email, u.phone, u.age, u.address]);
+        }
+        console.log('🟢 Mock user profiles seeded/verified for entry scan simulation.');
+
+        // 10. Seed default events
+        const mockEvents = [
+            {
+                id: 'ev_fxozfzr9f',
+                company_id: 'vhop_official',
+                title: 'Cyberpunk Rooftop Rave',
+                short_description: 'A neon-drenched night of futuristic beats.',
+                description: "Get ready for the most immersive cyberpunk experience Mumbai has ever seen. We're taking over the highest rooftop in the city for a night of underground techno, interactive light installations, and synthwave vibes. 🌃🔊🚀",
+                venue_name: 'ma intlo ',
+                city: 'Mumbai',
+                category: 'Music',
+                price: 1999.00,
+                cover_image: 'https://images.unsplash.com/photo-1541701494587-cb58502866ab?q=80&w=1000',
+                start_date: '2026-05-29 02:13:00',
+                status: 'published',
+                ticket_types: JSON.stringify([
+                    { name: "vip", price: 888, benefits: ["hello ", "hi ", "bye"], id: "t-uy2b8d9" },
+                    { name: "adukonodu", price: 9, benefits: ["bayita nuchoni chud", "lopalki oste tanesta", "dengey "], id: "t-219dvfs" },
+                    { name: "super Vip ", price: 1000000, benefits: ["dj ni dengochu ", "waitress ochi notlo petkuntadi", "last lo happy ending "], id: "t-y7xm7c1" }
+                ])
+            },
+            {
+                id: 'ev_qm89d6v3d',
+                company_id: 'vhop_official',
+                title: 'Cyberpunk Rooftop Rave',
+                short_description: 'A neon-drenched night of futuristic beats.',
+                description: "Get ready for the most immersive cyberpunk experience Mumbai has ever seen. We're taking over the highest rooftop in the city for a night of underground techno, interactive light installations, and synthwave vibes. 🌃🔊🚀",
+                venue_name: 'ma intlo ',
+                city: 'Mumbai',
+                category: 'Music',
+                price: 1999.00,
+                cover_image: 'https://images.unsplash.com/photo-1541701494587-cb58502866ab?q=80&w=1000',
+                start_date: '2026-05-29 13:13:00',
+                status: 'published',
+                ticket_types: JSON.stringify([
+                    { name: "vip", price: 888, benefits: ["hello ", "hi ", "bye"], id: "t-uy2b8d9" },
+                    { name: "adukonodu", price: 9, benefits: ["bayita nuchoni chud", "lopalki oste tanesta", "dengey "], id: "t-219dvfs" },
+                    { name: "super Vip ", price: 1000000, benefits: ["dj ni dengochu ", "waitress ochi notlo petkuntadi", "last lo happy ending "], id: "t-y7xm7c1" }
+                ])
+            },
+            {
+                id: 'ev_ysxehinrt',
+                company_id: 'vhop_official',
+                title: 'Cyberpunk Rooftop Rave',
+                short_description: 'A neon-drenched night of futuristic beats.',
+                description: "Get ready for the most immersive cyberpunk experience Mumbai has ever seen. We're taking over the highest rooftop in the city for a night of underground techno, interactive light installations, and synthwave vibes. 🌃🔊🚀",
+                venue_name: 'ma intlo ',
+                city: 'Visakhapatnam',
+                category: 'Music',
+                price: 1999.00,
+                cover_image: 'https://images.unsplash.com/photo-1541701494587-cb58502866ab?q=80&w=1000',
+                start_date: '2026-05-28 15:13:00',
+                status: 'published',
+                ticket_types: JSON.stringify([
+                    { name: "vip", price: 888, benefits: ["hello ", "hi ", "bye"], id: "t-uy2b8d9" },
+                    { name: "adukonodu", price: 9, benefits: ["bayita nuchoni chud", "lopalki oste tanesta", "dengey "], id: "t-219dvfs" },
+                    { name: "super Vip ", price: 1000000, benefits: ["dj ni dengochu ", "waitress ochi notlo petkuntadi", "last lo happy ending "], id: "t-y7xm7c1" }
+                ])
+            }
+        ];
+
+        for (const e of mockEvents) {
+            await pool.execute(`
+                INSERT IGNORE INTO events (id, company_id, title, short_description, description, venue_name, city, category, price, cover_image, start_date, status, ticket_types)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `, [e.id, e.company_id, e.title, e.short_description, e.description, e.venue_name, e.city, e.category, e.price, e.cover_image, e.start_date, e.status, e.ticket_types]);
+        }
+        console.log('🟢 Demo events seeded/verified.');
+
     } catch (err) {
-        console.error('🔴 Database initialization error:', err.message);
+        console.error('🔴 Database initialization error:', err);
     }
 })();
 
