@@ -108,12 +108,13 @@ export const CreateEvent: React.FC = () => {
 
     setIsSubmitting(true);
     
+    const isSuperAdmin = user?.role === 'superadmin';
     const eventPayload = {
       ...formData,
       company_id: company.id,
       price: parseFloat(formData.price) || 0,
       total_tickets: parseInt(formData.total_tickets) || 100,
-      status: 'published',
+      status: isSuperAdmin ? 'published' : 'draft',
       start_date: new Date(formData.start_date).toISOString(),
       ticket_types: formData.ticket_types.map((t: any) => ({
         ...t,
@@ -130,6 +131,11 @@ export const CreateEvent: React.FC = () => {
       });
       
       if (response.ok) {
+        if (!isSuperAdmin) {
+          alert('Event submitted! Once approved by the Super Admin, it will go live on the website.');
+        } else {
+          alert('Event published successfully!');
+        }
         navigate('/admin');
       } else {
         throw new Error('Failed to save event');

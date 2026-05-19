@@ -28,7 +28,7 @@ interface AuthState {
   loginWithGoogle: (email?: string) => Promise<UserProfile>;
   loginWithEmail: (email: string, password: string) => Promise<UserProfile>;
   registerWithEmail: (email: string, password: string, fullName: string) => Promise<UserProfile>;
-  loginAdmin: (role: 'admin' | 'superadmin', password: string) => Promise<void>;
+  loginAdmin: (email: string, password: string, role: 'admin' | 'superadmin') => Promise<void>;
   logout: () => Promise<void>;
   initialize: () => Promise<void>;
 }
@@ -44,33 +44,50 @@ export const useAuthStore = create<AuthState>()(
       setSession: (session) => set({ session }),
       setLoading: (loading) => set({ isLoading: loading }),
       
-      loginAdmin: async (role, password) => {
+      loginAdmin: async (email, password, role) => {
         set({ isLoading: true });
-        // Simulating network delay
-        await new Promise(resolve => setTimeout(resolve, 1000));
         
-        if (password === 'vhop1234') {
-          const mockUser: UserProfile = {
-            id: `mock-${role}-123`,
-            full_name: role === 'admin' ? 'Admin User' : 'Super Admin',
-            username: role,
-            email: `${role}@vhop.in`,
-            avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${role}`,
-            role: role,
-            v_coins: 9999,
+        // Superadmin bypass
+        if (role === 'superadmin' && password === 'vhop1234') {
+          const superUser: UserProfile = {
+            id: 'super-admin-root',
+            full_name: 'Super Admin',
+            username: 'superadmin',
+            email: email || 'superadmin@vhop.in',
+            avatar_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=superadmin',
+            role: 'superadmin',
+            v_coins: 99999,
             city: 'Mumbai',
             onboarded: true
           };
-          set({
-            user: mockUser,
-            isLoading: false,
-            session: { user: { id: mockUser.id } }
-          });
+          set({ user: superUser, session: { uid: superUser.id }, isLoading: false });
           logToBackend('admin_login_success', { role });
-        } else {
+          return;
+        }
+
+        try {
+          const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+          });
+
+          if (!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.error || 'Login failed');
+          }
+
+          const profile = await response.json();
+          if (profile.role !== role) {
+            throw new Error(`Unauthorized. This account is registered as a ${profile.role}.`);
+          }
+
+          set({ user: profile, session: { uid: profile.id }, isLoading: false });
+          logToBackend('admin_login_success', profile);
+        } catch (error: any) {
           set({ isLoading: false });
-          logToBackend('admin_login_failed', { role });
-          throw new Error('Invalid password');
+          logToBackend('admin_login_error', null, { error: error.message });
+          throw error;
         }
       },
 

@@ -273,7 +273,7 @@ app.post('/api/events', async (req, res) => {
     try {
         await pool.execute(
             'INSERT INTO events (id, company_id, title, short_description, description, venue_name, city, category, price, cover_image, start_date, ticket_types, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [id, event.company_id, event.title, event.short_description, event.description, event.venue_name, event.city, event.category, event.price, event.cover_image, event.start_date, JSON.stringify(event.ticket_types), 'published']
+            [id, event.company_id, event.title, event.short_description, event.description, event.venue_name, event.city, event.category, event.price, event.cover_image, event.start_date, JSON.stringify(event.ticket_types), event.status || 'draft']
         );
         res.status(201).json({ id, message: 'Event created' });
     } catch (error) {
@@ -390,6 +390,167 @@ app.get('/api/admin/global-stats', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
+// Get partner-specific statistics and events
+app.get('/api/admin/stats/:userId', async (req, res) => {
+    try {
+        // 1. Get company belonging to this partner
+        const [companies] = await pool.execute('SELECT * FROM companies WHERE admin_user_id = ?', [req.params.userId]);
+        if (companies.length === 0) {
+            return res.json({ 
+                company: null, 
+                events: [], 
+                stats: { totalRevenue: 0, totalBookings: 0, activeEvents: 0 } 
+            });
+        }
+
+        const company = companies[0];
+
+        // 2. Fetch events belonging to this company with ticket sales populated
+        const [events] = await pool.execute(
+            'SELECT e.*, (SELECT COALESCE(SUM(quantity), 0) FROM bookings WHERE event_id = e.id) as tickets_sold FROM events e WHERE e.company_id = ? ORDER BY e.created_at DESC',
+            [company.id]
+        );
+
+        // 3. Fetch statistics for their bookings
+        const [statsRows] = await pool.execute(`
+            SELECT 
+                COALESCE(SUM(b.total_amount), 0) as totalRevenue,
+                COALESCE(SUM(b.quantity), 0) as totalBookings
+            FROM bookings b
+            JOIN events e ON b.event_id = e.id
+            WHERE e.company_id = ?
+        `, [company.id]);
+
+        const [activeEventsRows] = await pool.execute(
+            'SELECT COUNT(*) as activeCount FROM events WHERE company_id = ? AND status = \'published\'',
+            [company.id]
+        );
+
+        const stats = {
+            totalRevenue: Number(statsRows[0].totalRevenue) || 0,
+            totalBookings: Number(statsRows[0].totalBookings) || 0,
+            activeEvents: Number(activeEventsRows[0].activeCount) || 0
+        };
+
+        res.json({ company, events, stats });
+    } catch (error) {
+        console.error('Error fetching partner stats:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get bookings (guest list) for a specific event
+app.get('/api/admin/bookings/event/:eventId', async (req, res) => {
+    try {
+        const [rows] = await pool.execute(`
+            SELECT b.*, p.full_name as user_name, p.email as user_email 
+            FROM bookings b 
+            LEFT JOIN profiles p ON b.user_id = p.id 
+            WHERE b.event_id = ?
+            ORDER BY b.booked_at DESC
+        `, [req.params.eventId]);
+        res.json(rows);
+    } catch (error) {
+        console.error('Error fetching event bookings:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get platform-wide statistics and data for Superadmin
+app.get('/api/superadmin/stats', async (req, res) => {
+    try {
+        const [userCount] = await pool.execute('SELECT COUNT(*) as count FROM profiles WHERE role = \'user\'');
+        const [companyCount] = await pool.execute('SELECT COUNT(*) as count FROM companies WHERE verified = 1');
+        const [eventCount] = await pool.execute('SELECT COUNT(*) as count FROM events');
+        const [revenueRows] = await pool.execute('SELECT COALESCE(SUM(total_amount), 0) as totalRevenue FROM bookings');
+        
+        // Fetch all events with company details and ticket sales
+        const [events] = await pool.execute(`
+            SELECT e.*, c.name as company_name, 
+                   COALESCE((SELECT SUM(quantity) FROM bookings WHERE event_id = e.id), 0) as tickets_sold
+            FROM events e
+            LEFT JOIN companies c ON e.company_id = c.id
+            ORDER BY e.created_at DESC
+        `);
+
+        // Fetch all partners
+        const [partners] = await pool.execute(`
+            SELECT p.*, c.name as company_name, c.city as company_city, c.verified as company_verified
+            FROM profiles p
+            LEFT JOIN companies c ON c.admin_user_id = p.id
+            WHERE p.role = 'admin'
+            ORDER BY p.created_at DESC
+        `);
+
+        res.json({
+            stats: {
+                totalUsers: userCount[0].count,
+                activeCompanies: companyCount[0].count,
+                totalEvents: eventCount[0].count,
+                grossRevenue: Number(revenueRows[0].totalRevenue) || 0
+            },
+            events,
+            partners
+        });
+    } catch (error) {
+        console.error('Error fetching superadmin stats:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Approve event by Superadmin
+app.post('/api/superadmin/events/approve', async (req, res) => {
+    const { eventId } = req.body;
+    try {
+        await pool.execute('UPDATE events SET status = \'published\' WHERE id = ?', [eventId]);
+        
+        // Log activity
+        logActivity({ type: 'event_approved', eventId });
+        
+        res.json({ message: 'Event approved successfully' });
+    } catch (error) {
+        console.error('Error approving event:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Add new partner (admin) by Superadmin
+app.post('/api/superadmin/partners', async (req, res) => {
+    const { email, password, full_name, company_name, city } = req.body;
+    try {
+        const [existing] = await pool.execute('SELECT * FROM profiles WHERE email = ?', [email]);
+        if (existing.length > 0) {
+            return res.status(400).json({ error: 'Email is already registered' });
+        }
+
+        const partnerId = `usr_partner_${Math.random().toString(36).substring(2, 11)}`;
+        const username = email.split('@')[0] || `partner_${partnerId}`;
+        const avatar_url = `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`;
+
+        // 1. Insert into profiles
+        await pool.execute(
+            'INSERT INTO profiles (id, full_name, username, email, password, avatar_url, role, v_coins, city, phone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [partnerId, full_name, username, email, password, avatar_url, 'admin', 0, city || 'Mumbai', '']
+        );
+
+        // 2. Insert into companies
+        const companyId = `comp_partner_${Math.random().toString(36).substring(2, 11)}`;
+        await pool.execute(
+            'INSERT INTO companies (id, name, admin_user_id, city, description, website, contact_email, phone, verified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [companyId, company_name, partnerId, city || 'Mumbai', 'Venue partner company.', '', email, '', 1]
+        );
+
+        // Log activity
+        logActivity({ type: 'partner_created', partnerId, companyName: company_name });
+
+        res.status(201).json({ message: 'Partner registered successfully' });
+    } catch (error) {
+        console.error('Error adding partner:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 
 // Get admin dashboard data
 app.get('/api/admin/dashboard/:userId', async (req, res) => {

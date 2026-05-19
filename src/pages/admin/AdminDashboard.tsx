@@ -24,9 +24,10 @@ export const AdminDashboard: React.FC = () => {
 
   useEffect(() => {
     const fetchDashboardData = async () => {
+      if (!user) return;
       setIsLoading(true);
       try {
-        const response = await fetch(`${API_BASE_URL}/api/admin/global-stats`);
+        const response = await fetch(`${API_BASE_URL}/api/admin/stats/${user.id}`);
         if (response.ok) {
           const data = await response.json();
           setEvents(data.events || []);
@@ -39,14 +40,14 @@ export const AdminDashboard: React.FC = () => {
           });
         }
       } catch (error) {
-        console.error('Error fetching global admin data:', error);
+        console.error('Error fetching partner stats:', error);
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchDashboardData();
-  }, []);
+  }, [user]);
 
   const handleDeleteEvent = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this event?')) {
@@ -113,8 +114,8 @@ export const AdminDashboard: React.FC = () => {
       <div className="space-y-8 pb-12">
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>
-            <h1 className="text-4xl font-display font-bold">Global Admin Dashboard</h1>
-            <p className="text-[var(--text-secondary)]">Platform overview and event management.</p>
+            <h1 className="text-4xl font-display font-bold">Partner Dashboard</h1>
+            <p className="text-[var(--text-secondary)]">Manage your venue events and track bookings.</p>
           </div>
           <GlowButton onClick={() => navigate('/admin/create-event')} className="gap-2">
             <Plus className="w-5 h-5" /> Create New Event

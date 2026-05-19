@@ -51,7 +51,7 @@ function App() {
       <ScrollToTop />
       {/* Sidebar for desktop - only show for non-admin or verified admin paths */}
       {!isAdminPath && !isSuperAdminPath && <Sidebar isAdmin={false} />}
-      { (isAdminPath || isSuperAdminPath) && user?.role === 'admin' && location.pathname !== '/admin/login' && <Sidebar isAdmin={true} />}
+      { (isAdminPath || isSuperAdminPath) && (user?.role === 'admin' || user?.role === 'superadmin') && location.pathname !== '/admin/login' && <Sidebar isAdmin={true} />}
       
       {/* Navbar for mobile and top-level desktop - HIDE for admin */}
       {!isAdminPath && !isSuperAdminPath && <Navbar />}
