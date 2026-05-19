@@ -350,25 +350,25 @@ export const Events: React.FC = () => {
 
                 <div
                   onClick={() => navigate(`/events/${filteredEvents[0].id}`)}
-                  className="relative z-10 cursor-pointer p-4 md:p-8 flex flex-col md:flex-row gap-5 md:gap-8 items-center"
+                  className="relative z-10 cursor-pointer p-0 md:p-6 flex flex-col md:flex-row gap-0 md:gap-8 items-center"
                 >
                   {/* Foreground containment cover image (Zero Truncation) */}
-                  <div className="w-full md:w-5/12 aspect-[16/10] sm:aspect-[16/9] rounded-2xl overflow-hidden border border-white/5 shrink-0 bg-black/60 shadow-lg relative group-hover:border-[var(--violet-bright)]/30 transition-all duration-300">
+                  <div className="w-full md:w-5/12 aspect-[16/10] sm:aspect-[16/9] rounded-t-[2rem] md:rounded-2xl rounded-b-none overflow-hidden md:border border-white/5 shrink-0 bg-transparent shadow-lg relative group-hover:border-[var(--violet-bright)]/30 transition-all duration-300">
                     <img
                       src={getImageUrl(filteredEvents[0].cover_image)}
                       alt={filteredEvents[0].title}
                       className="w-full h-full object-contain relative z-10 transition-transform duration-500 group-hover:scale-102"
                     />
-                    {/* Tiny visual blur back layer in container */}
+                    {/* Vibrant glowing back layer in container for zero truncation visual bleed */}
                     <img
                       src={getImageUrl(filteredEvents[0].cover_image)}
                       alt=""
-                      className="absolute inset-0 w-full h-full object-cover blur-md opacity-20 scale-105 pointer-events-none"
+                      className="absolute inset-0 w-full h-full object-cover blur-2xl opacity-60 scale-110 pointer-events-none"
                     />
                   </div>
 
                   {/* Right hand typography info block */}
-                  <div className="flex-1 flex flex-col justify-between items-start py-2 space-y-4 w-full">
+                  <div className="flex-1 flex flex-col justify-between items-start px-5 pt-4 pb-6 md:p-0 py-2 space-y-4 w-full">
                     <div className="space-y-2">
                       <span className="inline-flex items-center gap-1 bg-[var(--violet-primary)] text-white text-[9px] font-extrabold px-2.5 py-1 rounded-full uppercase tracking-wider shadow-[0_0_15px_rgba(124,58,237,0.4)]">
                         <Sparkles className="w-3 h-3 text-amber-300" /> Trending Experiences
