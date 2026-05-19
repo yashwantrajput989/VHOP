@@ -22,6 +22,20 @@ export const Profile: React.FC = () => {
   const { tickets, addTicket } = useTicketStore();
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
 
+  const parsedInterests = React.useMemo(() => {
+    if (!user?.interests) return [];
+    if (Array.isArray(user.interests)) return user.interests;
+    if (typeof user.interests === 'string') {
+      try {
+        const parsed = JSON.parse(user.interests);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {
+        return (user.interests as string).split(',').map(s => s.trim()).filter(Boolean);
+      }
+    }
+    return [];
+  }, [user?.interests]);
+
   useEffect(() => {
     const fetchTickets = async () => {
       if (!user) return;
@@ -87,13 +101,13 @@ export const Profile: React.FC = () => {
             </div>
             <p className="text-[var(--violet-bright)] font-bold text-sm">@{user.username}</p>
             <p className="text-[var(--text-secondary)] text-sm md:text-base max-w-md mx-auto md:mx-0">
-              {user.interests && user.interests.length > 0 
-                ? `Interests: ${user.interests.join(', ').replace(/_/g, ' ')}`
+              {parsedInterests.length > 0 
+                ? `Interests: ${parsedInterests.join(', ').replace(/_/g, ' ')}`
                 : `Nightlife enthusiast | Techno lover | VHOP explorer | ${user.city || 'Global'}`}
             </p>
-            {user.interests && (
+            {parsedInterests.length > 0 && (
               <div className="flex flex-wrap gap-2 justify-center md:justify-start mt-4">
-                {user.interests.map(interest => (
+                {parsedInterests.map(interest => (
                   <span key={interest} className="px-3 py-1 rounded-full bg-[var(--violet-primary)]/10 border border-[var(--violet-primary)]/20 text-[var(--violet-bright)] text-[10px] font-bold uppercase tracking-wider">
                     {interest.replace(/_/g, ' ')}
                   </span>

@@ -28,7 +28,7 @@ const pool = mysql.createPool({
     queueLimit: 0
 });
 
-t// Ensure profiles table has necessary columns and initialize visitors table
+// Ensure profiles table has necessary columns and initialize visitors table
 (async () => {
     const addColumnSafely = async (columnName, columnDefinition) => {
         try {
@@ -104,6 +104,29 @@ app.use(cors({
 app.use(express.json());
 app.use(morgan('dev'));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Helper to safely format profile rows (JSON parsing interests and boolean normalization)
+function formatProfile(profile) {
+    if (!profile) return null;
+    const formatted = { ...profile };
+    
+    // Parse interests if it's a string, or initialize to empty array
+    if (typeof formatted.interests === 'string') {
+        try {
+            formatted.interests = JSON.parse(formatted.interests);
+        } catch (e) {
+            formatted.interests = formatted.interests.split(',').map(s => s.trim()).filter(Boolean);
+        }
+    } else if (!formatted.interests) {
+        formatted.interests = [];
+    }
+    
+    // Normalize boolean status columns from TINYINT (0 or 1) to real boolean (true/false)
+    formatted.onboarded = formatted.onboarded === 1 || formatted.onboarded === true;
+    formatted.v_coins_rewarded = formatted.v_coins_rewarded === 1 || formatted.v_coins_rewarded === true;
+    
+    return formatted;
+}
 
 // Ensure logs directory exists
 const logsDir = path.join(__dirname, 'logs');
@@ -184,7 +207,7 @@ app.post('/api/auth/register', async (req, res) => {
         logActivity({ type: 'profile_created', userId: id });
         
         const [userRows] = await pool.execute('SELECT * FROM profiles WHERE id = ?', [id]);
-        res.status(201).json(userRows[0]);
+        res.status(201).json(formatProfile(userRows[0]));
     } catch (error) {
         console.error('Registration error:', error);
         res.status(500).json({ error: error.message });
@@ -205,7 +228,7 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(400).json({ error: 'Incorrect password' });
         }
 
-        res.status(200).json(userProfile);
+        res.status(200).json(formatProfile(userProfile));
     } catch (error) {
         console.error('Login error:', error);
         res.status(500).json({ error: error.message });
@@ -225,7 +248,7 @@ app.post('/api/auth/google-login', async (req, res) => {
                 [full_name || userProfile.full_name, avatar_url || userProfile.avatar_url, userProfile.id]
             );
             const [updatedRows] = await pool.execute('SELECT * FROM profiles WHERE id = ?', [userProfile.id]);
-            return res.status(200).json(updatedRows[0]);
+            return res.status(200).json(formatProfile(updatedRows[0]));
         }
 
         // Create new user profile for Google login
@@ -239,7 +262,7 @@ app.post('/api/auth/google-login', async (req, res) => {
 
         logActivity({ type: 'profile_created', userId: id });
         const [userRows] = await pool.execute('SELECT * FROM profiles WHERE id = ?', [id]);
-        res.status(201).json(userRows[0]);
+        res.status(201).json(formatProfile(userRows[0]));
     } catch (error) {
         console.error('Google login sync error:', error);
         res.status(500).json({ error: error.message });
@@ -290,7 +313,7 @@ app.put('/api/auth/profile/complete', async (req, res) => {
 
         const [updatedRows] = await pool.execute('SELECT * FROM profiles WHERE id = ?', [userId]);
         res.status(200).json({ 
-            user: updatedRows[0],
+            user: formatProfile(updatedRows[0]),
             rewardCredited,
             message: rewardCredited ? 'Profile completed & 100 V-Coins rewarded!' : 'Profile updated successfully.'
         });

@@ -20,6 +20,33 @@ interface UserProfile {
   v_coins_rewarded?: boolean;
 }
 
+const sanitizeUser = (user: any): UserProfile | null => {
+  if (!user) return null;
+  
+  let interests: string[] = [];
+  if (Array.isArray(user.interests)) {
+    interests = user.interests;
+  } else if (typeof user.interests === 'string') {
+    try {
+      const parsed = JSON.parse(user.interests);
+      if (Array.isArray(parsed)) {
+        interests = parsed;
+      } else {
+        interests = [user.interests];
+      }
+    } catch (e) {
+      interests = user.interests.split(',').map((s: string) => s.trim()).filter(Boolean);
+    }
+  }
+  
+  return {
+    ...user,
+    interests,
+    onboarded: user.onboarded === 1 || user.onboarded === true || user.onboarded === 'true',
+    v_coins_rewarded: user.v_coins_rewarded === 1 || user.v_coins_rewarded === true || user.v_coins_rewarded === 'true',
+  };
+};
+
 interface AuthState {
   user: UserProfile | null;
   session: any | null;
@@ -43,7 +70,7 @@ export const useAuthStore = create<AuthState>()(
       session: null,
       isLoading: false,
       isInitializing: true,
-      setUser: (user) => set({ user }),
+      setUser: (user) => set({ user: sanitizeUser(user) }),
       setSession: (session) => set({ session }),
       setLoading: (loading) => set({ isLoading: loading }),
       
@@ -63,7 +90,7 @@ export const useAuthStore = create<AuthState>()(
             city: 'Mumbai',
             onboarded: true
           };
-          set({ user: superUser, session: { uid: superUser.id }, isLoading: false });
+          set({ user: sanitizeUser(superUser), session: { uid: superUser.id }, isLoading: false });
           logToBackend('admin_login_success', { role });
           return;
         }
@@ -85,7 +112,7 @@ export const useAuthStore = create<AuthState>()(
             throw new Error(`Unauthorized. This account is registered as a ${profile.role}.`);
           }
 
-          set({ user: profile, session: { uid: profile.id }, isLoading: false });
+          set({ user: sanitizeUser(profile), session: { uid: profile.id }, isLoading: false });
           logToBackend('admin_login_success', profile);
         } catch (error: any) {
           set({ isLoading: false });
@@ -109,7 +136,7 @@ export const useAuthStore = create<AuthState>()(
           }
 
           const profile = await response.json();
-          set({ user: profile, session: { uid: profile.id }, isLoading: false });
+          set({ user: sanitizeUser(profile), session: { uid: profile.id }, isLoading: false });
           logToBackend('login_email_success', profile);
           return profile;
         } catch (error: any) {
@@ -134,7 +161,7 @@ export const useAuthStore = create<AuthState>()(
           }
 
           const profile = await response.json();
-          set({ user: profile, session: { uid: profile.id }, isLoading: false });
+          set({ user: sanitizeUser(profile), session: { uid: profile.id }, isLoading: false });
           logToBackend('signup_email_success', profile);
           return profile;
         } catch (error: any) {
@@ -169,7 +196,7 @@ export const useAuthStore = create<AuthState>()(
           }
 
           const profile = await response.json();
-          set({ user: profile, session: { uid: profile.id }, isLoading: false });
+          set({ user: sanitizeUser(profile), session: { uid: profile.id }, isLoading: false });
           logToBackend('google_login_success', profile);
           return profile;
         } catch (error: any) {
@@ -190,7 +217,7 @@ export const useAuthStore = create<AuthState>()(
         try {
           const { user } = useAuthStore.getState();
           if (user) {
-            set({ user, session: { uid: user.id } });
+            set({ user: sanitizeUser(user), session: { uid: user.id } });
           }
         } finally {
           set({ isInitializing: false, isLoading: false });
