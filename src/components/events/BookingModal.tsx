@@ -7,6 +7,7 @@ import { GlowButton } from '../ui/GlowButton';
 import { useAuthStore } from '../../store/authStore';
 import { useTicketStore } from '../../store/ticketStore';
 import { useUIStore } from '../../store/uiStore';
+import { API_BASE_URL } from '../../config';
 
 interface BookingModalProps {
   isOpen: boolean;
@@ -100,7 +101,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, eve
       };
 
       // Save to MySQL Backend
-      const response = await fetch('https://vhop.in/api/bookings', {
+      const response = await fetch(`${API_BASE_URL}/api/bookings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(bookingData)

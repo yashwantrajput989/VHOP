@@ -23,6 +23,7 @@ import {
 import { useUIStore } from '../../store/uiStore';
 import { useAuthStore } from '../../store/authStore';
 import { logToBackend } from '../../lib/logger';
+import { API_BASE_URL } from '../../config';
 
 const INTERESTS = [
   { id: 'night_clubs', label: 'Night Clubs', icon: PartyPopper },
@@ -87,7 +88,7 @@ export const AuthModal: React.FC = () => {
     if (!user) return;
     setIsSubmitting(true);
     try {
-      const response = await fetch('https://vhop.in/api/auth/onboard', {
+      const response = await fetch(`${API_BASE_URL}/api/auth/onboard`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -127,7 +128,7 @@ export const AuthModal: React.FC = () => {
 
     try {
       // Sync with MySQL Backend so booking email worker can find the user!
-      const syncRes = await fetch('https://vhop.in/api/auth/sync', {
+      const syncRes = await fetch(`${API_BASE_URL}/api/auth/sync`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(profile)

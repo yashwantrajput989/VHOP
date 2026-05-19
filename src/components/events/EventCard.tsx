@@ -2,6 +2,7 @@ import React from 'react';
 import { MapPin } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from '../../config';
 
 interface EventCardProps {
   event: {
@@ -28,7 +29,7 @@ export const EventCard: React.FC<EventCardProps> = ({ event }) => {
     >
       <div className="relative aspect-[3/4] overflow-hidden rounded-[1.5rem] md:rounded-[2rem] border border-white/5 transition-all duration-500 group-hover:border-[var(--violet-bright)]/30 group-hover:shadow-glow">
         <motion.img 
-          src={event.cover_image?.startsWith('/uploads') ? `https://vhop.in${event.cover_image}` : event.cover_image} 
+          src={event.cover_image?.startsWith('/uploads') ? `${API_BASE_URL}${event.cover_image}` : event.cover_image} 
           alt={event.title}
           className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
         />

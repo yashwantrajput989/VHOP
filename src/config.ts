@@ -1,6 +1,6 @@
 // VHOP Frontend Configuration
 
-export const API_BASE_URL = 'https://vhop.in';
+export const API_BASE_URL = 'https://api.vhop.in';
 
 export const IMAGE_BASE_URL = API_BASE_URL;
 

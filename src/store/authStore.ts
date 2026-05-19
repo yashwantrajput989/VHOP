@@ -4,6 +4,7 @@ import { auth, googleProvider, db, RecaptchaVerifier, signInWithPhoneNumber } fr
 import { signInWithPopup, signOut, onAuthStateChanged, type User } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { logToBackend } from '../lib/logger';
+import { API_BASE_URL } from '../config';
 
 declare global {
   interface Window {
@@ -130,7 +131,7 @@ export const useAuthStore = create<AuthState>()(
           
           // Sync with MySQL Backend
           try {
-            const syncRes = await fetch('https://vhop.in/api/auth/sync', {
+            const syncRes = await fetch(`${API_BASE_URL}/api/auth/sync`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(profile)
@@ -221,7 +222,7 @@ export const useAuthStore = create<AuthState>()(
 
           // Sync with MySQL Backend
           try {
-            const syncRes = await fetch('https://vhop.in/api/auth/sync', {
+            const syncRes = await fetch(`${API_BASE_URL}/api/auth/sync`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(profile)
@@ -277,7 +278,7 @@ export const useAuthStore = create<AuthState>()(
                    
                    // Sync with MySQL to get onboarding status
                    try {
-                     const syncRes = await fetch('https://vhop.in/api/auth/sync', {
+                     const syncRes = await fetch(`${API_BASE_URL}/api/auth/sync`, {
                        method: 'POST',
                        headers: { 'Content-Type': 'application/json' },
                        body: JSON.stringify(profileData)
@@ -305,7 +306,7 @@ export const useAuthStore = create<AuthState>()(
                     set({ user: profile, session: firebaseUser });
                     
                     // Sync with MySQL
-                    fetch('https://vhop.in/api/auth/sync', {
+                    fetch(`${API_BASE_URL}/api/auth/sync`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify(profile)

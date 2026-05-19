@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from '../../config';
 
 const INTERESTS = [
   { id: 'night_clubs', label: 'Night Clubs', icon: PartyPopper },
@@ -53,7 +54,7 @@ export const Onboarding: React.FC = () => {
   const handleComplete = async () => {
     setIsSubmitting(true);
     try {
-      const response = await fetch('https://vhop.in/api/auth/onboard', {
+      const response = await fetch(`${API_BASE_URL}/api/auth/onboard`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

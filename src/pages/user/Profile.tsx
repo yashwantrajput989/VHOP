@@ -12,6 +12,7 @@ import { useTicketStore } from '../../store/ticketStore';
 import type { Ticket } from '../../store/ticketStore';
 import { Settings, MapPin, Mail, Phone, ShieldCheck, QrCode, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { API_BASE_URL } from '../../config';
 
 export const Profile: React.FC = () => {
   const { user } = useAuthStore();
@@ -24,7 +25,7 @@ export const Profile: React.FC = () => {
       if (!user) return;
       
       try {
-        const response = await fetch(`https://vhop.in/api/bookings/user/${user.id}`);
+        const response = await fetch(`${API_BASE_URL}/api/bookings/user/${user.id}`);
         const data = await response.json();
         
         data.forEach((dbTicket: any) => {
@@ -166,7 +167,7 @@ export const Profile: React.FC = () => {
                       onClick={() => setSelectedTicket(ticket)}
                       className="p-4 flex gap-4 cursor-pointer hover:bg-white/[0.07]"
                     >
-                      <img src={ticket.coverImage?.startsWith('/uploads') ? `https://vhop.in${ticket.coverImage}` : ticket.coverImage} className="w-20 h-20 rounded-xl object-cover" alt="" />
+                      <img src={ticket.coverImage?.startsWith('/uploads') ? `${API_BASE_URL}${ticket.coverImage}` : ticket.coverImage} className="w-20 h-20 rounded-xl object-cover" alt="" />
                       <div className="flex-1 flex justify-between items-center">
                         <div>
                           <h4 className="font-bold text-white">{ticket.eventTitle}</h4>

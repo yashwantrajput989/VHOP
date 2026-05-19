@@ -326,8 +326,253 @@ app.post('/api/companies/:id/verify', async (req, res) => {
     }
 });
 
-// --- LOGGING ---
+// --- STATUS & LOGS CONSOLE ---
+app.get('/', async (req, res) => {
+    let dbStatus = '🟢 Connected';
+    let dbError = null;
+    try {
+        await pool.execute('SELECT 1');
+    } catch (err) {
+        dbStatus = '🔴 Disconnected';
+        dbError = err.message;
+    }
 
+    let logs = [];
+    try {
+        if (fs.existsSync(activityLogPath)) {
+            const fileContent = fs.readFileSync(activityLogPath, 'utf8');
+            logs = fileContent.trim().split('\n').filter(Boolean).slice(-15).reverse();
+        }
+    } catch (err) {
+        logs = [`Failed to read logs: ${err.message}`];
+    }
+
+    const html = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>VHOP API Status Console</title>
+        <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+        <style>
+            :root {
+                --bg: #0b0914;
+                --card-bg: rgba(20, 17, 34, 0.7);
+                --violet: #8b5cf6;
+                --violet-glow: #a78bfa;
+                --green: #10b981;
+                --red: #ef4444;
+                --text: #f3f4f6;
+                --text-muted: #9ca3af;
+                --border: rgba(139, 92, 246, 0.15);
+            }
+            body {
+                background-color: var(--bg);
+                color: var(--text);
+                font-family: 'Outfit', sans-serif;
+                margin: 0;
+                padding: 40px 20px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                min-height: 100vh;
+                box-sizing: border-box;
+            }
+            .container {
+                max-width: 900px;
+                width: 100%;
+                display: flex;
+                flex-direction: column;
+                gap: 24px;
+            }
+            .header {
+                text-align: center;
+                margin-bottom: 20px;
+            }
+            .logo {
+                font-size: 32px;
+                font-weight: 800;
+                background: linear-gradient(135deg, #a78bfa 0%, #ec4899 100%);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                letter-spacing: 2px;
+                margin: 0 0 8px 0;
+            }
+            .subtitle {
+                color: var(--text-muted);
+                font-size: 14px;
+                margin: 0;
+            }
+            .grid {
+                display: grid;
+                grid-template-cols: repeat(auto-fit, minmax(250px, 1fr));
+                gap: 20px;
+            }
+            .card {
+                background: var(--card-bg);
+                border: 1px solid var(--border);
+                border-radius: 24px;
+                padding: 24px;
+                backdrop-filter: blur(12px);
+                box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            }
+            .card-title {
+                font-size: 12px;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+                color: var(--text-muted);
+                margin: 0 0 12px 0;
+            }
+            .stat {
+                font-size: 24px;
+                font-weight: 800;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .stat.green { color: var(--green); }
+            .stat.red { color: var(--red); }
+            .details {
+                font-size: 13px;
+                color: var(--text-muted);
+                margin-top: 8px;
+            }
+            .console-card {
+                background: rgba(10, 8, 20, 0.95);
+                border: 1px solid var(--border);
+                border-radius: 24px;
+                overflow: hidden;
+            }
+            .console-header {
+                background: rgba(20, 17, 34, 0.9);
+                padding: 16px 24px;
+                border-bottom: 1px solid var(--border);
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .console-title {
+                font-size: 14px;
+                font-weight: 600;
+                font-family: 'JetBrains Mono', monospace;
+                color: var(--violet-glow);
+            }
+            .dot-group {
+                display: flex;
+                gap: 6px;
+            }
+            .dot {
+                width: 10px;
+                height: 10px;
+                border-radius: 50%;
+            }
+            .dot.r { background: var(--red); }
+            .dot.y { background: #fbbf24; }
+            .dot.g { background: var(--green); }
+            .console-body {
+                padding: 24px;
+                font-family: 'JetBrains Mono', monospace;
+                font-size: 12px;
+                line-height: 1.6;
+                overflow-x: auto;
+                max-height: 400px;
+                overflow-y: auto;
+            }
+            .log-line {
+                margin-bottom: 8px;
+                color: #e5e7eb;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+                padding-bottom: 6px;
+                white-space: pre-wrap;
+            }
+            .log-time {
+                color: var(--violet-glow);
+                margin-right: 8px;
+            }
+            .empty-logs {
+                text-align: center;
+                color: var(--text-muted);
+                padding: 40px 0;
+            }
+            .btn {
+                background: var(--violet);
+                border: none;
+                color: white;
+                padding: 8px 16px;
+                border-radius: 12px;
+                font-size: 12px;
+                font-family: 'Outfit', sans-serif;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+            .btn:hover {
+                background: #7c3aed;
+                transform: translateY(-1px);
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1 class="logo">VHOP</h1>
+                <p class="subtitle">API Server Status Console</p>
+            </div>
+            
+            <div class="grid">
+                <div class="card">
+                    <p class="card-title">Server Status</p>
+                    <div class="stat green">🟢 Active</div>
+                    <p class="details">Port: ${PORT} | Node.js Environment</p>
+                </div>
+                <div class="card">
+                    <p class="card-title">Database Status</p>
+                    <div class="stat ${dbStatus.includes('🟢') ? 'green' : 'red'}">${dbStatus}</div>
+                    <p class="details">${dbError ? dbError : 'Successfully connected to database pool'}</p>
+                </div>
+                <div class="card">
+                    <p class="card-title">System Time</p>
+                    <div class="stat" style="font-size: 20px;">🕒 ${new Date().toLocaleTimeString('en-US', { hour12: true })}</div>
+                    <p class="details">${new Date().toDateString()}</p>
+                </div>
+            </div>
+            
+            <div class="console-card">
+                <div class="console-header">
+                    <div class="console-title">>_ live_system_activity.log</div>
+                    <div style="display: flex; align-items: center; gap: 16px;">
+                        <button class="btn" onclick="window.location.reload()">Refresh Console</button>
+                        <div class="dot-group">
+                            <div class="dot r"></div>
+                            <div class="dot y"></div>
+                            <div class="dot g"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="console-body">
+                    ${logs.length === 0 ? `
+                        <div class="empty-logs">No activity logged yet. Backend is ready to process events.</div>
+                    ` : logs.map(line => {
+                        const match = line.match(/^\[(.*?)\] (.*)$/);
+                        if (match) {
+                            const timeStr = new Date(match[1]).toLocaleTimeString('en-US', { hour12: true });
+                            return '<div class="log-line"><span class="log-time">[' + timeStr + ']</span><span>' + match[2] + '</span></div>';
+                        }
+                        return '<div class="log-line">' + line + '</div>';
+                    }).join('')}
+                </div>
+            </div>
+        </div>
+    </body>
+    </html>
+    `;
+    res.setHeader('Content-Type', 'text/html');
+    res.send(html);
+});
+
+// Logging endpoint
 app.post('/api/log', (req, res) => {
     const { type, user, details } = req.body;
     const logData = { type, user: user || 'anonymous', details: details || {}, ip: req.ip };

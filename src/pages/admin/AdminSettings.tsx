@@ -5,6 +5,7 @@ import { GlowButton } from '../../components/ui/GlowButton';
 import { Building2, Mail, Phone, Globe, CreditCard, Save } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { AdminLogin } from './AdminLogin';
+import { API_BASE_URL } from '../../config';
 
 export const AdminSettings: React.FC = () => {
   const { user } = useAuthStore();
@@ -23,7 +24,7 @@ export const AdminSettings: React.FC = () => {
     const fetchSettings = async () => {
       if (!user) return;
       try {
-        const response = await fetch(`https://vhop.in/api/admin/dashboard/${user.id}`);
+        const response = await fetch(`${API_BASE_URL}/api/admin/dashboard/${user.id}`);
         if (response.ok) {
           const data = await response.json();
           const comp = data.company;
@@ -62,7 +63,7 @@ export const AdminSettings: React.FC = () => {
     const targetId = company?.id || 'vhop_official';
     
     try {
-      const response = await fetch(`https://vhop.in/api/companies/${targetId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/companies/${targetId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
