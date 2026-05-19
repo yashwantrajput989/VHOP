@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS profiles (
     email VARCHAR(255) UNIQUE,
     avatar_url TEXT,
     role ENUM('user', 'admin', 'superadmin') DEFAULT 'user',
-    v_coins INT DEFAULT 500,
+    v_coins INT DEFAULT 100,
     city VARCHAR(100) DEFAULT 'Mumbai',
     phone VARCHAR(20),
     onboarded BOOLEAN DEFAULT FALSE,

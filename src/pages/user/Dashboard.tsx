@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { VCoinsWidget } from '../../components/profile/VCoinsWidget';
+import { ProfileCompletionBanner } from '../../components/profile/ProfileCompletionBanner';
 
 export const Dashboard: React.FC = () => {
   const { user, isInitializing } = useAuthStore();
@@ -109,6 +110,9 @@ export const Dashboard: React.FC = () => {
             </Link>
           </motion.div>
         </section>
+
+        {/* Profile Completion Prompt */}
+        <ProfileCompletionBanner />
 
         {/* V-Coins Widget - Mobile Focus */}
         <motion.div

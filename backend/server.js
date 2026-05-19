@@ -28,26 +28,53 @@ const pool = mysql.createPool({
     queueLimit: 0
 });
 
-// Ensure profiles table has a password column for local login/signup
+t// Ensure profiles table has necessary columns and initialize visitors table
 (async () => {
-    try {
-        await pool.execute(`
-            ALTER TABLE profiles 
-            ADD COLUMN IF NOT EXISTS password VARCHAR(255) NULL
-        `);
-        console.log('🟢 Database schema verified (profiles.password column is ready).');
-    } catch (err) {
-        // Fallback for older MySQL versions that do not support "ADD COLUMN IF NOT EXISTS"
+    const addColumnSafely = async (columnName, columnDefinition) => {
         try {
-            await pool.execute(`ALTER TABLE profiles ADD COLUMN password VARCHAR(255) NULL`);
-            console.log('🟢 password column added to profiles table.');
-        } catch (innerErr) {
-            if (innerErr.code === 'ER_DUP_COLUMN_NAME') {
-                console.log('🟢 password column already exists in profiles table.');
-            } else {
-                console.error('🔴 Error altering profiles table:', innerErr.message);
+            await pool.execute(`
+                ALTER TABLE profiles 
+                ADD COLUMN IF NOT EXISTS ${columnName} ${columnDefinition}
+            `);
+            console.log(`🟢 profiles.${columnName} column is verified/ready.`);
+        } catch (err) {
+            // Fallback for older MySQL versions that do not support "ADD COLUMN IF NOT EXISTS"
+            try {
+                await pool.execute(`ALTER TABLE profiles ADD COLUMN ${columnName} ${columnDefinition}`);
+                console.log(`🟢 profiles.${columnName} column added.`);
+            } catch (innerErr) {
+                if (innerErr.code === 'ER_DUP_COLUMN_NAME') {
+                    console.log(`🟢 profiles.${columnName} column already exists.`);
+                } else {
+                    console.error(`🔴 Error adding profiles.${columnName} column:`, innerErr.message);
+                }
             }
         }
+    };
+
+    try {
+        // Verify profiles columns
+        await addColumnSafely('password', 'VARCHAR(255) NULL');
+        await addColumnSafely('age', 'INT NULL');
+        await addColumnSafely('address', 'TEXT NULL');
+        await addColumnSafely('v_coins_rewarded', 'BOOLEAN DEFAULT FALSE');
+
+        // Verify/Create visitors table
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS visitors (
+                id VARCHAR(255) PRIMARY KEY,
+                admin_id VARCHAR(255) NOT NULL,
+                visitor_name VARCHAR(255) NOT NULL,
+                age INT,
+                phone VARCHAR(20),
+                email VARCHAR(255),
+                address TEXT,
+                scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log('🟢 Visitors database table is verified/ready.');
+    } catch (err) {
+        console.error('🔴 Database initialization error:', err.message);
     }
 })();
 
@@ -230,6 +257,90 @@ app.post('/api/auth/onboard', async (req, res) => {
         );
         res.status(200).json({ message: 'Onboarding completed' });
     } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Complete Profile and claim 100 V-Coins reward
+app.put('/api/auth/profile/complete', async (req, res) => {
+    const { userId, age, phone, address } = req.body;
+    try {
+        const [rows] = await pool.execute('SELECT v_coins, v_coins_rewarded FROM profiles WHERE id = ?', [userId]);
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Profile not found' });
+        }
+
+        const user = rows[0];
+        let v_coins = user.v_coins;
+        let rewardCredited = false;
+        let new_v_coins_rewarded = user.v_coins_rewarded;
+
+        if (!user.v_coins_rewarded) {
+            v_coins += 100;
+            new_v_coins_rewarded = true;
+            rewardCredited = true;
+        }
+
+        await pool.execute(
+            'UPDATE profiles SET age = ?, phone = ?, address = ?, v_coins = ?, v_coins_rewarded = ? WHERE id = ?',
+            [age ? parseInt(age, 10) : null, phone || '', address || '', v_coins, new_v_coins_rewarded, userId]
+        );
+
+        logActivity({ type: 'profile_completed', userId, coinsCredited: rewardCredited ? 100 : 0 });
+
+        const [updatedRows] = await pool.execute('SELECT * FROM profiles WHERE id = ?', [userId]);
+        res.status(200).json({ 
+            user: updatedRows[0],
+            rewardCredited,
+            message: rewardCredited ? 'Profile completed & 100 V-Coins rewarded!' : 'Profile updated successfully.'
+        });
+    } catch (error) {
+        console.error('Error completing profile:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get checked-in visitors for a specific admin venue
+app.get('/api/admin/visitors/:adminId', async (req, res) => {
+    try {
+        const [rows] = await pool.execute(
+            'SELECT * FROM visitors WHERE admin_id = ? ORDER BY scanned_at DESC',
+            [req.params.adminId]
+        );
+        res.status(200).json(rows);
+    } catch (error) {
+        console.error('Error fetching visitors:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get registered users list for scanner quick simulation
+app.get('/api/admin/users', async (req, res) => {
+    try {
+        const [rows] = await pool.execute(
+            "SELECT id, full_name, username, email, avatar_url, role, v_coins, city, phone, age, address FROM profiles WHERE role = 'user' ORDER BY created_at DESC"
+        );
+        res.status(200).json(rows);
+    } catch (error) {
+        console.error('Error fetching registered users:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Check-in / Scan visitor
+app.post('/api/admin/visitors', async (req, res) => {
+    const { adminId, visitorName, age, phone, email, address } = req.body;
+    const id = `vis_${Math.random().toString(36).substring(2, 11)}`;
+    try {
+        await pool.execute(
+            'INSERT INTO visitors (id, admin_id, visitor_name, age, phone, email, address) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [id, adminId, visitorName, age ? parseInt(age, 10) : null, phone || '', email || '', address || '']
+        );
+
+        logActivity({ type: 'visitor_scanned', adminId, visitorName, email });
+        res.status(201).json({ id, message: 'Visitor checked in successfully.' });
+    } catch (error) {
+        console.error('Error checking in visitor:', error);
         res.status(500).json({ error: error.message });
     }
 });

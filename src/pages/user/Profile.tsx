@@ -13,6 +13,8 @@ import type { Ticket } from '../../store/ticketStore';
 import { Settings, MapPin, Mail, Phone, ShieldCheck, QrCode, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { API_BASE_URL } from '../../config';
+import { ProfileCompletionBanner, isProfileComplete } from '../../components/profile/ProfileCompletionBanner';
+import { VCardPass } from '../../components/profile/VCardPass';
 
 export const Profile: React.FC = () => {
   const { user } = useAuthStore();
@@ -69,6 +71,9 @@ export const Profile: React.FC = () => {
   return (
     <PageWrapper>
       <div className="max-w-4xl mx-auto space-y-12">
+        {/* Profile Completion Alert */}
+        <ProfileCompletionBanner />
+
         {/* Header Section */}
         <section className="flex flex-col md:flex-row items-center gap-6 md:gap-8 bg-[var(--bg-card)]/30 p-6 md:p-8 rounded-[2.5rem] border border-[var(--border-subtle)] relative overflow-hidden group">
           <div className="absolute inset-0 bg-gradient-to-br from-[var(--violet-primary)]/5 to-transparent opacity-50" />
@@ -127,19 +132,37 @@ export const Profile: React.FC = () => {
               </div>
             </div>
 
+            {isProfileComplete(user) && (
+              <div className="pt-2">
+                <VCardPass />
+              </div>
+            )}
+
             <div className="space-y-4 p-6 rounded-2xl bg-white/5 border border-white/10">
               <div className="flex items-center gap-3 text-sm text-[var(--text-secondary)]">
-                <MapPin className="w-4 h-4 text-[var(--violet-bright)]" />
+                <MapPin className="w-4 h-4 text-[var(--violet-bright)] shrink-0" />
                 <span>{user.city || 'Mumbai'}, India</span>
               </div>
               <div className="flex items-center gap-3 text-sm text-[var(--text-secondary)]">
-                <Mail className="w-4 h-4 text-[var(--violet-bright)]" />
-                <span>{user.email}</span>
+                <Mail className="w-4 h-4 text-[var(--violet-bright)] shrink-0" />
+                <span className="truncate">{user.email}</span>
               </div>
               <div className="flex items-center gap-3 text-sm text-[var(--text-secondary)]">
-                <Phone className="w-4 h-4 text-[var(--violet-bright)]" />
+                <Phone className="w-4 h-4 text-[var(--violet-bright)] shrink-0" />
                 <span>{user.phone || '+91 9XXXX XXXXX'}</span>
               </div>
+              {user.age && (
+                <div className="flex items-center gap-3 text-sm text-[var(--text-secondary)]">
+                  <Calendar className="w-4 h-4 text-[var(--violet-bright)] shrink-0" />
+                  <span>{user.age} Years Old</span>
+                </div>
+              )}
+              {user.address && (
+                <div className="flex items-start gap-3 text-sm text-[var(--text-secondary)] border-t border-white/5 pt-3 mt-2">
+                  <MapPin className="w-4 h-4 text-[var(--violet-bright)] shrink-0 mt-0.5" />
+                  <span className="leading-relaxed">{user.address}</span>
+                </div>
+              )}
             </div>
           </div>
 

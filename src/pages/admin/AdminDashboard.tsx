@@ -8,6 +8,7 @@ import { GlowButton } from '../../components/ui/GlowButton';
 import { API_BASE_URL, getImageUrl } from '../../config';
 import { useAuthStore } from '../../store/authStore';
 import { AdminLogin } from './AdminLogin';
+import { EntryScanner } from '../../components/admin/EntryScanner';
 
 export const AdminDashboard: React.FC = () => {
   const { user } = useAuthStore();
@@ -21,6 +22,7 @@ export const AdminDashboard: React.FC = () => {
     avgAttendance: 0
   });
   const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'overview' | 'scanner'>('overview');
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -122,114 +124,144 @@ export const AdminDashboard: React.FC = () => {
           </GlowButton>
         </header>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {[
-            { label: 'Total Revenue', value: `₹${(stats.totalRevenue / 1000).toFixed(1)}k`, icon: IndianRupee, color: 'var(--accent-gold)', trend: '+12.5%' },
-            { label: 'Total Bookings', value: stats.totalBookings.toLocaleString(), icon: Ticket, color: 'var(--violet-bright)', trend: '+8.2%' },
-            { label: 'Active Events', value: stats.activeEvents, icon: TrendingUp, color: 'var(--accent-cyan)', trend: '0%' },
-            { label: 'Avg Attendance', value: `${stats.avgAttendance}%`, icon: Users, color: 'var(--accent-pink)', trend: '+4.1%' },
-          ].map((stat, i) => (
-            <GlassCard key={i} className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="p-3 rounded-xl bg-white/5 text-[var(--text-muted)]" style={{ color: stat.color }}>
-                  <stat.icon className="w-6 h-6" />
-                </div>
-                <span className="text-xs font-bold text-[var(--accent-green)] flex items-center gap-1">
-                  {stat.trend} <ArrowUpRight className="w-3 h-3" />
-                </span>
-              </div>
-              <p className="text-sm text-[var(--text-muted)] font-medium">{stat.label}</p>
-              <h3 className="text-3xl font-display font-bold mt-1">{stat.value}</h3>
-            </GlassCard>
-          ))}
+        {/* Navigation Tabs */}
+        <div className="flex gap-4 border-b border-white/5 pb-2">
+          <button
+            onClick={() => setActiveTab('overview')}
+            className={`pb-2 px-1 font-display text-sm font-bold border-b-2 transition-all cursor-pointer ${
+              activeTab === 'overview'
+                ? 'border-[var(--violet-bright)] text-white font-semibold'
+                : 'border-transparent text-[var(--text-muted)] hover:text-white'
+            }`}
+          >
+            Overview
+          </button>
+          <button
+            onClick={() => setActiveTab('scanner')}
+            className={`pb-2 px-1 font-display text-sm font-bold border-b-2 transition-all cursor-pointer ${
+              activeTab === 'scanner'
+                ? 'border-[var(--violet-bright)] text-white font-semibold'
+                : 'border-transparent text-[var(--text-muted)] hover:text-white'
+            }`}
+          >
+            Entry Scanner & Visitors
+          </button>
         </div>
 
-        {/* Main Analytics Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <GlassCard className="lg:col-span-2 p-8">
-            <div className="flex items-center justify-between mb-8">
-              <h3 className="text-xl font-bold font-display">Revenue Analytics</h3>
-              <div className="flex gap-2">
-                {['Day', 'Week', 'Month'].map(t => (
-                  <button key={t} className="px-3 py-1 rounded-lg bg-white/5 text-xs hover:bg-white/10 transition-colors">
-                    {t}
-                  </button>
-                ))}
-              </div>
+        {activeTab === 'overview' ? (
+          <>
+            {/* Stats Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {[
+                { label: 'Total Revenue', value: `₹${(stats.totalRevenue / 1000).toFixed(1)}k`, icon: IndianRupee, color: 'var(--accent-gold)', trend: '+12.5%' },
+                { label: 'Total Bookings', value: stats.totalBookings.toLocaleString(), icon: Ticket, color: 'var(--violet-bright)', trend: '+8.2%' },
+                { label: 'Active Events', value: stats.activeEvents, icon: TrendingUp, color: 'var(--accent-cyan)', trend: '0%' },
+                { label: 'Avg Attendance', value: `${stats.avgAttendance}%`, icon: Users, color: 'var(--accent-pink)', trend: '+4.1%' },
+              ].map((stat, i) => (
+                <GlassCard key={i} className="p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="p-3 rounded-xl bg-white/5 text-[var(--text-muted)]" style={{ color: stat.color }}>
+                      <stat.icon className="w-6 h-6" />
+                    </div>
+                    <span className="text-xs font-bold text-[var(--accent-green)] flex items-center gap-1">
+                      {stat.trend} <ArrowUpRight className="w-3 h-3" />
+                    </span>
+                  </div>
+                  <p className="text-sm text-[var(--text-muted)] font-medium">{stat.label}</p>
+                  <h3 className="text-3xl font-display font-bold mt-1">{stat.value}</h3>
+                </GlassCard>
+              ))}
             </div>
-            <div className="h-[300px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData}>
-                  <defs>
-                    <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--violet-primary)" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="var(--violet-primary)" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
-                  <XAxis 
-                    dataKey="name" 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{fill: 'var(--text-muted)', fontSize: 12}}
-                    dy={10}
-                  />
-                  <YAxis 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{fill: 'var(--text-muted)', fontSize: 12}}
-                  />
-                  <Tooltip 
-                    contentStyle={{backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-subtle)', borderRadius: '12px'}}
-                    itemStyle={{color: 'var(--text-primary)'}}
-                  />
-                  <Area 
-                    type="monotone" 
-                    dataKey="revenue" 
-                    stroke="var(--violet-bright)" 
-                    strokeWidth={3}
-                    fillOpacity={1} 
-                    fill="url(#colorRev)" 
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </GlassCard>
 
-          <GlassCard className="p-8">
-            <h3 className="text-xl font-bold font-display mb-6">Your Events</h3>
-            <div className="space-y-6 max-h-[400px] overflow-y-auto pr-2 scrollbar-hide">
-              {events.length > 0 ? events.map((event) => (
-                <div key={event.id} className="flex items-center gap-4 group">
-                  <img src={getImageUrl(event.cover_image)} className="w-12 h-12 rounded-lg object-cover" alt="" />
-                  <div className="flex-1">
-                    <p className="text-sm font-bold truncate max-w-[150px]">{event.title}</p>
-                    <p className="text-xs text-[var(--text-muted)]">{event.tickets_sold} bookings</p>
-                  </div>
-                  <div className="flex gap-1">
-                    <button 
-                      onClick={() => navigate(`/admin/edit-event/${event.id}`)}
-                      className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-[var(--text-muted)] hover:text-white transition-colors"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
-                    <button 
-                      onClick={() => handleDeleteEvent(event.id)}
-                      className="p-2 rounded-lg bg-white/5 hover:bg-red-500/20 text-[var(--text-muted)] hover:text-red-500 transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+            {/* Main Analytics Section */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <GlassCard className="lg:col-span-2 p-8">
+                <div className="flex items-center justify-between mb-8">
+                  <h3 className="text-xl font-bold font-display">Revenue Analytics</h3>
+                  <div className="flex gap-2">
+                    {['Day', 'Week', 'Month'].map(t => (
+                      <button key={t} className="px-3 py-1 rounded-lg bg-white/5 text-xs hover:bg-white/10 transition-colors">
+                        {t}
+                      </button>
+                    ))}
                   </div>
                 </div>
-              )) : (
-                <div className="text-center py-8">
-                  <p className="text-[var(--text-muted)] text-sm">No events found.</p>
+                <div className="h-[300px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={chartData}>
+                      <defs>
+                        <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="var(--violet-primary)" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="var(--violet-primary)" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                      <XAxis 
+                        dataKey="name" 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{fill: 'var(--text-muted)', fontSize: 12}}
+                        dy={10}
+                      />
+                      <YAxis 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{fill: 'var(--text-muted)', fontSize: 12}}
+                      />
+                      <Tooltip 
+                        contentStyle={{backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-subtle)', borderRadius: '12px'}}
+                        itemStyle={{color: 'var(--text-primary)'}}
+                      />
+                      <Area 
+                        type="monotone" 
+                        dataKey="revenue" 
+                        stroke="var(--violet-bright)" 
+                        strokeWidth={3}
+                        fillOpacity={1} 
+                        fill="url(#colorRev)" 
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
                 </div>
-              )}
+              </GlassCard>
+
+              <GlassCard className="p-8">
+                <h3 className="text-xl font-bold font-display mb-6">Your Events</h3>
+                <div className="space-y-6 max-h-[400px] overflow-y-auto pr-2 scrollbar-hide">
+                  {events.length > 0 ? events.map((event) => (
+                    <div key={event.id} className="flex items-center gap-4 group">
+                      <img src={getImageUrl(event.cover_image)} className="w-12 h-12 rounded-lg object-cover" alt="" />
+                      <div className="flex-1">
+                        <p className="text-sm font-bold truncate max-w-[150px]">{event.title}</p>
+                        <p className="text-xs text-[var(--text-muted)]">{event.tickets_sold} bookings</p>
+                      </div>
+                      <div className="flex gap-1">
+                        <button 
+                          onClick={() => navigate(`/admin/edit-event/${event.id}`)}
+                          className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-[var(--text-muted)] hover:text-white transition-colors"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteEvent(event.id)}
+                          className="p-2 rounded-lg bg-white/5 hover:bg-red-500/20 text-[var(--text-muted)] hover:text-red-500 transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  )) : (
+                    <div className="text-center py-8">
+                      <p className="text-[var(--text-muted)] text-sm">No events found.</p>
+                    </div>
+                  )}
+                </div>
+              </GlassCard>
             </div>
-          </GlassCard>
-        </div>
+          </>
+        ) : (
+          <EntryScanner />
+        )}
       </div>
     </PageWrapper>
   );

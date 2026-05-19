@@ -15,6 +15,9 @@ interface UserProfile {
   phone?: string;
   onboarded?: boolean;
   interests?: string[];
+  age?: number;
+  address?: string;
+  v_coins_rewarded?: boolean;
 }
 
 interface AuthState {
