@@ -34,6 +34,16 @@ function App() {
     }
   }, [initialize]);
 
+  // Capture referral code from URL query parameters
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const refCode = params.get('ref');
+    if (refCode && refCode.startsWith('VHOP-')) {
+      localStorage.setItem('referred_by_code', refCode);
+      console.log('Successfully captured and saved referral code:', refCode);
+    }
+  }, [location]);
+
   // Global redirect when user logs in
   useEffect(() => {
     if (user && location.pathname === '/') {

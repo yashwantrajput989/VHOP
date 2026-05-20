@@ -19,6 +19,8 @@ interface UserProfile {
   address?: string;
   v_coins_rewarded?: boolean;
   gender?: string;
+  referred_by?: string;
+  referral_rewarded?: boolean;
 }
 
 const sanitizeUser = (user: any): UserProfile | null => {
@@ -45,6 +47,7 @@ const sanitizeUser = (user: any): UserProfile | null => {
     interests,
     onboarded: user.onboarded === 1 || user.onboarded === true || user.onboarded === 'true',
     v_coins_rewarded: user.v_coins_rewarded === 1 || user.v_coins_rewarded === true || user.v_coins_rewarded === 'true',
+    referral_rewarded: user.referral_rewarded === 1 || user.referral_rewarded === true || user.referral_rewarded === 'true',
   };
 };
 
@@ -125,10 +128,11 @@ export const useAuthStore = create<AuthState>()(
       loginWithEmail: async (email, password) => {
         set({ isLoading: true });
         try {
+          const referredBy = localStorage.getItem('referred_by_code');
           const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password })
+            body: JSON.stringify({ email, password, referred_by_code: referredBy || undefined })
           });
 
           if (!response.ok) {
@@ -137,6 +141,7 @@ export const useAuthStore = create<AuthState>()(
           }
 
           const profile = await response.json();
+          localStorage.removeItem('referred_by_code');
           set({ user: sanitizeUser(profile), session: { uid: profile.id }, isLoading: false });
           logToBackend('login_email_success', profile);
           return profile;
@@ -150,10 +155,11 @@ export const useAuthStore = create<AuthState>()(
       registerWithEmail: async (email, password, fullName) => {
         set({ isLoading: true });
         try {
+          const referredBy = localStorage.getItem('referred_by_code');
           const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password, full_name: fullName })
+            body: JSON.stringify({ email, password, full_name: fullName, referred_by_code: referredBy || undefined })
           });
 
           if (!response.ok) {
@@ -162,6 +168,7 @@ export const useAuthStore = create<AuthState>()(
           }
 
           const profile = await response.json();
+          localStorage.removeItem('referred_by_code');
           set({ user: sanitizeUser(profile), session: { uid: profile.id }, isLoading: false });
           logToBackend('signup_email_success', profile);
           return profile;
@@ -175,6 +182,7 @@ export const useAuthStore = create<AuthState>()(
       loginWithGoogle: async (email) => {
         set({ isLoading: true });
         try {
+          const referredBy = localStorage.getItem('referred_by_code');
           const googleEmail = email || `google_${Math.random().toString(36).substring(2, 7)}@gmail.com`;
           const googleName = googleEmail.split('@')[0].split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || 'Google User';
           
@@ -182,7 +190,8 @@ export const useAuthStore = create<AuthState>()(
             email: googleEmail,
             full_name: googleName,
             avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${googleEmail}`,
-            id: `g_${Math.random().toString(36).substring(2, 15)}`
+            id: `g_${Math.random().toString(36).substring(2, 15)}`,
+            referred_by_code: referredBy || undefined
           };
 
           const response = await fetch(`${API_BASE_URL}/api/auth/google-login`, {
@@ -197,6 +206,7 @@ export const useAuthStore = create<AuthState>()(
           }
 
           const profile = await response.json();
+          localStorage.removeItem('referred_by_code');
           set({ user: sanitizeUser(profile), session: { uid: profile.id }, isLoading: false });
           logToBackend('google_login_success', profile);
           return profile;

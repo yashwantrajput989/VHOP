@@ -155,6 +155,8 @@ const pool = mysql.createPool({
         await addColumnIfNeeded('address', 'TEXT NULL');
         await addColumnIfNeeded('gender', 'VARCHAR(20) NULL');
         await addColumnIfNeeded('v_coins_rewarded', 'BOOLEAN DEFAULT FALSE');
+        await addColumnIfNeeded('referred_by', 'VARCHAR(255) NULL');
+        await addColumnIfNeeded('referral_rewarded', 'BOOLEAN DEFAULT FALSE');
 
         // 7. Seed default admin profile (using INSERT IGNORE for safety in production)
         await pool.execute(`
@@ -309,6 +311,7 @@ function formatProfile(profile) {
     // Normalize boolean status columns from TINYINT (0 or 1) to real boolean (true/false)
     formatted.onboarded = formatted.onboarded === 1 || formatted.onboarded === true;
     formatted.v_coins_rewarded = formatted.v_coins_rewarded === 1 || formatted.v_coins_rewarded === true;
+    formatted.referral_rewarded = formatted.referral_rewarded === 1 || formatted.referral_rewarded === true;
     
     return formatted;
 }
@@ -327,6 +330,99 @@ const logActivity = (data) => {
     const logEntry = `[${timestamp}] ${JSON.stringify(data)}\n`;
     fs.appendFileSync(activityLogPath, logEntry);
     console.log(`Logged: ${logEntry.trim()}`);
+};
+
+// Helper to process referral reward (crediting 25 V-Coins to both invitee and referrer)
+const processReferralReward = async (userId, referredByCode) => {
+    if (!referredByCode || typeof referredByCode !== 'string') return;
+    
+    try {
+        // Parse referred username from code (format: VHOP-USERNAME-2026)
+        const parts = referredByCode.split('-');
+        if (parts.length < 2 || parts[0] !== 'VHOP') {
+            console.log(`[Referral] Invalid referral code format: ${referredByCode}`);
+            return;
+        }
+        
+        const referrerUsername = parts[1].toLowerCase();
+        
+        // Start a database connection from the pool to run in transaction
+        const connection = await pool.getConnection();
+        try {
+            await connection.beginTransaction();
+            
+            // 1. Get invitee profile (to ensure they exist and aren't already rewarded)
+            const [inviteeRows] = await connection.execute(
+                'SELECT id, username, v_coins, referral_rewarded FROM profiles WHERE id = ?',
+                [userId]
+            );
+            
+            if (inviteeRows.length === 0) {
+                console.log(`[Referral] Invitee profile not found for ID: ${userId}`);
+                await connection.rollback();
+                return;
+            }
+            
+            const invitee = inviteeRows[0];
+            if (invitee.referral_rewarded) {
+                console.log(`[Referral] User ${userId} has already been rewarded for referral.`);
+                await connection.rollback();
+                return;
+            }
+            
+            // 2. Find referrer by username (case-insensitive)
+            const [referrerRows] = await connection.execute(
+                'SELECT id, username, v_coins FROM profiles WHERE LOWER(username) = ?',
+                [referrerUsername]
+            );
+            
+            if (referrerRows.length === 0) {
+                console.log(`[Referral] Referrer not found for username: ${referrerUsername}`);
+                await connection.rollback();
+                return;
+            }
+            
+            const referrer = referrerRows[0];
+            
+            // Prevent self-referral
+            if (referrer.id === userId || (invitee.username && referrer.username.toLowerCase() === invitee.username.toLowerCase())) {
+                console.log(`[Referral] Self-referral detected for user ${userId}. Reward aborted.`);
+                await connection.rollback();
+                return;
+            }
+            
+            // 3. Update invitee: +25 v_coins, set referred_by and referral_rewarded
+            await connection.execute(
+                'UPDATE profiles SET v_coins = v_coins + 25, referred_by = ?, referral_rewarded = true WHERE id = ?',
+                [referrer.username, userId]
+            );
+            
+            // 4. Update referrer: +25 v_coins
+            await connection.execute(
+                'UPDATE profiles SET v_coins = v_coins + 25 WHERE id = ?',
+                [referrer.id]
+            );
+            
+            await connection.commit();
+            console.log(`[Referral] Success! User ${userId} and Referrer ${referrer.id} (${referrer.username}) rewarded 25 V-Coins each.`);
+            
+            logActivity({
+                type: 'referral_rewarded',
+                inviteeId: userId,
+                referrerId: referrer.id,
+                referrerUsername: referrer.username,
+                coinsCredited: 25
+            });
+            
+        } catch (txErr) {
+            await connection.rollback();
+            throw txErr;
+        } finally {
+            connection.release();
+        }
+    } catch (err) {
+        console.error('[Referral] Error processing referral reward:', err);
+    }
 };
 
 // --- FILE UPLOADS ---
@@ -373,7 +469,7 @@ app.post('/api/auth/sync', async (req, res) => {
 
 // Register standard user
 app.post('/api/auth/register', async (req, res) => {
-    const { email, password, full_name } = req.body;
+    const { email, password, full_name, referred_by_code } = req.body;
     try {
         const [existing] = await pool.execute('SELECT * FROM profiles WHERE email = ?', [email]);
         if (existing.length > 0) {
@@ -390,6 +486,11 @@ app.post('/api/auth/register', async (req, res) => {
         );
 
         logActivity({ type: 'profile_created', userId: id });
+
+        // Process referral if code is provided
+        if (referred_by_code) {
+            await processReferralReward(id, referred_by_code);
+        }
         
         const [userRows] = await pool.execute('SELECT * FROM profiles WHERE id = ?', [id]);
         res.status(201).json(formatProfile(userRows[0]));
@@ -401,7 +502,7 @@ app.post('/api/auth/register', async (req, res) => {
 
 // Login standard user
 app.post('/api/auth/login', async (req, res) => {
-    const { email, password } = req.body;
+    const { email, password, referred_by_code } = req.body;
     try {
         const [rows] = await pool.execute('SELECT * FROM profiles WHERE email = ?', [email]);
         if (rows.length === 0) {
@@ -413,7 +514,13 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(400).json({ error: 'Incorrect password' });
         }
 
-        res.status(200).json(formatProfile(userProfile));
+        // Process referral if code is provided and user has never been referred before
+        if (referred_by_code && !userProfile.referral_rewarded) {
+            await processReferralReward(userProfile.id, referred_by_code);
+        }
+
+        const [updatedRows] = await pool.execute('SELECT * FROM profiles WHERE id = ?', [userProfile.id]);
+        res.status(200).json(formatProfile(updatedRows[0]));
     } catch (error) {
         console.error('Login error:', error);
         res.status(500).json({ error: error.message });
@@ -422,11 +529,17 @@ app.post('/api/auth/login', async (req, res) => {
 
 // Google Sign-in Sync/Simulated Login
 app.post('/api/auth/google-login', async (req, res) => {
-    const { email, full_name, avatar_url, id: googleId } = req.body;
+    const { email, full_name, avatar_url, id: googleId, referred_by_code } = req.body;
     try {
         const [rows] = await pool.execute('SELECT * FROM profiles WHERE email = ?', [email]);
         if (rows.length > 0) {
             const userProfile = rows[0];
+            
+            // Process referral if code is provided and user has never been referred before
+            if (referred_by_code && !userProfile.referral_rewarded) {
+                await processReferralReward(userProfile.id, referred_by_code);
+            }
+
             // Update details if they changed
             await pool.execute(
                 'UPDATE profiles SET full_name = ?, avatar_url = ? WHERE id = ?',
@@ -446,6 +559,12 @@ app.post('/api/auth/google-login', async (req, res) => {
         );
 
         logActivity({ type: 'profile_created', userId: id });
+
+        // Process referral if code is provided for new user
+        if (referred_by_code) {
+            await processReferralReward(id, referred_by_code);
+        }
+
         const [userRows] = await pool.execute('SELECT * FROM profiles WHERE id = ?', [id]);
         res.status(201).json(formatProfile(userRows[0]));
     } catch (error) {

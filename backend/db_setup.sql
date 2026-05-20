@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS profiles (
     phone VARCHAR(20),
     onboarded BOOLEAN DEFAULT FALSE,
     interests JSON, -- Array of interest strings
+    referred_by VARCHAR(255) NULL,
+    referral_rewarded BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
