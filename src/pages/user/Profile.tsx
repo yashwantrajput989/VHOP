@@ -10,7 +10,7 @@ import { GlassCard } from '../../components/ui/GlassCard';
 import { useAuthStore } from '../../store/authStore';
 import { useTicketStore } from '../../store/ticketStore';
 import type { Ticket } from '../../store/ticketStore';
-import { Settings, MapPin, Mail, Phone, ShieldCheck, QrCode, Calendar, Lock, LogIn, Coins, Sparkles } from 'lucide-react';
+import { Settings, MapPin, Mail, Phone, ShieldCheck, QrCode, Calendar, Lock, LogIn, Coins, Sparkles, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { API_BASE_URL } from '../../config';
 import { ProfileCompletionBanner, isProfileComplete } from '../../components/profile/ProfileCompletionBanner';
@@ -20,11 +20,78 @@ import { FloatingOrb } from '../../components/ui/FloatingOrb';
 
 
 export const Profile: React.FC = () => {
-  const { user } = useAuthStore();
+  const { user, setUser } = useAuthStore();
   const navigate = useNavigate();
   const { tickets, addTicket } = useTicketStore();
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const { openModal } = useUIStore();
+
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editForm, setEditForm] = useState({
+    fullName: '',
+    username: '',
+    city: 'Mumbai',
+    phone: '',
+    age: '',
+    gender: '',
+    address: ''
+  });
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
+  const [editError, setEditError] = useState('');
+  const [editSuccess, setEditSuccess] = useState('');
+
+  const openEditModal = () => {
+    setEditForm({
+      fullName: user?.full_name || '',
+      username: user?.username || '',
+      city: user?.city || 'Mumbai',
+      phone: user?.phone || '',
+      age: user?.age ? String(user.age) : '',
+      gender: user?.gender || '',
+      address: user?.address || ''
+    });
+    setEditError('');
+    setEditSuccess('');
+    setIsEditModalOpen(true);
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setEditError('');
+    setEditSuccess('');
+    setIsSubmittingEdit(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/profile/update`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user?.id,
+          fullName: editForm.fullName,
+          username: editForm.username,
+          city: editForm.city,
+          phone: editForm.phone,
+          age: editForm.age ? Number(editForm.age) : null,
+          gender: editForm.gender,
+          address: editForm.address
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to update profile.');
+      }
+
+      const data = await response.json();
+      setUser(data.user);
+      setEditSuccess('Profile updated successfully!');
+      setTimeout(() => setIsEditModalOpen(false), 1200);
+    } catch (err: any) {
+      setEditError(err.message || 'An error occurred.');
+    } finally {
+      setIsSubmittingEdit(false);
+    }
+  };
 
   const parsedInterests = React.useMemo(() => {
     if (!user?.interests) return [];
@@ -174,8 +241,12 @@ export const Profile: React.FC = () => {
               </div>
             )}
           </div>
-          <button className="absolute top-6 right-6 md:relative md:top-0 md:right-0 p-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
-            <Settings className="w-5 h-5 text-[var(--text-muted)]" />
+          <button 
+            onClick={openEditModal}
+            className="absolute top-6 right-6 md:relative md:top-0 md:right-0 p-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors cursor-pointer group focus:outline-none"
+            title="Edit Profile"
+          >
+            <Settings className="w-5 h-5 text-[var(--text-muted)] group-hover:text-white transition-colors" />
           </button>
           
           {(user.role === 'admin' || user.role === 'superadmin') && (
@@ -223,6 +294,12 @@ export const Profile: React.FC = () => {
               <div className="flex items-center gap-3 text-sm text-[var(--text-secondary)]">
                 <Phone className="w-4 h-4 text-[var(--violet-bright)] shrink-0" />
                 <span>{user.phone || '+91 9XXXX XXXXX'}</span>
+              </div>
+              <div className="flex items-center gap-3 text-sm text-[var(--text-secondary)]">
+                <User className="w-4 h-4 text-[var(--violet-bright)] shrink-0" />
+                <span className="capitalize">
+                  {user.gender ? user.gender.replace(/_/g, ' ') : 'Gender: Not specified'}
+                </span>
               </div>
               {user.age && (
                 <div className="flex items-center gap-3 text-sm text-[var(--text-secondary)]">
@@ -334,6 +411,178 @@ export const Profile: React.FC = () => {
                 <GlowButton onClick={() => setSelectedTicket(null)} className="w-full py-4" variant="secondary">
                   Close Ticket
                 </GlowButton>
+              </GlassCard>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Edit Profile Modal */}
+      <AnimatePresence>
+        {isEditModalOpen && (
+          <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsEditModalOpen(false)}
+              className="fixed inset-0 bg-black/85 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="relative w-full max-w-lg my-8 z-10"
+            >
+              <GlassCard className="p-6 md:p-8 space-y-6 border border-[var(--violet-bright)]/30 shadow-glow">
+                <div className="flex items-center justify-between pb-4 border-b border-white/5">
+                  <h3 className="text-xl font-display font-bold flex items-center gap-2">
+                    <Settings className="w-5 h-5 text-[var(--violet-bright)]" />
+                    Edit Profile Details
+                  </h3>
+                  <button 
+                    onClick={() => setIsEditModalOpen(false)}
+                    className="text-[var(--text-muted)] hover:text-white transition-colors font-bold text-lg focus:outline-none cursor-pointer"
+                  >
+                    &times;
+                  </button>
+                </div>
+
+                {editError && (
+                  <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/25 text-xs text-red-200/90 font-medium">
+                    {editError}
+                  </div>
+                )}
+                
+                {editSuccess && (
+                  <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-xs text-emerald-200/90 font-medium">
+                    {editSuccess}
+                  </div>
+                )}
+
+                <form onSubmit={handleEditSubmit} className="space-y-4 max-h-[60vh] overflow-y-auto pr-1 scrollbar-thin">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+                        Full Name
+                      </label>
+                      <input
+                        type="text"
+                        value={editForm.fullName}
+                        onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })}
+                        placeholder="John Doe"
+                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors"
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+                        Username
+                      </label>
+                      <input
+                        type="text"
+                        value={editForm.username}
+                        onChange={(e) => setEditForm({ ...editForm, username: e.target.value })}
+                        placeholder="johndoe"
+                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+                        City
+                      </label>
+                      <input
+                        type="text"
+                        value={editForm.city}
+                        onChange={(e) => setEditForm({ ...editForm, city: e.target.value })}
+                        placeholder="Visakhapatnam"
+                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+                        Phone Number
+                      </label>
+                      <input
+                        type="tel"
+                        value={editForm.phone}
+                        onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                        placeholder="+91 XXXXX XXXXX"
+                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+                        Age
+                      </label>
+                      <input
+                        type="number"
+                        value={editForm.age}
+                        onChange={(e) => setEditForm({ ...editForm, age: e.target.value })}
+                        placeholder="21"
+                        min="18"
+                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+                        Gender
+                      </label>
+                      <select
+                        value={editForm.gender}
+                        onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}
+                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors bg-[var(--bg-card)] cursor-pointer"
+                      >
+                        <option value="" disabled className="bg-[var(--bg-primary)]">Select Gender</option>
+                        <option value="male" className="bg-[var(--bg-primary)] text-white">Male</option>
+                        <option value="female" className="bg-[var(--bg-primary)] text-white">Female</option>
+                        <option value="other" className="bg-[var(--bg-primary)] text-white">Other</option>
+                        <option value="prefer_not_to_say" className="bg-[var(--bg-primary)] text-white">Prefer not to say</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+                      Address
+                    </label>
+                    <textarea
+                      value={editForm.address}
+                      onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
+                      placeholder="Enter your residence details for VIP entry verification..."
+                      rows={3}
+                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors resize-none"
+                    />
+                  </div>
+
+                  <div className="pt-4 flex gap-3">
+                    <GlowButton
+                      type="button"
+                      variant="secondary"
+                      onClick={() => setIsEditModalOpen(false)}
+                      className="flex-1 py-3.5"
+                    >
+                      Cancel
+                    </GlowButton>
+                    <GlowButton
+                      type="submit"
+                      isLoading={isSubmittingEdit}
+                      className="flex-1 py-3.5"
+                    >
+                      Save Changes
+                    </GlowButton>
+                  </div>
+                </form>
               </GlassCard>
             </motion.div>
           </div>

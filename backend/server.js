@@ -43,6 +43,7 @@ const pool = mysql.createPool({
                 v_coins INT DEFAULT 100,
                 city VARCHAR(100) DEFAULT 'Mumbai',
                 phone VARCHAR(20),
+                gender VARCHAR(20) NULL,
                 onboarded BOOLEAN DEFAULT FALSE,
                 interests JSON,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -152,6 +153,7 @@ const pool = mysql.createPool({
         await addColumnIfNeeded('password', 'VARCHAR(255) NULL');
         await addColumnIfNeeded('age', 'INT NULL');
         await addColumnIfNeeded('address', 'TEXT NULL');
+        await addColumnIfNeeded('gender', 'VARCHAR(20) NULL');
         await addColumnIfNeeded('v_coins_rewarded', 'BOOLEAN DEFAULT FALSE');
 
         // 7. Seed default admin profile (using INSERT IGNORE for safety in production)
@@ -502,6 +504,43 @@ app.put('/api/auth/profile/complete', async (req, res) => {
         });
     } catch (error) {
         console.error('Error completing profile:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Update Profile details
+app.put('/api/auth/profile/update', async (req, res) => {
+    const { userId, fullName, username, city, phone, age, gender, address } = req.body;
+    try {
+        // Verify unique username if changed
+        if (username) {
+            const [existing] = await pool.execute('SELECT id FROM profiles WHERE username = ? AND id != ?', [username, userId]);
+            if (existing.length > 0) {
+                return res.status(400).json({ error: 'Username is already taken.' });
+            }
+        }
+
+        await pool.execute(
+            'UPDATE profiles SET full_name = ?, username = ?, city = ?, phone = ?, age = ?, gender = ?, address = ? WHERE id = ?',
+            [
+                fullName || null,
+                username || null,
+                city || 'Mumbai',
+                phone || '',
+                age ? parseInt(age, 10) : null,
+                gender || null,
+                address || '',
+                userId
+            ]
+        );
+
+        const [updatedRows] = await pool.execute('SELECT * FROM profiles WHERE id = ?', [userId]);
+        res.status(200).json({ 
+            user: formatProfile(updatedRows[0]),
+            message: 'Profile updated successfully.'
+        });
+    } catch (error) {
+        console.error('Error updating profile:', error);
         res.status(500).json({ error: error.message });
     }
 });

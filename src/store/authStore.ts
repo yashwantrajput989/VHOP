@@ -18,6 +18,7 @@ interface UserProfile {
   age?: number;
   address?: string;
   v_coins_rewarded?: boolean;
+  gender?: string;
 }
 
 const sanitizeUser = (user: any): UserProfile | null => {

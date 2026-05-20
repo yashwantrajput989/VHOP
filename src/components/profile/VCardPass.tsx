@@ -16,6 +16,7 @@ export const VCardPass: React.FC = () => {
     age: user.age,
     phone: user.phone,
     email: user.email,
+    gender: user.gender || '',
     address: user.address || ''
   });
 
@@ -164,8 +165,8 @@ export const VCardPass: React.FC = () => {
                   <span className="font-bold text-white truncate block">{user.full_name}</span>
                 </div>
                 <div>
-                  <span className="text-[var(--text-muted)] block uppercase tracking-wider text-[8px]">Age</span>
-                  <span className="font-bold text-white block">{user.age} Years</span>
+                  <span className="text-[var(--text-muted)] block uppercase tracking-wider text-[8px]">Age & Gender</span>
+                  <span className="font-bold text-white block capitalize">{user.age} Yrs • {user.gender ? user.gender.replace(/_/g, ' ') : 'N/A'}</span>
                 </div>
                 <div>
                   <span className="text-[var(--text-muted)] block uppercase tracking-wider text-[8px]">Contact Number</span>
