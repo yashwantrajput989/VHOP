@@ -52,6 +52,8 @@ export const EntryScanner: React.FC = () => {
   // Camera & view states
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [scannedUser, setScannedUser] = useState<UserProfile | null>(null);
+  const [scannedType, setScannedType] = useState<'vcard' | 'ticket' | null>(null);
+  const [scannedTicketData, setScannedTicketData] = useState<any | null>(null);
   
   // Table search & logs
   const [searchQuery, setSearchQuery] = useState('');
@@ -132,6 +134,8 @@ export const EntryScanner: React.FC = () => {
     setSuccessMsg('');
     setIsCameraActive(true);
     setScannedUser(null);
+    setScannedType(null);
+    setScannedTicketData(null);
     try {
       const constraints = { video: { facingMode: 'environment', width: 640, height: 480 } };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -202,7 +206,9 @@ export const EntryScanner: React.FC = () => {
                   };
 
                   playBeep();
+                  setScannedType('vcard');
                   setScannedUser(visitorProfile);
+                  setScannedTicketData(null);
                   setSuccessMsg(`Successfully scanned QR V-Card for ${visitorProfile.full_name}!`);
                   setError('');
                   stopCamera();
@@ -217,11 +223,22 @@ export const EntryScanner: React.FC = () => {
               const matchedUser = users.find(u => u.id === code.data || u.email === code.data);
               if (matchedUser) {
                 playBeep();
+                setScannedType('vcard');
                 setScannedUser(matchedUser);
+                setScannedTicketData(null);
                 setSuccessMsg(`Successfully verified Ticket/ID for ${matchedUser.full_name}!`);
                 setError('');
                 stopCamera();
                 isActive = false;
+                return;
+              }
+
+              // 3. Fallback: Treat as a potential ticket booking code
+              if (code.data && code.data.trim() !== '') {
+                playBeep();
+                stopCamera();
+                isActive = false;
+                handleBookingLookup(code.data.trim());
                 return;
               }
             }
@@ -272,9 +289,85 @@ export const EntryScanner: React.FC = () => {
 
       setSuccessMsg(`Welcome approved! Checked in ${scannedUser.full_name}.`);
       setScannedUser(null);
+      setScannedType(null);
       fetchLogs(); // Reload logs
     } catch (err: any) {
       setError(err.message || 'An error occurred during check-in.');
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  // Lookup booking details from backend by code
+  const handleBookingLookup = async (code: string) => {
+    if (!adminUser) return;
+    setIsActionLoading(true);
+    setError('');
+    setSuccessMsg('');
+    setScannedType(null);
+    setScannedUser(null);
+    setScannedTicketData(null);
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/bookings/lookup/${code}?adminId=${adminUser.id}`);
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('Booking/Ticket not found in database.');
+        }
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to lookup booking.');
+      }
+      
+      const data = await response.json();
+      setScannedType('ticket');
+      setScannedTicketData(data);
+      
+      if (!data.isValid) {
+        setError('Warning: This ticket is for an event that does not belong to your venue/company.');
+      } else if (data.isAlreadyCheckedIn) {
+        setError('Warning: This ticket has ALREADY been checked in! Double-scan detected!');
+      } else {
+        setSuccessMsg(`Successfully verified ticket for ${data.booking.buyer_name || 'customer'}!`);
+      }
+    } catch (err: any) {
+      console.error('Error looking up booking:', err);
+      setError(err.message || 'Error looking up scanned QR code.');
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  // Complete ticket check-in & log all group members
+  const handleApproveTicketEntry = async () => {
+    if (!adminUser || !scannedTicketData?.booking) return;
+    setIsActionLoading(true);
+    setError('');
+    setSuccessMsg('');
+    
+    const booking = scannedTicketData.booking;
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/bookings/checkin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bookingId: booking.booking_id || booking.id,
+          adminId: adminUser.id
+        })
+      });
+      
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to complete ticket check-in.');
+      }
+      
+      const resData = await response.json();
+      setSuccessMsg(`Gate entry approved! Checked in all ${resData.guestsCheckedInCount} group members successfully.`);
+      setScannedTicketData(null);
+      setScannedType(null);
+      fetchLogs(); // Refresh persistent visitor logs
+    } catch (err: any) {
+      setError(err.message || 'An error occurred during ticket check-in.');
     } finally {
       setIsActionLoading(false);
     }
@@ -419,9 +512,9 @@ export const EntryScanner: React.FC = () => {
           
           {/* SCANNED DETAILS CHECKOUT */}
           <AnimatePresence mode="wait">
-            {scannedUser ? (
+            {scannedType === 'vcard' && scannedUser ? (
               <motion.div
-                key="checkout"
+                key="checkout-vcard"
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -15 }}
@@ -438,7 +531,7 @@ export const EntryScanner: React.FC = () => {
                       <h3 className="text-xl font-bold font-display text-white">Validate Entry Pass</h3>
                     </div>
                     <button 
-                      onClick={() => setScannedUser(null)} 
+                      onClick={() => { setScannedUser(null); setScannedType(null); }} 
                       className="text-xs text-[var(--text-muted)] hover:text-white px-2 py-1 bg-white/5 border border-white/10 rounded-lg"
                     >
                       Cancel
@@ -483,6 +576,156 @@ export const EntryScanner: React.FC = () => {
                   >
                     Log Visitor & Approve Gate Entry ✔
                   </GlowButton>
+                </GlassCard>
+              </motion.div>
+            ) : scannedType === 'ticket' && scannedTicketData ? (
+              <motion.div
+                key="checkout-ticket"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                className="w-full"
+              >
+                <GlassCard className={`p-6 border ${
+                  !scannedTicketData.isValid 
+                    ? 'border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.15)]' 
+                    : scannedTicketData.isAlreadyCheckedIn 
+                      ? 'border-red-500/30 shadow-[0_0_15px_rgba(239,68,68,0.15)]' 
+                      : 'border-[var(--accent-green)]/30 shadow-glow'
+                } space-y-6 relative overflow-hidden`}>
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-green-500/5 blur-2xl rounded-full pointer-events-none" />
+                  
+                  <div className="flex justify-between items-start">
+                    <div className="space-y-1">
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
+                        !scannedTicketData.isValid 
+                          ? 'bg-amber-500/15 border border-amber-500/35 text-amber-500' 
+                          : scannedTicketData.isAlreadyCheckedIn 
+                            ? 'bg-red-500/15 border border-red-500/35 text-red-500' 
+                            : 'bg-[var(--accent-green)]/15 border border-[var(--accent-green)]/35 text-[var(--accent-green)]'
+                      }`}>
+                        {!scannedTicketData.isValid 
+                          ? 'Invalid Venue' 
+                          : scannedTicketData.isAlreadyCheckedIn 
+                            ? 'Double Scan Warning' 
+                            : 'Ticket Confirmed'}
+                      </span>
+                      <h3 className="text-xl font-bold font-display text-white">Validate Booking Entry</h3>
+                    </div>
+                    <button 
+                      onClick={() => { setScannedTicketData(null); setScannedType(null); }} 
+                      className="text-xs text-[var(--text-muted)] hover:text-white px-2 py-1 bg-white/5 border border-white/10 rounded-lg"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+
+                  {/* Event details summary */}
+                  <div className="flex items-start gap-4 p-4 rounded-xl bg-white/5 border border-white/10">
+                    <img src={scannedTicketData.booking.cover_image} className="w-16 h-16 rounded-lg object-cover border border-white/10 shadow-inner" alt="" />
+                    <div>
+                      <h4 className="font-bold text-white text-sm leading-snug">{scannedTicketData.booking.event_title}</h4>
+                      <p className="text-xs text-[var(--text-secondary)] mt-1">{scannedTicketData.booking.venue_name}, {scannedTicketData.booking.city}</p>
+                      <div className="mt-2 text-[var(--violet-glow)] font-bold text-xs uppercase tracking-wider">
+                        {scannedTicketData.booking.ticket_name} • {scannedTicketData.booking.quantity} {scannedTicketData.booking.quantity > 1 ? 'Tickets' : 'Ticket'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Buyer information */}
+                  <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-3">
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider border-b border-white/5 pb-2">Ticket Buyer Info</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                      <div className="space-y-1">
+                        <span className="text-[var(--text-secondary)] font-medium flex items-center gap-1.5">
+                          <User className="w-3.5 h-3.5 text-[var(--violet-bright)] shrink-0" /> Full Name
+                        </span>
+                        <p className="font-bold text-white">{scannedTicketData.booking.buyer_name || 'N/A'}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[var(--text-secondary)] font-medium flex items-center gap-1.5">
+                          <Smartphone className="w-3.5 h-3.5 text-[var(--violet-bright)] shrink-0" /> Phone
+                        </span>
+                        <p className="font-bold text-white">{scannedTicketData.booking.buyer_phone || 'N/A'}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[var(--text-secondary)] font-medium flex items-center gap-1.5">
+                          <Mail className="w-3.5 h-3.5 text-[var(--violet-bright)] shrink-0" /> Email
+                        </span>
+                        <p className="font-bold text-white truncate">{scannedTicketData.booking.buyer_email || 'N/A'}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[var(--text-secondary)] font-medium flex items-center gap-1.5">
+                          <AlertCircle className="w-3.5 h-3.5 text-[var(--violet-bright)] shrink-0" /> Booking ID
+                        </span>
+                        <p className="font-bold text-[var(--violet-glow)] font-mono">{scannedTicketData.booking.booking_id}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Group members list */}
+                  <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-3">
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider border-b border-white/5 pb-2">
+                      Group Members ({scannedTicketData.booking.guests?.length || 0})
+                    </h4>
+                    <div className="space-y-2 max-h-[150px] overflow-y-auto custom-scrollbar pr-1">
+                      {scannedTicketData.booking.guests && scannedTicketData.booking.guests.length > 0 ? (
+                        scannedTicketData.booking.guests.map((guest: any, idx: number) => (
+                          <div key={idx} className="flex justify-between items-center bg-white/[0.02] border border-white/5 p-2.5 rounded-lg text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className="w-5 h-5 rounded-full bg-[var(--violet-primary)]/20 border border-[var(--violet-bright)]/30 flex items-center justify-center text-[10px] text-white font-bold">
+                                {idx + 1}
+                              </span>
+                              <span className="font-bold text-white">{guest.name || 'N/A'}</span>
+                            </div>
+                            <span className="text-[var(--text-secondary)] bg-white/5 px-2 py-0.5 rounded-md text-[10px]">
+                              {guest.age ? `${guest.age} years` : 'N/A'}
+                            </span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-xs text-[var(--text-muted)] italic">No specific guest details registered. Buyer will be checked in.</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {scannedTicketData.isAlreadyCheckedIn ? (
+                    <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                      <p className="text-[11px] text-red-200/90 leading-normal">
+                        <strong>Double-Scan Detected:</strong> This booking has already been scanned and checked in. You should deny entry unless there is a valid reason.
+                      </p>
+                    </div>
+                  ) : !scannedTicketData.isValid ? (
+                    <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                      <p className="text-[11px] text-amber-200/90 leading-normal">
+                        <strong>Invalid Venue:</strong> This ticket was issued for a different venue/company. Entry must be denied.
+                      </p>
+                    </div>
+                  ) : null}
+
+                  <div className="flex gap-3">
+                    <button 
+                      onClick={() => { setScannedTicketData(null); setScannedType(null); }} 
+                      className="flex-1 py-3.5 rounded-xl border border-white/10 text-xs font-bold text-[var(--text-secondary)] hover:bg-white/5 transition-all"
+                    >
+                      Deny Entry
+                    </button>
+                    
+                    <GlowButton
+                      onClick={handleApproveTicketEntry}
+                      isLoading={isActionLoading}
+                      disabled={!scannedTicketData.isValid || scannedTicketData.isAlreadyCheckedIn}
+                      className={`flex-[2] py-3.5 text-xs font-bold ${
+                        scannedTicketData.isAlreadyCheckedIn || !scannedTicketData.isValid
+                          ? 'bg-zinc-700 border-zinc-600 cursor-not-allowed opacity-50'
+                          : 'bg-[var(--accent-green)] border-[var(--accent-green)]/40 hover:bg-emerald-500 shadow-glow'
+                      }`}
+                    >
+                      Approve Booking Entry & Log All Guests ✔
+                    </GlowButton>
+                  </div>
                 </GlassCard>
               </motion.div>
             ) : null}

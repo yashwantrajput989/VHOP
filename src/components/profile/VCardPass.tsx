@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../../store/authStore';
+import { getImageUrl } from '../../config';
 import { QrCode, Shield, Sparkles, RefreshCw } from 'lucide-react';
 
 export const VCardPass: React.FC = () => {
@@ -41,7 +42,10 @@ export const VCardPass: React.FC = () => {
       >
         <motion.div
           className="relative w-full h-full duration-700"
-          style={{ transformStyle: 'preserve-3d' }}
+          style={{ 
+            transformStyle: 'preserve-3d',
+            WebkitTransformStyle: 'preserve-3d'
+          }}
           animate={{ rotateY: isFlipped ? 180 : 0 }}
           transition={{ duration: 0.6, ease: 'easeInOut' }}
         >
@@ -49,8 +53,12 @@ export const VCardPass: React.FC = () => {
           <div 
             className="absolute inset-0 w-full h-full rounded-[2.5rem] p-6 flex flex-col justify-between overflow-hidden shadow-glow border border-violet-500/30"
             style={{ 
+              WebkitBackfaceVisibility: 'hidden',
               backfaceVisibility: 'hidden',
-              background: 'linear-gradient(135deg, #0A071B 0%, #150E36 50%, #290835 100%)' 
+              WebkitTransform: 'translateZ(1px)',
+              transform: 'translateZ(1px)',
+              background: 'linear-gradient(135deg, #0A071B 0%, #150E36 50%, #290835 100%)',
+              backgroundColor: '#0A071B' 
             }}
           >
             {/* Ambient Background Glows */}
@@ -85,7 +93,7 @@ export const VCardPass: React.FC = () => {
                 </div>
                 
                 <img 
-                  src={user.avatar_url} 
+                  src={getImageUrl(user.avatar_url)} 
                   alt={user.full_name} 
                   className="w-24 h-24 rounded-full border-2 border-[var(--violet-bright)] p-1 bg-black/40 shadow-glow"
                 />
@@ -124,9 +132,12 @@ export const VCardPass: React.FC = () => {
           <div 
             className="absolute inset-0 w-full h-full rounded-[2.5rem] p-6 flex flex-col justify-between overflow-hidden shadow-glow border border-pink-500/30"
             style={{ 
+              WebkitBackfaceVisibility: 'hidden',
               backfaceVisibility: 'hidden',
-              transform: 'rotateY(180deg)',
-              background: 'linear-gradient(135deg, #0A071B 0%, #150E36 50%, #300C25 100%)' 
+              WebkitTransform: 'rotateY(180deg) translateZ(1px)',
+              transform: 'rotateY(180deg) translateZ(1px)',
+              background: 'linear-gradient(135deg, #0A071B 0%, #150E36 50%, #300C25 100%)',
+              backgroundColor: '#0A071B' 
             }}
           >
             {/* Ambient Background Glows */}

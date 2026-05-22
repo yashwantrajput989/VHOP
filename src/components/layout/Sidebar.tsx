@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Home, Users, Map, User, Zap, Settings, LayoutDashboard, LogOut, Calendar, Building } from 'lucide-react';
+import { Home, Users, Map, User, Zap, Settings, LayoutDashboard, LogOut, Calendar, Building, MessageSquare, ShieldAlert } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../../store/authStore';
@@ -12,6 +12,7 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ isAdmin = false }) => {
   const { logout, user } = useAuthStore();
   const isSuperAdmin = user?.role === 'superadmin';
+  const isSubAdmin = user?.role === 'subadmin';
 
   const userNavItems = [
     { label: 'Events', path: '/events', icon: Home },
@@ -24,6 +25,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isAdmin = false }) => {
     { label: 'Dashboard', path: '/admin', icon: LayoutDashboard },
     { label: 'Create Event', path: '/admin/create-event', icon: Zap },
     { label: 'Guest List', path: '/admin/guests', icon: Users },
+    { label: 'Teams', path: '/admin/teams', icon: ShieldAlert },
+    { label: 'Support', path: '/admin/support', icon: MessageSquare },
     { label: 'Settings', path: '/admin/settings', icon: Settings },
   ];
 
@@ -34,9 +37,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ isAdmin = false }) => {
     { label: 'View Website', path: '/events', icon: Home },
   ];
 
+  const filteredAdminNavItems = isSubAdmin
+    ? adminNavItems.filter(item => item.path !== '/admin/settings' && item.path !== '/admin/teams')
+    : adminNavItems;
+
   const navItems = isSuperAdmin 
     ? superAdminNavItems 
-    : (isAdmin ? adminNavItems : userNavItems);
+    : ((isAdmin || isSubAdmin) ? filteredAdminNavItems : userNavItems);
 
   return (
     <aside className="hidden md:flex flex-col fixed top-0 left-0 bottom-0 w-64 glass-card rounded-none border-y-0 border-l-0 border-r border-[var(--border-subtle)] bg-[var(--bg-card)] z-50">
@@ -45,6 +52,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isAdmin = false }) => {
           VHOP
           {isSuperAdmin ? (
             <span className="text-[10px] bg-[var(--violet-bright)]/20 text-[var(--violet-bright)] px-2 py-1 rounded-md font-sans font-bold">SUPER</span>
+          ) : isSubAdmin ? (
+            <span className="text-xs bg-[var(--violet-bright)]/20 text-[var(--violet-bright)] px-2 py-1 rounded-md font-sans">TEAM</span>
           ) : (
             isAdmin && <span className="text-xs bg-[var(--accent-pink)]/20 text-[var(--accent-pink)] px-2 py-1 rounded-md font-sans">ADMIN</span>
           )}

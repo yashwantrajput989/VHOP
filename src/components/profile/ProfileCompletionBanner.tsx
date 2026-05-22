@@ -2,12 +2,12 @@ import React, { useState } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import { GlassCard } from '../ui/GlassCard';
 import { GlowButton } from '../ui/GlowButton';
-import { AlertCircle, Smartphone, Calendar, MapPin, Award, CheckCircle } from 'lucide-react';
+import { AlertCircle, Smartphone, Calendar, MapPin, Award, CheckCircle, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { API_BASE_URL } from '../../config';
 
 export const isProfileComplete = (user: any): boolean => {
-  return !!(user && user.full_name && user.email && user.phone && user.age);
+  return !!(user && user.full_name && user.email && user.phone && user.age && user.gender);
 };
 
 export const ProfileCompletionBanner: React.FC = () => {
@@ -15,6 +15,7 @@ export const ProfileCompletionBanner: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [phone, setPhone] = useState(user?.phone || '');
   const [age, setAge] = useState(user?.age ? String(user.age) : '');
+  const [gender, setGender] = useState(user?.gender || '');
   const [address, setAddress] = useState(user?.address || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
@@ -34,6 +35,10 @@ export const ProfileCompletionBanner: React.FC = () => {
       setError('Please enter a valid age (must be 18 or older).');
       return;
     }
+    if (!gender) {
+      setError('Please select your gender.');
+      return;
+    }
 
     setIsSubmitting(true);
 
@@ -45,6 +50,7 @@ export const ProfileCompletionBanner: React.FC = () => {
           userId: user.id,
           phone,
           age: Number(age),
+          gender,
           address
         })
       });
@@ -212,6 +218,24 @@ export const ProfileCompletionBanner: React.FC = () => {
                       className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors"
                       required
                     />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-1.5">
+                      <User className="w-3.5 h-3.5 text-[var(--violet-bright)]" /> Gender *
+                    </label>
+                    <select
+                      value={gender}
+                      onChange={(e) => setGender(e.target.value)}
+                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors bg-[var(--bg-card)] cursor-pointer"
+                      required
+                    >
+                      <option value="" disabled className="bg-[var(--bg-primary)]">Select Gender</option>
+                      <option value="male" className="bg-[var(--bg-primary)] text-white">Male</option>
+                      <option value="female" className="bg-[var(--bg-primary)] text-white">Female</option>
+                      <option value="other" className="bg-[var(--bg-primary)] text-white">Other</option>
+                      <option value="prefer_not_to_say" className="bg-[var(--bg-primary)] text-white">Prefer not to say</option>
+                    </select>
                   </div>
 
                   <div className="space-y-1.5">

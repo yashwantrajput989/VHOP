@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { PageWrapper } from '../../components/layout/PageWrapper';
 import { GlassCard } from '../../components/ui/GlassCard';
 import { GlowButton } from '../../components/ui/GlowButton';
@@ -9,7 +10,14 @@ import { API_BASE_URL } from '../../config';
 
 export const AdminSettings: React.FC = () => {
   const { user } = useAuthStore();
+  const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (user && user.role === 'subadmin') {
+      navigate('/admin', { replace: true });
+    }
+  }, [user, navigate]);
   const [company, setCompany] = useState<any>(null);
   const [formData, setFormData] = useState({
     companyName: '',
@@ -90,6 +98,9 @@ export const AdminSettings: React.FC = () => {
   };
 
   if (!user || user.role !== 'admin') {
+    if (user && user.role === 'subadmin') {
+      return null;
+    }
     return <AdminLogin forcedRole="admin" />;
   }
 

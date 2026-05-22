@@ -12,6 +12,8 @@ import { CreateEvent } from './pages/admin/CreateEvent';
 import { SuperDashboard } from './pages/superadmin/SuperDashboard';
 import { AdminSettings } from './pages/admin/AdminSettings';
 import { GuestList } from './pages/admin/GuestList';
+import { AdminTeams } from './pages/admin/AdminTeams';
+import { AdminSupport } from './pages/admin/AdminSupport';
 import { AdminLogin } from './pages/admin/AdminLogin';
 
 import { EventDetails } from './pages/user/EventDetails';
@@ -61,12 +63,12 @@ function App() {
       <ScrollToTop />
       {/* Sidebar for desktop - only show for non-admin or verified admin paths */}
       {!isAdminPath && !isSuperAdminPath && <Sidebar isAdmin={false} />}
-      { (isAdminPath || isSuperAdminPath) && (user?.role === 'admin' || user?.role === 'superadmin') && location.pathname !== '/admin/login' && <Sidebar isAdmin={true} />}
+      { (isAdminPath || isSuperAdminPath) && (user?.role === 'admin' || user?.role === 'superadmin' || user?.role === 'subadmin') && location.pathname !== '/admin/login' && <Sidebar isAdmin={true} />}
       
       {/* Navbar for mobile and top-level desktop - HIDE for admin */}
       {!isAdminPath && !isSuperAdminPath && <Navbar />}
 
-      <main className={`flex-1 relative ${isAdminPath || isSuperAdminPath ? 'w-full' : ''}`}>
+      <main className={`flex-1 min-w-0 relative ${isAdminPath || isSuperAdminPath ? 'w-full' : ''}`}>
         <AnimatePresence mode="wait">
           <Routes location={location} key={location.pathname}>
             {/* User Routes */}
@@ -84,6 +86,8 @@ function App() {
             <Route path="/admin/edit-event/:id" element={<CreateEvent />} />
             <Route path="/admin/settings" element={<AdminSettings />} />
             <Route path="/admin/guests" element={<GuestList />} />
+            <Route path="/admin/teams" element={<AdminTeams />} />
+            <Route path="/admin/support" element={<AdminSupport />} />
             <Route path="/admin/login" element={<AdminLogin />} />
             
             {/* Super Admin Routes */}

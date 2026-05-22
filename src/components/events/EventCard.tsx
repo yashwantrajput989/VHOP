@@ -25,7 +25,7 @@ export const EventCard: React.FC<EventCardProps> = ({ event }) => {
   return (
     <div 
       onClick={() => navigate(`/events/${event.id}`)}
-      className="group cursor-pointer space-y-2 md:space-y-4"
+      className="group cursor-pointer space-y-2 md:space-y-4 w-full min-w-0"
     >
       <div className="relative aspect-[4/3] overflow-hidden rounded-[1.5rem] md:rounded-[2rem] border border-white/5 bg-black/40 transition-all duration-500 group-hover:border-[var(--violet-bright)]/30 group-hover:shadow-glow flex items-center justify-center">
         {/* Background Blurred Underlay for zero truncation visual bleed */}

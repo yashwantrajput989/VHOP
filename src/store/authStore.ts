@@ -9,7 +9,7 @@ interface UserProfile {
   username: string;
   email: string;
   avatar_url: string;
-  role: 'user' | 'admin' | 'superadmin';
+  role: 'user' | 'admin' | 'superadmin' | 'subadmin';
   v_coins: number;
   city?: string;
   phone?: string;
@@ -21,6 +21,17 @@ interface UserProfile {
   gender?: string;
   referred_by?: string;
   referral_rewarded?: boolean;
+  parent_admin_id?: string;
+  streak_count?: number;
+  streak_updated_at?: string;
+  last_action_date?: string;
+  nights_out?: number;
+  referred_count?: number;
+  aadhaar_verified?: boolean;
+  vip_tier?: string;
+  music_dna_edm?: number;
+  music_dna_bollywood?: number;
+  music_dna_live?: number;
 }
 
 const sanitizeUser = (user: any): UserProfile | null => {
@@ -48,6 +59,7 @@ const sanitizeUser = (user: any): UserProfile | null => {
     onboarded: user.onboarded === 1 || user.onboarded === true || user.onboarded === 'true',
     v_coins_rewarded: user.v_coins_rewarded === 1 || user.v_coins_rewarded === true || user.v_coins_rewarded === 'true',
     referral_rewarded: user.referral_rewarded === 1 || user.referral_rewarded === true || user.referral_rewarded === 'true',
+    aadhaar_verified: user.aadhaar_verified === 1 || user.aadhaar_verified === true || user.aadhaar_verified === 'true',
   };
 };
 
@@ -112,7 +124,8 @@ export const useAuthStore = create<AuthState>()(
           }
 
           const profile = await response.json();
-          if (profile.role !== role) {
+          const authorized = (role === 'admin' && (profile.role === 'admin' || profile.role === 'subadmin')) || (profile.role === role);
+          if (!authorized) {
             throw new Error(`Unauthorized. This account is registered as a ${profile.role}.`);
           }
 

@@ -8,6 +8,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { API_BASE_URL, getImageUrl } from '../../config';
 import { AdminLogin } from './AdminLogin';
+import { ImageCropper } from '../../components/profile/ImageCropper';
 
 export const CreateEvent: React.FC = () => {
   const { id } = useParams();
@@ -16,6 +17,9 @@ export const CreateEvent: React.FC = () => {
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [company, setCompany] = useState<any>(null);
+  const [selectedImageSrc, setSelectedImageSrc] = useState<string | null>(null);
+  const [isCropperOpen, setIsCropperOpen] = useState(false);
+  const [cropError, setCropError] = useState<string | null>(null);
   
   const [formData, setFormData] = useState({
     title: '',
@@ -147,7 +151,7 @@ export const CreateEvent: React.FC = () => {
     setIsSubmitting(false);
   };
 
-  if (!user || user.role !== 'admin') {
+  if (!user || (user.role !== 'admin' && user.role !== 'subadmin' && user.role !== 'superadmin')) {
     return <AdminLogin forcedRole="admin" />;
   }
 
@@ -387,23 +391,18 @@ export const CreateEvent: React.FC = () => {
               <input 
                 type="file" 
                 accept="image/*"
-                onChange={async (e) => {
+                onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file) {
-                    const formData = new FormData();
-                    formData.append('image', file);
-                    try {
-                      const response = await fetch(`${API_BASE_URL}/api/upload`, {
-                        method: 'POST',
-                        body: formData
-                      });
-                      const data = await response.json();
-                      if (data.url) {
-                        setFormData(prev => ({ ...prev, cover_image: data.url }));
+                    setCropError(null);
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                      if (reader.result) {
+                        setSelectedImageSrc(reader.result as string);
+                        setIsCropperOpen(true);
                       }
-                    } catch (error) {
-                      console.error('Upload failed:', error);
-                    }
+                    };
+                    reader.readAsDataURL(file);
                   }
                 }}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
@@ -423,6 +422,7 @@ export const CreateEvent: React.FC = () => {
                     {formData.cover_image ? 'Change Image' : 'Upload Cover Image'}
                   </p>
                   <p className="text-[10px] text-[var(--text-muted)] mt-1">PNG, JPG or WebP (Max 5MB)</p>
+                  {cropError && <p className="text-[10px] text-red-500 font-bold mt-1 text-center">{cropError}</p>}
                 </div>
               </div>
             </GlassCard>
@@ -465,6 +465,44 @@ export const CreateEvent: React.FC = () => {
             <h2 className="mt-8 text-2xl font-display font-bold">VHOP AI is painting your event... 🎨</h2>
             <p className="mt-2 text-[var(--text-secondary)]">Generating catchy copy and optimized settings...</p>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isCropperOpen && selectedImageSrc && (
+          <ImageCropper
+            imageSrc={selectedImageSrc}
+            aspectRatio="landscape"
+            onCancel={() => {
+              setIsCropperOpen(false);
+              setSelectedImageSrc(null);
+            }}
+            onCropComplete={async (blob) => {
+              setIsCropperOpen(false);
+              setSelectedImageSrc(null);
+              setIsSubmitting(true);
+              try {
+                const uploadFormData = new FormData();
+                uploadFormData.append('image', blob, 'event_cover.jpg');
+                const response = await fetch(`${API_BASE_URL}/api/upload`, {
+                  method: 'POST',
+                  body: uploadFormData
+                });
+                if (!response.ok) {
+                  throw new Error('Failed to upload cropped cover image.');
+                }
+                const data = await response.json();
+                if (data.url) {
+                  setFormData(prev => ({ ...prev, cover_image: data.url }));
+                }
+              } catch (err: any) {
+                console.error(err);
+                setCropError(err.message || 'Failed to upload cropped image.');
+              } finally {
+                setIsSubmitting(false);
+              }
+            }}
+          />
         )}
       </AnimatePresence>
     </PageWrapper>

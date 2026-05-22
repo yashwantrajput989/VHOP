@@ -104,7 +104,7 @@ export const AdminDashboard: React.FC = () => {
     );
   }
 
-  if (!user || user.role !== 'admin') {
+  if (!user || (user.role !== 'admin' && user.role !== 'subadmin')) {
     return <AdminLogin forcedRole="admin" />;
   }
 

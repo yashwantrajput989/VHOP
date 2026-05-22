@@ -22,7 +22,7 @@ export const GuestList: React.FC = () => {
     fetchGuests();
   }, [user]);
 
-  if (!user || user.role !== 'admin') {
+  if (!user || (user.role !== 'admin' && user.role !== 'subadmin')) {
     return <AdminLogin forcedRole="admin" />;
   }
 

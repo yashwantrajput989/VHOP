@@ -6,6 +6,7 @@ import { useTicketStore } from '../../store/ticketStore';
 import { motion } from 'framer-motion';
 import { GlassCard } from '../../components/ui/GlassCard';
 import { Avatar } from '../../components/ui/Avatar';
+import { getImageUrl } from '../../config';
 import { 
   Zap, 
   Calendar, 
@@ -106,7 +107,7 @@ export const Dashboard: React.FC = () => {
               </p>
             </div>
             <Link to="/profile">
-              <Avatar src={user.avatar_url} size="lg" ring />
+              <Avatar src={getImageUrl(user.avatar_url)} size="lg" ring />
             </Link>
           </motion.div>
         </section>

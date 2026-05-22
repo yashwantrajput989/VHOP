@@ -132,6 +132,20 @@ const pool = mysql.createPool({
         `);
         console.log('🟢 Visitors table verified/created.');
 
+        // 5b. Verify/Create support_messages table if not exists
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS support_messages (
+                id VARCHAR(255) PRIMARY KEY,
+                admin_id VARCHAR(255) NOT NULL,
+                sender_id VARCHAR(255) NOT NULL,
+                message TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (admin_id) REFERENCES profiles(id) ON DELETE CASCADE,
+                FOREIGN KEY (sender_id) REFERENCES profiles(id) ON DELETE CASCADE
+            )
+        `);
+        console.log('🟢 Support messages table verified/created.');
+
         // 6. Check existing columns in profiles table (database-agnostic method)
         const [columns] = await pool.execute('DESCRIBE profiles');
         const existingColumns = columns.map(c => c.Field.toLowerCase());
@@ -149,6 +163,17 @@ const pool = mysql.createPool({
             }
         };
 
+        // Modify the role ENUM if subadmin is missing
+        const roleCol = columns.find(c => c.Field.toLowerCase() === 'role');
+        if (roleCol && !roleCol.Type.toLowerCase().includes('subadmin')) {
+            try {
+                await pool.execute("ALTER TABLE profiles MODIFY COLUMN role ENUM('user', 'admin', 'superadmin', 'subadmin') DEFAULT 'user'");
+                console.log("🟢 Updated role ENUM to include 'subadmin'.");
+            } catch (enumErr) {
+                console.error("🔴 Error altering role ENUM:", enumErr);
+            }
+        }
+
         // Verify required columns in profiles
         await addColumnIfNeeded('password', 'VARCHAR(255) NULL');
         await addColumnIfNeeded('age', 'INT NULL');
@@ -157,6 +182,17 @@ const pool = mysql.createPool({
         await addColumnIfNeeded('v_coins_rewarded', 'BOOLEAN DEFAULT FALSE');
         await addColumnIfNeeded('referred_by', 'VARCHAR(255) NULL');
         await addColumnIfNeeded('referral_rewarded', 'BOOLEAN DEFAULT FALSE');
+        await addColumnIfNeeded('parent_admin_id', 'VARCHAR(255) NULL');
+        await addColumnIfNeeded('streak_count', 'INT DEFAULT 0');
+        await addColumnIfNeeded('streak_updated_at', 'TIMESTAMP NULL DEFAULT NULL');
+        await addColumnIfNeeded('last_action_date', 'TIMESTAMP NULL DEFAULT NULL');
+        await addColumnIfNeeded('nights_out', 'INT DEFAULT 0');
+        await addColumnIfNeeded('referred_count', 'INT DEFAULT 0');
+        await addColumnIfNeeded('aadhaar_verified', 'BOOLEAN DEFAULT FALSE');
+        await addColumnIfNeeded('vip_tier', "VARCHAR(50) DEFAULT 'Regular'");
+        await addColumnIfNeeded('music_dna_edm', 'INT DEFAULT 72');
+        await addColumnIfNeeded('music_dna_bollywood', 'INT DEFAULT 18');
+        await addColumnIfNeeded('music_dna_live', 'INT DEFAULT 10');
 
         // 7. Seed default admin profile (using INSERT IGNORE for safety in production)
         await pool.execute(`
@@ -312,6 +348,7 @@ function formatProfile(profile) {
     formatted.onboarded = formatted.onboarded === 1 || formatted.onboarded === true;
     formatted.v_coins_rewarded = formatted.v_coins_rewarded === 1 || formatted.v_coins_rewarded === true;
     formatted.referral_rewarded = formatted.referral_rewarded === 1 || formatted.referral_rewarded === true;
+    formatted.aadhaar_verified = formatted.aadhaar_verified === 1 || formatted.aadhaar_verified === true;
     
     return formatted;
 }
@@ -330,6 +367,20 @@ const logActivity = (data) => {
     const logEntry = `[${timestamp}] ${JSON.stringify(data)}\n`;
     fs.appendFileSync(activityLogPath, logEntry);
     console.log(`Logged: ${logEntry.trim()}`);
+};
+
+// Helper to resolve subadmin to parent admin ID
+const resolveAdminUserId = async (userId) => {
+    if (!userId) return userId;
+    try {
+        const [rows] = await pool.execute('SELECT parent_admin_id FROM profiles WHERE id = ?', [userId]);
+        if (rows.length > 0 && rows[0].parent_admin_id) {
+            return rows[0].parent_admin_id;
+        }
+    } catch (err) {
+        console.error('Error resolving admin user ID:', err);
+    }
+    return userId;
 };
 
 // Helper to process referral reward (crediting 25 V-Coins to both invitee and referrer)
@@ -397,11 +448,15 @@ const processReferralReward = async (userId, referredByCode) => {
                 [referrer.username, userId]
             );
             
-            // 4. Update referrer: +25 v_coins
+            // 4. Update referrer: +25 v_coins, increment referred_count
             await connection.execute(
-                'UPDATE profiles SET v_coins = v_coins + 25 WHERE id = ?',
+                'UPDATE profiles SET v_coins = v_coins + 25, referred_count = referred_count + 1 WHERE id = ?',
                 [referrer.id]
             );
+
+            // 5. Maintain weekly action streak for invitee and referrer
+            await maintainWeeklyStreak(connection, userId);
+            await maintainWeeklyStreak(connection, referrer.id);
             
             await connection.commit();
             console.log(`[Referral] Success! User ${userId} and Referrer ${referrer.id} (${referrer.username}) rewarded 25 V-Coins each.`);
@@ -422,6 +477,71 @@ const processReferralReward = async (userId, referredByCode) => {
         }
     } catch (err) {
         console.error('[Referral] Error processing referral reward:', err);
+    }
+};
+
+// Helper to maintain weekly action streak for users
+const maintainWeeklyStreak = async (connection, userId) => {
+    try {
+        // Fetch current streak info
+        const [rows] = await connection.execute(
+            'SELECT streak_count, streak_updated_at, v_coins FROM profiles WHERE id = ?',
+            [userId]
+        );
+        if (rows.length === 0) return;
+
+        const user = rows[0];
+        const now = new Date();
+        let streakCount = user.streak_count || 0;
+        let streakUpdatedAt = user.streak_updated_at ? new Date(user.streak_updated_at) : null;
+        let newVCoins = user.v_coins || 0;
+        let awardReward = false;
+
+        if (!streakUpdatedAt || streakCount === 0) {
+            // First activity
+            streakCount = 1;
+            streakUpdatedAt = now;
+        } else {
+            const diffTime = Math.abs(now.getTime() - streakUpdatedAt.getTime());
+            const diffDays = diffTime / (1000 * 60 * 60 * 24);
+
+            if (diffDays >= 7 && diffDays < 14) {
+                // Next week! Increment streak
+                streakCount += 1;
+                streakUpdatedAt = now;
+
+                // Milestone: 5 weeks completed! Award them V-Coins
+                if (streakCount === 5) {
+                    newVCoins += 250; // Award 250 V-Coins!
+                    awardReward = true;
+                    console.log(`[Streak] User ${userId} completed a 5-week streak! Awarded 250 V-Coins.`);
+                }
+            } else if (diffDays >= 14) {
+                // Streak broken! Reset to 1
+                streakCount = 1;
+                streakUpdatedAt = now;
+            } else {
+                // Already did an action this week. Update last action date, keep streak
+            }
+        }
+
+        await connection.execute(
+            'UPDATE profiles SET streak_count = ?, streak_updated_at = ?, last_action_date = ?, v_coins = ? WHERE id = ?',
+            [streakCount, streakUpdatedAt, now, newVCoins, userId]
+        );
+
+        if (awardReward) {
+            logActivity({
+                type: 'streak_milestone_completed',
+                userId,
+                streakCount,
+                coinsAwarded: 250
+            });
+        }
+        
+        console.log(`[Streak] Updated streak for user ${userId}: count=${streakCount}`);
+    } catch (err) {
+        console.error('[Streak] Error updating streak:', err);
     }
 };
 
@@ -481,7 +601,7 @@ app.post('/api/auth/register', async (req, res) => {
         const avatar_url = `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`;
         
         await pool.execute(
-            'INSERT INTO profiles (id, full_name, username, email, password, avatar_url, role, v_coins, city, phone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO profiles (id, full_name, username, email, password, avatar_url, role, v_coins, city, phone, streak_count, streak_updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())',
             [id, full_name || 'New User', username, email, password || null, avatar_url, 'user', 500, 'Mumbai', '']
         );
 
@@ -519,6 +639,14 @@ app.post('/api/auth/login', async (req, res) => {
             await processReferralReward(userProfile.id, referred_by_code);
         }
 
+        // If streak_count is 0 or null, start the streak from w1
+        if (!userProfile.streak_count || userProfile.streak_count === 0) {
+            await pool.execute(
+                'UPDATE profiles SET streak_count = 1, streak_updated_at = NOW() WHERE id = ?',
+                [userProfile.id]
+            );
+        }
+
         const [updatedRows] = await pool.execute('SELECT * FROM profiles WHERE id = ?', [userProfile.id]);
         res.status(200).json(formatProfile(updatedRows[0]));
     } catch (error) {
@@ -545,6 +673,15 @@ app.post('/api/auth/google-login', async (req, res) => {
                 'UPDATE profiles SET full_name = ?, avatar_url = ? WHERE id = ?',
                 [full_name || userProfile.full_name, avatar_url || userProfile.avatar_url, userProfile.id]
             );
+
+            // Also ensure their streak starts from w1 if it was 0/null
+            if (!userProfile.streak_count || userProfile.streak_count === 0) {
+                await pool.execute(
+                    'UPDATE profiles SET streak_count = 1, streak_updated_at = NOW() WHERE id = ?',
+                    [userProfile.id]
+                );
+            }
+
             const [updatedRows] = await pool.execute('SELECT * FROM profiles WHERE id = ?', [userProfile.id]);
             return res.status(200).json(formatProfile(updatedRows[0]));
         }
@@ -554,7 +691,7 @@ app.post('/api/auth/google-login', async (req, res) => {
         const username = email.split('@')[0] || `user_${id}`;
         
         await pool.execute(
-            'INSERT INTO profiles (id, full_name, username, email, avatar_url, role, v_coins, city, phone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO profiles (id, full_name, username, email, avatar_url, role, v_coins, city, phone, streak_count, streak_updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())',
             [id, full_name || 'Google User', username, email, avatar_url || '', 'user', 500, 'Mumbai', '']
         );
 
@@ -590,7 +727,7 @@ app.post('/api/auth/onboard', async (req, res) => {
 
 // Complete Profile and claim 100 V-Coins reward
 app.put('/api/auth/profile/complete', async (req, res) => {
-    const { userId, age, phone, address } = req.body;
+    const { userId, age, phone, address, gender } = req.body;
     try {
         const [rows] = await pool.execute('SELECT v_coins, v_coins_rewarded FROM profiles WHERE id = ?', [userId]);
         if (rows.length === 0) {
@@ -609,8 +746,8 @@ app.put('/api/auth/profile/complete', async (req, res) => {
         }
 
         await pool.execute(
-            'UPDATE profiles SET age = ?, phone = ?, address = ?, v_coins = ?, v_coins_rewarded = ? WHERE id = ?',
-            [age ? parseInt(age, 10) : null, phone || '', address || '', v_coins, new_v_coins_rewarded, userId]
+            'UPDATE profiles SET age = ?, phone = ?, address = ?, gender = ?, v_coins = ?, v_coins_rewarded = ? WHERE id = ?',
+            [age ? parseInt(age, 10) : null, phone || '', address || '', gender || null, v_coins, new_v_coins_rewarded, userId]
         );
 
         logActivity({ type: 'profile_completed', userId, coinsCredited: rewardCredited ? 100 : 0 });
@@ -629,7 +766,7 @@ app.put('/api/auth/profile/complete', async (req, res) => {
 
 // Update Profile details
 app.put('/api/auth/profile/update', async (req, res) => {
-    const { userId, fullName, username, city, phone, age, gender, address } = req.body;
+    const { userId, fullName, username, city, phone, age, gender, address, avatarUrl } = req.body;
     try {
         // Verify unique username if changed
         if (username) {
@@ -639,19 +776,26 @@ app.put('/api/auth/profile/update', async (req, res) => {
             }
         }
 
-        await pool.execute(
-            'UPDATE profiles SET full_name = ?, username = ?, city = ?, phone = ?, age = ?, gender = ?, address = ? WHERE id = ?',
-            [
-                fullName || null,
-                username || null,
-                city || 'Mumbai',
-                phone || '',
-                age ? parseInt(age, 10) : null,
-                gender || null,
-                address || '',
-                userId
-            ]
-        );
+        let query = 'UPDATE profiles SET full_name = ?, username = ?, city = ?, phone = ?, age = ?, gender = ?, address = ?';
+        let params = [
+            fullName || null,
+            username || null,
+            city || 'Mumbai',
+            phone || '',
+            age ? parseInt(age, 10) : null,
+            gender || null,
+            address || ''
+        ];
+
+        if (avatarUrl !== undefined) {
+            query += ', avatar_url = ?';
+            params.push(avatarUrl);
+        }
+
+        query += ' WHERE id = ?';
+        params.push(userId);
+
+        await pool.execute(query, params);
 
         const [updatedRows] = await pool.execute('SELECT * FROM profiles WHERE id = ?', [userId]);
         res.status(200).json({ 
@@ -664,12 +808,97 @@ app.put('/api/auth/profile/update', async (req, res) => {
     }
 });
 
+// Verify Aadhaar & unlock Silver VIP status
+app.post('/api/profile/verify-aadhaar', async (req, res) => {
+    const { userId } = req.body;
+    if (!userId) {
+        return res.status(400).json({ error: 'User ID is required.' });
+    }
+
+    try {
+        await pool.execute(
+            'UPDATE profiles SET aadhaar_verified = true, vip_tier = "Silver", v_coins = v_coins + 100 WHERE id = ?',
+            [userId]
+        );
+
+        const [rows] = await pool.execute('SELECT * FROM profiles WHERE id = ?', [userId]);
+        const updatedUser = formatProfile(rows[0]);
+
+        res.json({
+            message: 'Aadhaar successfully verified! Silver VIP status unlocked (+100 V-Coins)!',
+            user: updatedUser
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Simulate weekly activity/action (booking or referral) to test streaks
+app.post('/api/profile/simulate-action', async (req, res) => {
+    const { userId, advanceWeek, actionType } = req.body;
+    if (!userId) {
+        return res.status(400).json({ error: 'User ID is required.' });
+    }
+
+    try {
+        const connection = await pool.getConnection();
+        try {
+            await connection.beginTransaction();
+
+            // If advanceWeek is true, mock that the last streak update happened 8 days ago
+            if (advanceWeek) {
+                await connection.execute(
+                    'UPDATE profiles SET streak_updated_at = DATE_SUB(NOW(), INTERVAL 8 DAY) WHERE id = ?',
+                    [userId]
+                );
+            }
+
+            // Perform actions based on type
+            if (actionType === 'booking') {
+                // Increment nights_out
+                await connection.execute(
+                    'UPDATE profiles SET nights_out = nights_out + 1 WHERE id = ?',
+                    [userId]
+                );
+            } else if (actionType === 'referral') {
+                // Increment referred_count
+                await connection.execute(
+                    'UPDATE profiles SET referred_count = referred_count + 1 WHERE id = ?',
+                    [userId]
+                );
+            }
+
+            // Maintain the weekly streak
+            await maintainWeeklyStreak(connection, userId);
+
+            await connection.commit();
+
+            // Fetch the updated profile to send back
+            const [rows] = await connection.execute('SELECT * FROM profiles WHERE id = ?', [userId]);
+            const updatedUser = formatProfile(rows[0]);
+
+            res.json({
+                message: `Simulation of ${actionType} completed successfully!`,
+                user: updatedUser
+            });
+        } catch (err) {
+            await connection.rollback();
+            throw err;
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Get checked-in visitors for a specific admin venue
 app.get('/api/admin/visitors/:adminId', async (req, res) => {
     try {
+        const resolvedAdminId = await resolveAdminUserId(req.params.adminId);
         const [rows] = await pool.execute(
             'SELECT * FROM visitors WHERE admin_id = ? ORDER BY scanned_at DESC',
-            [req.params.adminId]
+            [resolvedAdminId]
         );
         res.status(200).json(rows);
     } catch (error) {
@@ -696,12 +925,13 @@ app.post('/api/admin/visitors', async (req, res) => {
     const { adminId, visitorName, age, phone, email, address } = req.body;
     const id = `vis_${Math.random().toString(36).substring(2, 11)}`;
     try {
+        const resolvedAdminId = await resolveAdminUserId(adminId);
         await pool.execute(
             'INSERT INTO visitors (id, admin_id, visitor_name, age, phone, email, address) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [id, adminId, visitorName, age ? parseInt(age, 10) : null, phone || '', email || '', address || '']
+            [id, resolvedAdminId, visitorName, age ? parseInt(age, 10) : null, phone || '', email || '', address || '']
         );
 
-        logActivity({ type: 'visitor_scanned', adminId, visitorName, email });
+        logActivity({ type: 'visitor_scanned', adminId: resolvedAdminId, visitorName, email });
         res.status(201).json({ id, message: 'Visitor checked in successfully.' });
     } catch (error) {
         console.error('Error checking in visitor:', error);
@@ -759,6 +989,9 @@ app.post('/api/events', async (req, res) => {
 // Delete event
 app.delete('/api/events/:id', async (req, res) => {
     try {
+        // First delete bookings associated with the event to satisfy foreign key constraint
+        await pool.execute('DELETE FROM bookings WHERE event_id = ?', [req.params.id]);
+        // Then delete the event itself
         await pool.execute('DELETE FROM events WHERE id = ?', [req.params.id]);
         res.json({ message: 'Event deleted' });
     } catch (error) {
@@ -790,6 +1023,13 @@ app.post('/api/bookings', async (req, res) => {
                 [booking.quantity, booking.event_id]
             );
 
+            // 3. Update nights_out for user and maintain weekly action streak
+            await connection.execute(
+                'UPDATE profiles SET nights_out = nights_out + 1 WHERE id = ?',
+                [booking.user_id]
+            );
+            await maintainWeeklyStreak(connection, booking.user_id);
+ 
             await connection.commit();
             
             // Send Email Notification in background (don't block the response)
@@ -836,6 +1076,184 @@ app.get('/api/bookings/user/:userId', async (req, res) => {
     }
 });
 
+// Lookup booking by code (admin scan validation)
+app.get('/api/admin/bookings/lookup/:code', async (req, res) => {
+    const { code } = req.params;
+    const { adminId } = req.query;
+    
+    if (!code || !adminId) {
+        return res.status(400).json({ error: 'Missing booking code or adminId parameter' });
+    }
+    
+    try {
+        const resolvedAdminId = await resolveAdminUserId(adminId);
+        
+        // Fetch the scanning admin's role and company
+        const [adminRows] = await pool.execute('SELECT role FROM profiles WHERE id = ?', [adminId]);
+        const isAdminSuper = adminRows.length > 0 && adminRows[0].role === 'superadmin';
+        
+        const [companyRows] = await pool.execute('SELECT id FROM companies WHERE admin_user_id = ?', [resolvedAdminId]);
+        const companyId = companyRows.length > 0 ? companyRows[0].id : null;
+        
+        // Fetch the booking details
+        const [bookingRows] = await pool.execute(
+            `SELECT b.*, e.title as event_title, e.cover_image, e.venue_name, e.city, e.start_date, e.company_id,
+                    p.full_name as buyer_name, p.email as buyer_email, p.phone as buyer_phone
+             FROM bookings b
+             JOIN events e ON b.event_id = e.id
+             LEFT JOIN profiles p ON b.user_id = p.id
+             WHERE b.booking_id = ? OR b.id = ?`,
+            [code, code]
+        );
+        
+        if (bookingRows.length === 0) {
+            return res.status(404).json({ error: 'Booking not found' });
+        }
+        
+        const booking = bookingRows[0];
+        
+        // Determine validity: must be superadmin OR belong to this admin's company
+        const isValid = isAdminSuper || (companyId !== null && booking.company_id === companyId);
+        const isAlreadyCheckedIn = booking.booking_status === 'checked_in';
+        
+        // Parse guests JSON safely
+        let guests = [];
+        if (booking.guests) {
+            try {
+                guests = typeof booking.guests === 'string' ? JSON.parse(booking.guests) : booking.guests;
+            } catch (e) {
+                console.error('Error parsing booking guests:', e);
+            }
+        }
+        
+        res.json({
+            booking: {
+                id: booking.id,
+                booking_id: booking.booking_id,
+                event_id: booking.event_id,
+                event_title: booking.event_title,
+                cover_image: booking.cover_image,
+                venue_name: booking.venue_name,
+                city: booking.city,
+                start_date: booking.start_date,
+                quantity: booking.quantity,
+                ticket_name: booking.ticket_name,
+                price: booking.price,
+                booking_status: booking.booking_status,
+                buyer_name: booking.buyer_name,
+                buyer_email: booking.buyer_email,
+                buyer_phone: booking.buyer_phone,
+                guests: guests
+            },
+            isValid,
+            isAlreadyCheckedIn
+        });
+    } catch (error) {
+        console.error('Error looking up booking:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Admin booking check-in & individual guests logging
+app.post('/api/admin/bookings/checkin', async (req, res) => {
+    const { bookingId, adminId } = req.body;
+    if (!bookingId || !adminId) {
+        return res.status(400).json({ error: 'Missing bookingId or adminId parameter' });
+    }
+    
+    try {
+        const resolvedAdminId = await resolveAdminUserId(adminId);
+        
+        // Fetch current booking details first to check status and read guests
+        const [bookingRows] = await pool.execute(
+            `SELECT b.*, p.full_name as buyer_name, p.email as buyer_email, p.phone as buyer_phone
+             FROM bookings b
+             LEFT JOIN profiles p ON b.user_id = p.id
+             WHERE b.booking_id = ? OR b.id = ?`,
+            [bookingId, bookingId]
+        );
+        
+        if (bookingRows.length === 0) {
+            return res.status(404).json({ error: 'Booking not found' });
+        }
+        
+        const booking = bookingRows[0];
+        if (booking.booking_status === 'checked_in') {
+            return res.status(400).json({ error: 'Ticket is already checked in.' });
+        }
+        
+        // Parse guests list
+        let guests = [];
+        if (booking.guests) {
+            try {
+                guests = typeof booking.guests === 'string' ? JSON.parse(booking.guests) : booking.guests;
+            } catch (e) {
+                console.error('Error parsing booking guests:', e);
+            }
+        }
+        
+        // Use default guest list of quantity 1 with buyer's name if guests is empty
+        if (!guests || guests.length === 0) {
+            guests = [{ name: booking.buyer_name || 'Ticket Buyer', age: null }];
+        }
+        
+        // Start database transaction
+        const connection = await pool.getConnection();
+        await connection.beginTransaction();
+        
+        try {
+            // 1. Update Booking Status
+            await connection.execute(
+                'UPDATE bookings SET booking_status = \'checked_in\' WHERE id = ?',
+                [booking.id]
+            );
+            
+            // 2. Insert all individual guests into the visitors log
+            for (const guest of guests) {
+                const visitorId = `vis_${Math.random().toString(36).substring(2, 11)}`;
+                const guestAge = guest.age ? parseInt(guest.age, 10) : null;
+                const guestName = guest.name || booking.buyer_name || 'Ticket Guest';
+                const guestAddress = `Checked in via Booking ${booking.booking_id || booking.id}`;
+                
+                await connection.execute(
+                    'INSERT INTO visitors (id, admin_id, visitor_name, age, phone, email, address) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                    [
+                        visitorId,
+                        resolvedAdminId,
+                        guestName,
+                        isNaN(guestAge) ? null : guestAge,
+                        booking.buyer_phone || '',
+                        booking.buyer_email || '',
+                        guestAddress
+                    ]
+                );
+            }
+            
+            await connection.commit();
+            
+            logActivity({
+                type: 'booking_checked_in',
+                adminId: resolvedAdminId,
+                bookingId: booking.booking_id || booking.id,
+                guestsCount: guests.length
+            });
+            
+            res.status(200).json({
+                message: 'Check-in completed successfully',
+                guestsCheckedInCount: guests.length
+            });
+        } catch (transactionErr) {
+            await connection.rollback();
+            throw transactionErr;
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('Error checking in booking:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // --- ADMIN / GLOBAL ---
 
 // Get global admin statistics
@@ -869,8 +1287,9 @@ app.get('/api/admin/global-stats', async (req, res) => {
 // Get partner-specific statistics and events
 app.get('/api/admin/stats/:userId', async (req, res) => {
     try {
+        const resolvedUserId = await resolveAdminUserId(req.params.userId);
         // 1. Get company belonging to this partner
-        const [companies] = await pool.execute('SELECT * FROM companies WHERE admin_user_id = ?', [req.params.userId]);
+        const [companies] = await pool.execute('SELECT * FROM companies WHERE admin_user_id = ?', [resolvedUserId]);
         if (companies.length === 0) {
             return res.json({ 
                 company: null, 
@@ -1030,9 +1449,10 @@ app.post('/api/superadmin/partners', async (req, res) => {
 // Get admin dashboard data
 app.get('/api/admin/dashboard/:userId', async (req, res) => {
     try {
+        const resolvedUserId = await resolveAdminUserId(req.params.userId);
         // 1. Get company
         // Fetch company and events in parallel for better performance
-        const [companies] = await pool.execute('SELECT * FROM companies WHERE admin_user_id = ?', [req.params.userId]);
+        const [companies] = await pool.execute('SELECT * FROM companies WHERE admin_user_id = ?', [resolvedUserId]);
 
         if (companies.length === 0) return res.status(404).json({ error: 'Company not found' });
 
@@ -1067,6 +1487,136 @@ app.post('/api/companies/:id/verify', async (req, res) => {
         await pool.execute('UPDATE companies SET verified = true WHERE id = ?', [req.params.id]);
         res.json({ message: 'Company verified' });
     } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// --- TEAMS MANAGEMENT ---
+
+// Get all subadmins belonging to an admin
+app.get('/api/admin/teams/:adminId', async (req, res) => {
+    try {
+        const [rows] = await pool.execute(
+            "SELECT id, full_name, email, role, parent_admin_id, created_at FROM profiles WHERE parent_admin_id = ? AND role = 'subadmin' ORDER BY created_at DESC",
+            [req.params.adminId]
+        );
+        res.status(200).json(rows);
+    } catch (error) {
+        console.error('Error fetching teams:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Create a new subadmin
+app.post('/api/admin/teams', async (req, res) => {
+    const { name, email, password, parentAdminId } = req.body;
+    if (!name || !email || !password || !parentAdminId) {
+        return res.status(400).json({ error: 'Missing required fields' });
+    }
+    const id = `sub_${Math.random().toString(36).substring(2, 11)}`;
+    const username = email.split('@')[0] + Math.floor(Math.random() * 100);
+    const avatar_url = `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`;
+    try {
+        // Check if email already exists
+        const [existing] = await pool.execute('SELECT * FROM profiles WHERE email = ?', [email]);
+        if (existing.length > 0) {
+            return res.status(400).json({ error: 'Email already registered' });
+        }
+
+        await pool.execute(
+            "INSERT INTO profiles (id, full_name, username, email, password, avatar_url, role, parent_admin_id, onboarded) VALUES (?, ?, ?, ?, ?, ?, 'subadmin', ?, true)",
+            [id, name, username, email, password, avatar_url, parentAdminId]
+        );
+
+        res.status(201).json({ id, name, email, role: 'subadmin', parent_admin_id: parentAdminId, message: 'Team member added successfully' });
+    } catch (error) {
+        console.error('Error adding team member:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Delete a subadmin
+app.delete('/api/admin/teams/:subadminId', async (req, res) => {
+    try {
+        await pool.execute("DELETE FROM profiles WHERE id = ? AND role = 'subadmin'", [req.params.subadminId]);
+        res.json({ message: 'Team member deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting team member:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// --- ADMIN SUPPORT CHAT ---
+
+// Get support chat messages for an admin channel
+app.get('/api/support/messages/:adminId', async (req, res) => {
+    try {
+        const resolvedAdminId = await resolveAdminUserId(req.params.adminId);
+        const [rows] = await pool.execute(
+            `SELECT sm.*, p.full_name as sender_name, p.role as sender_role, p.avatar_url as sender_avatar 
+             FROM support_messages sm 
+             JOIN profiles p ON sm.sender_id = p.id 
+             WHERE sm.admin_id = ? 
+             ORDER BY sm.created_at ASC`,
+            [resolvedAdminId]
+        );
+        res.status(200).json(rows);
+    } catch (error) {
+        console.error('Error fetching support messages:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Post a new support message
+app.post('/api/support/messages', async (req, res) => {
+    const { adminId, senderId, message } = req.body;
+    if (!adminId || !senderId || !message) {
+        return res.status(400).json({ error: 'Missing required fields' });
+    }
+    const id = `msg_${Math.random().toString(36).substring(2, 11)}`;
+    try {
+        const resolvedAdminId = await resolveAdminUserId(adminId);
+        await pool.execute(
+            'INSERT INTO support_messages (id, admin_id, sender_id, message) VALUES (?, ?, ?, ?)',
+            [id, resolvedAdminId, senderId, message]
+        );
+        
+        // Fetch the newly added message with sender info to return it nicely
+        const [rows] = await pool.execute(
+            `SELECT sm.*, p.full_name as sender_name, p.role as sender_role, p.avatar_url as sender_avatar 
+             FROM support_messages sm 
+             JOIN profiles p ON sm.sender_id = p.id 
+             WHERE sm.id = ?`,
+            [id]
+        );
+
+        res.status(201).json(rows[0]);
+    } catch (error) {
+        console.error('Error sending support message:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get all active support chat channels for Super Admin dashboard
+app.get('/api/superadmin/support/chats', async (req, res) => {
+    try {
+        // Fetch distinct admin_ids that have messages, joining profiles and companies to get metadata
+        const [rows] = await pool.execute(
+            `SELECT DISTINCT 
+                 sm.admin_id,
+                 p.full_name as admin_name,
+                 p.email as admin_email,
+                 c.name as company_name,
+                 (SELECT message FROM support_messages WHERE admin_id = sm.admin_id ORDER BY created_at DESC LIMIT 1) as last_message,
+                 (SELECT created_at FROM support_messages WHERE admin_id = sm.admin_id ORDER BY created_at DESC LIMIT 1) as last_message_time
+             FROM support_messages sm
+             JOIN profiles p ON sm.admin_id = p.id
+             LEFT JOIN companies c ON c.admin_user_id = p.id
+             ORDER BY last_message_time DESC`
+        );
+        res.status(200).json(rows);
+    } catch (error) {
+        console.error('Error fetching support chats for superadmin:', error);
         res.status(500).json({ error: error.message });
     }
 });

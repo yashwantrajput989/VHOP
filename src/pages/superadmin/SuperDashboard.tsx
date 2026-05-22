@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { PageWrapper } from '../../components/layout/PageWrapper';
 import { GlassCard } from '../../components/ui/GlassCard';
+import { GlowButton } from '../../components/ui/GlowButton';
 import { 
   Users, 
   Building, 
@@ -9,10 +10,13 @@ import {
   CheckCircle, 
   Plus, 
   AlertCircle, 
-  Terminal, 
   Clipboard, 
   UserCheck, 
-  Clock
+  Clock,
+  Trash2,
+  Send,
+  RefreshCw,
+  MessageSquare
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -53,6 +57,109 @@ export const SuperDashboard: React.FC = () => {
     city: 'Visakhapatnam'
   });
   const [createdPartnerCreds, setCreatedPartnerCreds] = useState<any>(null);
+
+  // Support chat state variables for Super Admin
+  const [supportChats, setSupportChats] = useState<any[]>([]);
+  const [selectedChatId, setSelectedChatId] = useState<string>('');
+  const [chatMessages, setChatMessages] = useState<any[]>([]);
+  const [newReply, setNewReply] = useState('');
+  const [isChatsLoading, setIsChatsLoading] = useState(false);
+  const [isMessagesLoading, setIsMessagesLoading] = useState(false);
+  const [isReplying, setIsReplying] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+
+  const fetchSupportChats = async (silent = false) => {
+    if (!silent) setIsChatsLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/superadmin/support/chats`);
+      if (response.ok) {
+        const data = await response.json();
+        setSupportChats(data);
+      }
+    } catch (err) {
+      console.error('Error fetching support chats:', err);
+    } finally {
+      if (!silent) setIsChatsLoading(false);
+    }
+  };
+
+  const fetchChatMessages = async (chatId: string, silent = false) => {
+    if (!chatId) return;
+    if (!silent) setIsMessagesLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/support/messages/${chatId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setChatMessages(data);
+      }
+    } catch (err) {
+      console.error('Error fetching chat messages:', err);
+    } finally {
+      if (!silent) setIsMessagesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'issues' && user && user.role === 'superadmin') {
+      fetchSupportChats();
+      const interval = setInterval(() => {
+        fetchSupportChats(true);
+      }, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [activeTab, user]);
+
+  useEffect(() => {
+    if (selectedChatId) {
+      fetchChatMessages(selectedChatId);
+      const interval = setInterval(() => {
+        fetchChatMessages(selectedChatId, true);
+      }, 4000);
+      return () => clearInterval(interval);
+    } else {
+      setChatMessages([]);
+    }
+  }, [selectedChatId]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
+
+  const handleSendReply = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedChatId || !newReply.trim()) return;
+
+    setIsReplying(true);
+    const replyText = newReply;
+    setNewReply('');
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/support/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adminId: selectedChatId,
+          senderId: user?.id || 'super-admin-root',
+          message: replyText,
+        }),
+      });
+
+      if (response.ok) {
+        const addedMsg = await response.json();
+        setChatMessages((prev) => [...prev, addedMsg]);
+        fetchSupportChats(true);
+      } else {
+        alert('Failed to send reply.');
+        setNewReply(replyText);
+      }
+    } catch (err) {
+      console.error('Error sending reply:', err);
+      alert('Failed to connect to backend.');
+      setNewReply(replyText);
+    } finally {
+      setIsReplying(false);
+    }
+  };
 
   // Fetch all statistics and datasets
   const fetchStats = async () => {
@@ -97,6 +204,27 @@ export const SuperDashboard: React.FC = () => {
       navigate('/superadmin');
     } else {
       navigate(`/superadmin/${tabId}`);
+    }
+  };
+
+  // Delete an event
+  const handleDeleteEvent = async (id: string) => {
+    if (window.confirm('Are you sure you want to delete this event? This will also delete all associated bookings.')) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/events/${id}`, {
+          method: 'DELETE'
+        });
+        if (response.ok) {
+          alert('Event deleted successfully');
+          fetchStats();
+          setSelectedEvent(null);
+        } else {
+          throw new Error('Failed to delete event');
+        }
+      } catch (error) {
+        console.error('Error deleting event:', error);
+        alert('Failed to delete event');
+      }
     }
   };
 
@@ -377,6 +505,13 @@ export const SuperDashboard: React.FC = () => {
                               >
                                 Approve & Publish
                               </button>
+                              <button 
+                                onClick={() => handleDeleteEvent(row.id)}
+                                className="p-2 rounded-lg bg-white/5 border border-white/10 text-red-500 hover:bg-red-500/20 hover:border-red-500/30 transition-all text-xs font-bold flex items-center justify-center"
+                                title="Delete Event"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -417,12 +552,21 @@ export const SuperDashboard: React.FC = () => {
                           <td className="py-4 font-medium text-white">{row.tickets_sold} sold</td>
                           <td className="py-4 font-semibold text-[var(--accent-gold)]">₹{((row.tickets_sold || 0) * row.price).toLocaleString()}</td>
                           <td className="py-4 text-right">
-                            <button 
-                              onClick={() => handleViewEventDetails(row)}
-                              className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-xs font-bold hover:bg-white/10 transition-all"
-                            >
-                              View Guest List
-                            </button>
+                            <div className="flex justify-end gap-2">
+                              <button 
+                                onClick={() => handleViewEventDetails(row)}
+                                className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-xs font-bold hover:bg-white/10 transition-all"
+                              >
+                                View Guest List
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteEvent(row.id)}
+                                className="p-2 rounded-lg bg-white/5 border border-white/10 text-red-500 hover:bg-red-500/20 hover:border-red-500/30 transition-all text-xs font-bold flex items-center justify-center"
+                                title="Delete Event"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -483,45 +627,173 @@ export const SuperDashboard: React.FC = () => {
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
-              className="space-y-8"
+              className="grid grid-cols-1 lg:grid-cols-3 gap-8 h-[calc(100vh-16rem)] min-h-[550px]"
             >
-              {/* Technical checks and live server logs mock */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {[
-                  { title: 'MySQL Status', status: 'Healthy', desc: 'Active connections pool ready', color: '#10b981' },
-                  { title: 'Hostinger Node Server', status: 'Online', desc: 'Running on port 5000', color: '#10b981' },
-                  { title: 'SMTP Notifications', status: 'Configured', desc: 'SMTP secure transport operational', color: '#10b981' },
-                ].map((chk, i) => (
-                  <GlassCard key={i} className="p-6 flex items-start gap-4">
-                    <div className="p-3.5 rounded-2xl bg-white/5" style={{ color: chk.color }}>
-                      <Terminal className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-white text-sm">{chk.title}</h4>
-                      <p className="text-xs font-bold mt-1" style={{ color: chk.color }}>{chk.status}</p>
-                      <p className="text-[11px] text-[var(--text-muted)] mt-1">{chk.desc}</p>
-                    </div>
-                  </GlassCard>
-                ))}
-              </div>
+              {/* Left Column: Support Chats List */}
+              <GlassCard className="p-0 overflow-hidden flex flex-col border border-white/5 shadow-xl h-full lg:col-span-1">
+                <div className="p-6 border-b border-white/5 bg-white/[0.01] flex items-center justify-between flex-shrink-0">
+                  <h3 className="font-bold font-display text-white text-lg flex items-center gap-2">
+                    <AlertCircle className="w-5 h-5 text-[var(--accent-pink)]" /> Admin Channels
+                  </h3>
+                  <button
+                    onClick={() => fetchSupportChats()}
+                    className="p-1.5 rounded-lg hover:bg-white/5 text-[var(--text-muted)] hover:text-white transition-colors cursor-pointer"
+                    title="Refresh chats"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
+                </div>
 
-              {/* Reported Issues and logs console */}
-              <GlassCard className="p-8">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-xl font-bold font-display text-white">Live Operations Log</h3>
-                  <span className="px-3 py-1 bg-white/5 border border-white/10 rounded-lg text-xs text-[var(--text-muted)] flex items-center gap-1.5 font-bold">
-                    <Clock className="w-3.5 h-3.5 text-[var(--violet-bright)]" /> System Diagnostics
-                  </span>
+                <div className="flex-1 overflow-y-auto divide-y divide-white/5 bg-black/10">
+                  {isChatsLoading && supportChats.length === 0 ? (
+                    <div className="p-12 text-center text-xs text-[var(--text-muted)]">
+                      <div className="animate-spin w-6 h-6 border-2 border-[var(--violet-bright)] border-t-transparent rounded-full mx-auto mb-3" />
+                      Loading active support threads...
+                    </div>
+                  ) : supportChats.length === 0 ? (
+                    <div className="p-12 text-center text-xs text-[var(--text-muted)] space-y-2 opacity-50">
+                      <Clock className="w-8 h-8 mx-auto mb-2 text-[var(--text-muted)]" />
+                      <p className="font-semibold text-white">No Support Requests</p>
+                      <p>Support messages sent by admins will appear here instantly.</p>
+                    </div>
+                  ) : (
+                    supportChats.map((chat) => (
+                      <button
+                        key={chat.admin_id}
+                        onClick={() => setSelectedChatId(chat.admin_id)}
+                        className={`w-full p-5 text-left transition-all duration-300 flex flex-col gap-1.5 border-l-2 hover:bg-white/[0.02] cursor-pointer ${
+                          selectedChatId === chat.admin_id
+                            ? 'bg-white/[0.03] border-[var(--violet-bright)]'
+                            : 'border-transparent'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-bold text-white text-sm truncate max-w-[150px]">
+                            {chat.company_name || 'Global Admin'}
+                          </h4>
+                          <span className="text-[9px] text-[var(--text-muted)] opacity-60">
+                            {new Date(chat.last_message_time).toLocaleTimeString(undefined, {
+                              hour: 'numeric',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-[var(--text-secondary)] font-medium">
+                          By: {chat.admin_name}
+                        </p>
+                        <p className="text-[11px] text-[var(--text-muted)] truncate max-w-full italic">
+                          "{chat.last_message}"
+                        </p>
+                      </button>
+                    ))
+                  )}
                 </div>
-                <div className="bg-black/90 border border-white/5 rounded-2xl p-6 font-mono text-xs text-gray-300 space-y-4 max-h-[300px] overflow-y-auto">
-                  <p className="text-[var(--violet-bright)]">[SYS] Initializing diagnostic scans...</p>
-                  <p className="text-green-400">[DB] Connected successfully to host: localhost</p>
-                  <p className="text-yellow-400">[WARN] Razorpay startup credentials missing, bypassed payment gateway safely.</p>
-                  <p className="text-green-400">[AUTH] Decoupled Firebase. Local authentication database layer successfully initialized.</p>
-                  <p className="text-gray-400">[API] GET /api/events - fetched published events - 200 OK</p>
-                  <p className="text-gray-400">[API] POST /api/auth/login - admin authentication successful - 200 OK</p>
-                  <p className="text-green-400">[SYS] Platform status is 100% operational.</p>
-                </div>
+              </GlassCard>
+
+              {/* Right Column: Chat History Area */}
+              <GlassCard className="p-0 overflow-hidden flex flex-col border border-white/5 shadow-2xl h-full lg:col-span-2 relative">
+                {selectedChatId ? (
+                  <>
+                    {/* Active Chat Info Bar */}
+                    <div className="p-6 border-b border-white/5 bg-white/[0.01] flex items-center justify-between flex-shrink-0">
+                      <div>
+                        <h3 className="font-bold text-white font-display text-base">
+                          {supportChats.find((c) => c.admin_id === selectedChatId)?.company_name || 'Global Admin'}
+                        </h3>
+                        <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
+                          Admin Partner: {supportChats.find((c) => c.admin_id === selectedChatId)?.admin_name} ({supportChats.find((c) => c.admin_id === selectedChatId)?.admin_email})
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setSelectedChatId('')}
+                        className="text-xs text-[var(--text-muted)] hover:text-white font-medium hover:underline cursor-pointer"
+                      >
+                        Close Chat
+                      </button>
+                    </div>
+
+                    {/* Support Conversation Pane */}
+                    <div className="flex-1 overflow-y-auto p-6 space-y-4 min-h-0 bg-black/10">
+                      {isMessagesLoading && chatMessages.length === 0 ? (
+                        <div className="h-full flex items-center justify-center text-xs text-[var(--text-muted)]">
+                          <div className="animate-spin w-6 h-6 border-2 border-[var(--violet-bright)] border-t-transparent rounded-full mr-2" />
+                          Retrieving historic conversation...
+                        </div>
+                      ) : (
+                        chatMessages.map((msg) => {
+                          const isMe = msg.sender_role === 'superadmin';
+
+                          return (
+                            <div
+                              key={msg.id}
+                              className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} space-y-1 max-w-[85%] ${
+                                isMe ? 'ml-auto' : 'mr-auto'
+                              }`}
+                            >
+                              <div className="flex items-center gap-1.5 text-[10px] text-[var(--text-muted)] px-1">
+                                <span className="font-semibold text-white/70">{msg.sender_name}</span>
+                                <span className="opacity-60">({msg.sender_role})</span>
+                              </div>
+
+                              <div
+                                className={`px-5 py-3 rounded-2xl text-sm leading-relaxed ${
+                                  isMe
+                                    ? 'bg-[var(--accent-pink)] text-white rounded-tr-none border border-[var(--accent-pink)]/35 shadow-[0_4px_20px_rgba(244,63,94,0.15)]'
+                                    : 'bg-white/5 text-white/90 border border-white/5 rounded-tl-none shadow-[0_4px_20px_rgba(255,255,255,0.01)]'
+                                }`}
+                              >
+                                <p className="whitespace-pre-wrap">{msg.message}</p>
+                              </div>
+
+                              <span className="text-[9px] text-[var(--text-muted)] opacity-50 px-1.5">
+                                {new Date(msg.created_at).toLocaleTimeString(undefined, {
+                                  hour: 'numeric',
+                                  minute: '2-digit',
+                                })}
+                              </span>
+                            </div>
+                          );
+                        })
+                      )}
+                      <div ref={chatEndRef} />
+                    </div>
+
+                    {/* Chat Text Input Area */}
+                    <div className="p-4 border-t border-white/5 bg-white/[0.01] flex-shrink-0">
+                      <form onSubmit={handleSendReply} className="flex gap-3">
+                        <input
+                          type="text"
+                          value={newReply}
+                          onChange={(e) => setNewReply(e.target.value)}
+                          placeholder="Type your answer to help this admin..."
+                          className="flex-1 bg-white/5 border border-white/10 rounded-xl px-5 py-3.5 text-sm focus:border-[var(--violet-bright)] focus:bg-white/[0.08] outline-none transition-all duration-300"
+                          disabled={isReplying}
+                        />
+                        <GlowButton
+                          type="submit"
+                          disabled={isReplying || !newReply.trim()}
+                          className="px-6 flex items-center justify-center cursor-pointer"
+                        >
+                          {isReplying ? (
+                            <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full" />
+                          ) : (
+                            <Send className="w-4 h-4" />
+                          )}
+                        </GlowButton>
+                      </form>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center text-center p-12 text-[var(--text-muted)] space-y-4 bg-black/10">
+                    <MessageSquare className="w-16 h-16 opacity-10 text-[var(--text-muted)]" />
+                    <div>
+                      <h4 className="text-xl font-bold font-display text-white/80">Support Resolution Center</h4>
+                      <p className="text-sm max-w-sm mt-2">
+                        Select an active administrator support thread from the sidebar to review reported questions and submit answers instantly.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </GlassCard>
             </motion.div>
           )}
@@ -576,21 +848,31 @@ export const SuperDashboard: React.FC = () => {
                     </div>
                     <div className="p-4 rounded-xl bg-white/5 flex flex-col justify-center items-center text-center">
                       <p className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider mb-2">Actions</p>
-                      {selectedEvent.status !== 'published' ? (
+                      <div className="flex flex-col gap-2 w-full items-center">
+                        {selectedEvent.status !== 'published' ? (
+                          <button 
+                            onClick={() => {
+                              handleApproveEvent(selectedEvent.id);
+                              setSelectedEvent(null);
+                            }}
+                            className="w-full px-4 py-2 rounded-xl bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/25 transition-all text-xs font-bold"
+                          >
+                            Approve & Publish Live
+                          </button>
+                        ) : (
+                          <div className="text-green-500 font-bold text-xs flex items-center gap-1 mb-1">
+                            <CheckCircle className="w-4 h-4" /> Live on Platform
+                          </div>
+                        )}
                         <button 
                           onClick={() => {
-                            handleApproveEvent(selectedEvent.id);
-                            setSelectedEvent(null);
+                            handleDeleteEvent(selectedEvent.id);
                           }}
-                          className="px-6 py-2.5 rounded-xl bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/25 transition-all text-xs font-bold"
+                          className="w-full px-4 py-2 rounded-xl bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/25 transition-all text-xs font-bold flex items-center justify-center gap-1.5"
                         >
-                          Approve & Publish Live
+                          <Trash2 className="w-4 h-4" /> Delete Event
                         </button>
-                      ) : (
-                        <div className="text-green-500 font-bold text-xs flex items-center gap-1">
-                          <CheckCircle className="w-4 h-4" /> Live on Platform
-                        </div>
-                      )}
+                      </div>
                     </div>
                   </div>
 
