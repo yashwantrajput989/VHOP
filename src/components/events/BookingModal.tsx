@@ -7,7 +7,7 @@ import { GlowButton } from '../ui/GlowButton';
 import { useAuthStore } from '../../store/authStore';
 import { useTicketStore } from '../../store/ticketStore';
 import { useUIStore } from '../../store/uiStore';
-import { API_BASE_URL } from '../../config';
+import { API_BASE_URL, getImageUrl } from '../../config';
 
 interface BookingModalProps {
   isOpen: boolean;
@@ -174,7 +174,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, eve
                   className="space-y-6"
                 >
                   <div className="flex items-start gap-4 p-4 rounded-xl bg-white/5 border border-white/10">
-                    <img src={event.cover_image} className="w-20 h-20 rounded-lg object-cover" alt="" />
+                    <img src={getImageUrl(event.cover_image)} className="w-20 h-20 rounded-lg object-cover" alt="" />
                     <div>
                       <h4 className="font-bold text-white">{event.title}</h4>
                       <p className="text-xs text-[var(--text-secondary)] mt-1">{event.venue_name}, {event.city}</p>

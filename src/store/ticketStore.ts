@@ -18,6 +18,7 @@ export interface Ticket {
   qrCode: string;
   bookedAt: string;
   guests?: { name: string; age: string }[];
+  googleMapsUrl?: string;
 }
 
 interface TicketState {

@@ -22,6 +22,35 @@ export const Navbar: React.FC = () => {
 
   const activeCity = city || 'Visakhapatnam';
 
+  const handleGeolocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}`);
+            const data = await res.json();
+            const foundCity = data.address?.city || data.address?.town || data.address?.village || data.address?.state_district;
+            if (foundCity) {
+              setCity(foundCity);
+              setShowCityDropdown(false);
+            } else {
+              alert("Could not determine your city.");
+            }
+          } catch (error) {
+            console.error("Geocoding error", error);
+            alert("Error fetching city from location.");
+          }
+        },
+        (error) => {
+          console.error("Geolocation error", error);
+          alert("Location access denied or unavailable.");
+        }
+      );
+    } else {
+      alert("Geolocation is not supported by this browser.");
+    }
+  };
+
 
   const navItems = [
     { label: 'Events', path: '/events', icon: Home },
@@ -61,8 +90,14 @@ export const Navbar: React.FC = () => {
                 initial={{ opacity: 0, y: 8, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 8, scale: 0.95 }}
-                className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-44 z-50 rounded-2xl overflow-hidden glass-card border border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.5)] bg-[var(--bg-card)]/95"
+                className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-44 z-50 rounded-2xl overflow-hidden bg-[#110F20] backdrop-blur-2xl border border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.5)]"
               >
+                <button
+                  onClick={handleGeolocation}
+                  className="w-full text-left px-4 py-2.5 text-xs font-bold transition-colors text-[var(--accent-cyan)] hover:bg-white/10 border-b border-white/5 flex items-center gap-2"
+                >
+                  <MapPin className="w-3.5 h-3.5" /> Use Current Location
+                </button>
                 {['Visakhapatnam', 'Hyderabad', 'Bangalore', 'Mumbai', 'Delhi'].map(c => (
                   <button
                     key={c}
@@ -107,7 +142,7 @@ export const Navbar: React.FC = () => {
                   exit={{ opacity: 0, y: 8, scale: 0.95 }}
                   className="absolute top-full right-0 mt-2 w-72 z-50"
                 >
-                  <GlassCard className="p-4 shadow-glow border-[var(--violet-primary)]/20 text-left bg-[var(--bg-card)]/95">
+                  <GlassCard hoverEffect={false} className="p-4 shadow-glow border-[var(--violet-primary)]/20 text-left bg-[#110F20] backdrop-blur-2xl">
                     <h4 className="font-display font-bold text-xs mb-3 text-white flex items-center justify-between">
                       <span>Notifications</span>
                       <span className="text-[9px] bg-[var(--violet-primary)] px-2 py-0.5 rounded-full font-medium">New</span>
@@ -216,6 +251,54 @@ export const Navbar: React.FC = () => {
       <nav className="hidden md:flex fixed top-0 left-64 right-0 z-40 h-20 items-center justify-between px-8 bg-transparent">
         <div className="flex-1" />
         <div className="flex items-center gap-6">
+          {/* Desktop City Dropdown */}
+          <div className="relative">
+            <button 
+              onClick={() => setShowCityDropdown(!showCityDropdown)}
+              className="flex items-center gap-2 transition-all active:scale-95 text-left py-2 px-3 rounded-xl hover:bg-white/10"
+            >
+              <MapPin className="w-4 h-4 text-[var(--violet-bright)]" />
+              <span className="text-white font-display font-bold text-sm flex items-center gap-1">
+                {activeCity}
+                <ChevronDown className={`w-4 h-4 text-[var(--text-muted)] transition-transform duration-300 ${showCityDropdown ? 'rotate-180' : ''}`} />
+              </span>
+            </button>
+
+            <AnimatePresence>
+              {showCityDropdown && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                  className="absolute top-full left-0 mt-2 w-48 z-50 rounded-2xl overflow-hidden bg-[#110F20] backdrop-blur-2xl border border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.5)]"
+                >
+                  <button
+                    onClick={handleGeolocation}
+                    className="w-full text-left px-4 py-3 text-sm font-bold transition-colors text-[var(--accent-cyan)] hover:bg-white/10 border-b border-white/5 flex items-center gap-2"
+                  >
+                    <MapPin className="w-4 h-4" /> Use Current Location
+                  </button>
+                  {['Visakhapatnam', 'Hyderabad', 'Bangalore', 'Mumbai', 'Delhi'].map(c => (
+                    <button
+                      key={c}
+                      onClick={() => {
+                        setCity(c);
+                        setShowCityDropdown(false);
+                      }}
+                      className={`w-full text-left px-4 py-3 text-sm font-bold transition-colors ${
+                        activeCity === c 
+                          ? 'bg-[var(--violet-primary)] text-white' 
+                          : 'text-[var(--text-secondary)] hover:bg-white/10 hover:text-white'
+                      }`}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
           <div className="relative">
             <button 
               onClick={() => setShowNotifications(!showNotifications)}
@@ -235,7 +318,7 @@ export const Navbar: React.FC = () => {
                   exit={{ opacity: 0, y: 10, scale: 0.95 }}
                   className="absolute top-full right-0 mt-4 w-80 z-[60]"
                 >
-                  <GlassCard className="p-4 shadow-glow border-[var(--violet-primary)]/20">
+                  <GlassCard hoverEffect={false} className="p-4 shadow-glow border-[var(--violet-primary)]/20 bg-[#110F20] backdrop-blur-2xl">
                     <h4 className="font-display font-bold mb-4">Notifications</h4>
                     <div className="space-y-3 max-h-96 overflow-y-auto">
                       {user && !user.onboarded && (

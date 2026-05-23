@@ -29,6 +29,9 @@ export const EventDetails: React.FC = () => {
           if (typeof data.ticket_types === 'string') {
             data.ticket_types = JSON.parse(data.ticket_types);
           }
+          if (typeof data.artists === 'string') {
+            data.artists = JSON.parse(data.artists);
+          }
           setEvent(data);
         } else {
           setEvent(null);
@@ -126,9 +129,21 @@ export const EventDetails: React.FC = () => {
               </div>
               <div className="space-y-1">
                 <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest font-bold">Venue</span>
-                <div className="flex items-center gap-2 text-white">
-                  <MapPin className="w-3.5 h-3.5 text-[var(--accent-pink)]" />
-                  <span className="text-sm md:text-base font-bold truncate">{event.venue_name}</span>
+                <div className="flex flex-col gap-1 text-white">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-3.5 h-3.5 text-[var(--accent-pink)]" />
+                    <span className="text-sm md:text-base font-bold truncate">{event.venue_name}</span>
+                  </div>
+                  {event.google_maps_url && (
+                    <a 
+                      href={event.google_maps_url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-[10px] text-[var(--accent-cyan)] hover:underline ml-5"
+                    >
+                      Open in Maps
+                    </a>
+                  )}
                 </div>
               </div>
               <div className="space-y-1">
@@ -140,6 +155,24 @@ export const EventDetails: React.FC = () => {
               </div>
             </div>
           </GlassCard>
+
+          {/* Artists Section */}
+          {event.artists && event.artists.length > 0 && (
+            <GlassCard className="p-6 md:p-8">
+              <h3 className="text-xl font-display font-bold mb-4">Lineup</h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {event.artists.map((artist: any, index: number) => (
+                  <div key={index} className="p-4 rounded-xl bg-white/5 border border-white/10 text-center">
+                    <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-[var(--violet-primary)]/20 flex items-center justify-center">
+                      <span className="text-xl font-bold text-[var(--violet-bright)]">{artist.name.charAt(0)}</span>
+                    </div>
+                    <p className="font-bold text-white text-sm truncate">{artist.name}</p>
+                    {artist.role && <p className="text-[10px] text-[var(--text-secondary)] mt-1">{artist.role}</p>}
+                  </div>
+                ))}
+              </div>
+            </GlassCard>
+          )}
         </div>
 
         {/* Right Column: Booking Widget */}
@@ -220,7 +253,22 @@ export const EventDetails: React.FC = () => {
           </GlassCard>
 
           <div className="flex gap-4">
-            <button className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-white/5 border border-white/10 text-[var(--text-secondary)] hover:text-white transition-colors text-sm">
+            <button 
+              onClick={() => {
+                const shareData = {
+                  title: event.title,
+                  text: 'join me to this event',
+                  url: window.location.href
+                };
+                if (navigator.share) {
+                  navigator.share(shareData).catch(console.error);
+                } else {
+                  navigator.clipboard.writeText(`join me to this event ${window.location.href}`);
+                  alert('Link copied to clipboard!');
+                }
+              }}
+              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-white/5 border border-white/10 text-[var(--text-secondary)] hover:text-white transition-colors text-sm"
+            >
               <Share2 className="w-4 h-4" /> Share Event
             </button>
             <button className="flex items-center justify-center w-12 h-12 rounded-xl bg-white/5 border border-white/10 text-[var(--text-secondary)] hover:text-white transition-colors">

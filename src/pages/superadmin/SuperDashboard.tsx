@@ -731,8 +731,8 @@ export const SuperDashboard: React.FC = () => {
                               }`}
                             >
                               <div className="flex items-center gap-1.5 text-[10px] text-[var(--text-muted)] px-1">
-                                <span className="font-semibold text-white/70">{msg.sender_name}</span>
-                                <span className="opacity-60">({msg.sender_role})</span>
+                                <span className="font-semibold text-white/70">{msg.sender_name || 'VHOP Super Admin'}</span>
+                                <span className="opacity-60">({msg.sender_role || 'superadmin'})</span>
                               </div>
 
                               <div
@@ -1049,13 +1049,13 @@ export const SuperDashboard: React.FC = () => {
                         <select 
                           value={newPartner.city}
                           onChange={(e) => setNewPartner({...newPartner, city: e.target.value})}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-[var(--violet-bright)] outline-none"
+                          className="w-full bg-[#110F20] border border-white/10 rounded-xl px-4 py-3 text-white focus:border-[var(--violet-bright)] outline-none"
                         >
-                          <option value="Visakhapatnam">Visakhapatnam</option>
-                          <option value="Mumbai">Mumbai</option>
-                          <option value="Bangalore">Bangalore</option>
-                          <option value="Hyderabad">Hyderabad</option>
-                          <option value="Delhi">Delhi</option>
+                          <option value="Visakhapatnam" className="bg-[#110F20] text-white">Visakhapatnam</option>
+                          <option value="Mumbai" className="bg-[#110F20] text-white">Mumbai</option>
+                          <option value="Bangalore" className="bg-[#110F20] text-white">Bangalore</option>
+                          <option value="Hyderabad" className="bg-[#110F20] text-white">Hyderabad</option>
+                          <option value="Delhi" className="bg-[#110F20] text-white">Delhi</option>
                         </select>
                       </div>
 

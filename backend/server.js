@@ -194,6 +194,26 @@ const pool = mysql.createPool({
         await addColumnIfNeeded('music_dna_bollywood', 'INT DEFAULT 18');
         await addColumnIfNeeded('music_dna_live', 'INT DEFAULT 10');
 
+        // Verify required columns in events
+        const [eventColumns] = await pool.execute('DESCRIBE events');
+        const existingEventColumns = eventColumns.map(c => c.Field.toLowerCase());
+
+        const addEventColumnIfNeeded = async (columnName, columnDefinition) => {
+            if (!existingEventColumns.includes(columnName.toLowerCase())) {
+                try {
+                    await pool.execute(`ALTER TABLE events ADD COLUMN ${columnName} ${columnDefinition}`);
+                    console.log(`🟢 Added missing column: events.${columnName}`);
+                } catch (alterErr) {
+                    console.error(`🔴 Error adding events.${columnName} column:`, alterErr);
+                }
+            } else {
+                console.log(`🟢 Column events.${columnName} is verified/ready.`);
+            }
+        };
+
+        await addEventColumnIfNeeded('google_maps_url', 'TEXT NULL');
+        await addEventColumnIfNeeded('artists', 'JSON NULL');
+
         // 7. Seed default admin profile (using INSERT IGNORE for safety in production)
         await pool.execute(`
             INSERT IGNORE INTO profiles (id, full_name, username, email, password, role, v_coins, city, onboarded)
@@ -321,7 +341,13 @@ const upload = multer({
 
 // Middleware
 app.use(cors({
-    origin: ['https://vhop.in', 'https://www.vhop.in', 'http://localhost:5173'], // Production and local dev
+    origin: [
+        'https://vhop.in', 
+        'https://www.vhop.in', 
+        'http://localhost:5173',
+        'http://localhost', 
+        'capacitor://localhost'
+    ], // Production, local dev, and native mobile apps (Capacitor)
     credentials: true
 }));
 app.use(express.json());
@@ -977,8 +1003,8 @@ app.post('/api/events', async (req, res) => {
     const id = `ev_${Math.random().toString(36).substring(2, 11)}`;
     try {
         await pool.execute(
-            'INSERT INTO events (id, company_id, title, short_description, description, venue_name, city, category, price, cover_image, start_date, ticket_types, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [id, event.company_id, event.title, event.short_description, event.description, event.venue_name, event.city, event.category, event.price, event.cover_image, event.start_date, JSON.stringify(event.ticket_types), event.status || 'draft']
+            'INSERT INTO events (id, company_id, title, short_description, description, venue_name, city, category, price, cover_image, start_date, ticket_types, status, google_maps_url, artists) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [id, event.company_id, event.title, event.short_description, event.description, event.venue_name, event.city, event.category, event.price, event.cover_image, event.start_date, JSON.stringify(event.ticket_types), event.status || 'draft', event.google_maps_url || null, event.artists ? JSON.stringify(event.artists) : null]
         );
         res.status(201).json({ id, message: 'Event created' });
     } catch (error) {
@@ -1014,7 +1040,7 @@ app.post('/api/bookings', async (req, res) => {
             // 1. Insert Booking
             await connection.execute(
                 'INSERT INTO bookings (id, event_id, user_id, quantity, total_amount, ticket_name, price, payment_id, payment_status, booking_id, qr_code, guests) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                [id, booking.event_id, booking.user_id, booking.quantity, booking.total_amount, booking.ticket_name, booking.price, booking.payment_id, 'paid', booking.booking_id, booking.qr_code, JSON.stringify(booking.guests)]
+                [id, booking.event_id, booking.user_id, booking.quantity, booking.total_amount, booking.ticket_name, booking.price, booking.payment_id, 'paid', booking.booking_id, booking.qr_code, JSON.stringify(booking.guests || [])]
             );
 
             // 2. Update Event ticket count
@@ -1067,7 +1093,7 @@ app.post('/api/bookings', async (req, res) => {
 app.get('/api/bookings/user/:userId', async (req, res) => {
     try {
         const [rows] = await pool.execute(
-            'SELECT b.*, e.title as event_title, e.cover_image, e.venue_name, e.city, e.start_date FROM bookings b JOIN events e ON b.event_id = e.id WHERE b.user_id = ?',
+            'SELECT b.*, e.title as event_title, e.cover_image, e.venue_name, e.city, e.start_date, e.google_maps_url FROM bookings b JOIN events e ON b.event_id = e.id WHERE b.user_id = ?',
             [req.params.userId]
         );
         res.json(rows);
@@ -1555,7 +1581,7 @@ app.get('/api/support/messages/:adminId', async (req, res) => {
         const [rows] = await pool.execute(
             `SELECT sm.*, p.full_name as sender_name, p.role as sender_role, p.avatar_url as sender_avatar 
              FROM support_messages sm 
-             JOIN profiles p ON sm.sender_id = p.id 
+             LEFT JOIN profiles p ON sm.sender_id = p.id 
              WHERE sm.admin_id = ? 
              ORDER BY sm.created_at ASC`,
             [resolvedAdminId]
@@ -1585,7 +1611,7 @@ app.post('/api/support/messages', async (req, res) => {
         const [rows] = await pool.execute(
             `SELECT sm.*, p.full_name as sender_name, p.role as sender_role, p.avatar_url as sender_avatar 
              FROM support_messages sm 
-             JOIN profiles p ON sm.sender_id = p.id 
+             LEFT JOIN profiles p ON sm.sender_id = p.id 
              WHERE sm.id = ?`,
             [id]
         );

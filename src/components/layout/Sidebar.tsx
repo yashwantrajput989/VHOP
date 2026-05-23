@@ -4,6 +4,7 @@ import { Home, Users, Map, User, Zap, Settings, LayoutDashboard, LogOut, Calenda
 import { cn } from '../../lib/utils';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../../store/authStore';
+import { Capacitor } from '@capacitor/core';
 
 interface SidebarProps {
   isAdmin?: boolean;
@@ -11,8 +12,10 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ isAdmin = false }) => {
   const { logout, user } = useAuthStore();
-  const isSuperAdmin = user?.role === 'superadmin';
-  const isSubAdmin = user?.role === 'subadmin';
+  const isNative = Capacitor.isNativePlatform();
+  const isTargetAdmin = import.meta.env.VITE_APP_TARGET === 'admin';
+  const isSuperAdmin = (isTargetAdmin || !isNative) && user?.role === 'superadmin';
+  const isSubAdmin = (isTargetAdmin || !isNative) && user?.role === 'subadmin';
 
   const userNavItems = [
     { label: 'Events', path: '/events', icon: Home },

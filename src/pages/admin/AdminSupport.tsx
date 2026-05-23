@@ -152,8 +152,8 @@ export const AdminSupport: React.FC = () => {
                     }`}
                   >
                     <div className="flex items-center gap-1.5 text-[10px] text-[var(--text-muted)] px-1">
-                      <span className="font-semibold text-white/70">{msg.sender_name}</span>
-                      <span className="opacity-60">({msg.sender_role})</span>
+                      <span className="font-semibold text-white/70">{msg.sender_name || 'VHOP Super Admin'}</span>
+                      <span className="opacity-60">({msg.sender_role || 'superadmin'})</span>
                     </div>
 
                     <div

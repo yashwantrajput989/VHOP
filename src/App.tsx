@@ -2,6 +2,7 @@ import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-
 import { AnimatePresence } from 'framer-motion';
 import { Navbar } from './components/layout/Navbar';
 import { Sidebar } from './components/layout/Sidebar';
+import { Capacitor } from '@capacitor/core';
 import { AuthModal } from './components/ui/AuthModal';
 import { Events } from './pages/user/Events';
 import { Social } from './pages/user/Social';
@@ -47,14 +48,27 @@ function App() {
   }, [location]);
 
   // Global redirect when user logs in
+  const isTargetAdmin = import.meta.env.VITE_APP_TARGET === 'admin';
+
   useEffect(() => {
     if (user && location.pathname === '/') {
-      navigate('/events', { replace: true });
+      if (isTargetAdmin) {
+        if (user.role === 'superadmin') {
+          navigate('/superadmin', { replace: true });
+        } else if (user.role === 'admin' || user.role === 'subadmin') {
+          navigate('/admin', { replace: true });
+        } else {
+          navigate('/admin/login', { replace: true });
+        }
+      } else {
+        navigate('/events', { replace: true });
+      }
     }
-  }, [user, location.pathname, navigate]);
+  }, [user, location.pathname, navigate, isTargetAdmin]);
 
-  const isAdminPath = location.pathname.startsWith('/admin');
-  const isSuperAdminPath = location.pathname.startsWith('/superadmin');
+  const isNative = Capacitor.isNativePlatform();
+  const isAdminPath = isTargetAdmin ? location.pathname.startsWith('/admin') : (!isNative && location.pathname.startsWith('/admin'));
+  const isSuperAdminPath = isTargetAdmin ? location.pathname.startsWith('/superadmin') : (!isNative && location.pathname.startsWith('/superadmin'));
 
   return (
     <div className="flex min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] overflow-x-hidden">
@@ -67,12 +81,22 @@ function App() {
       
       {/* Navbar for mobile and top-level desktop - HIDE for admin */}
       {!isAdminPath && !isSuperAdminPath && <Navbar />}
-
+ 
       <main className={`flex-1 min-w-0 relative ${isAdminPath || isSuperAdminPath ? 'w-full' : ''}`}>
         <AnimatePresence mode="wait">
           <Routes location={location} key={location.pathname}>
-            {/* User Routes */}
-            <Route path="/" element={<Navigate to="/events" replace />} />
+            {/* User Routes / Admin Redirect */}
+            <Route path="/" element={
+              isTargetAdmin ? (
+                user?.role === 'superadmin' 
+                  ? <Navigate to="/superadmin" replace /> 
+                  : (user?.role === 'admin' || user?.role === 'subadmin') 
+                    ? <Navigate to="/admin" replace /> 
+                    : <Navigate to="/admin/login" replace />
+              ) : (
+                <Navigate to="/events" replace />
+              )
+            } />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/events" element={<Events />} />
             <Route path="/events/:id" element={<EventDetails />} />
@@ -81,23 +105,41 @@ function App() {
             <Route path="/profile" element={<Profile />} />
 
             {/* Admin Routes */}
-            <Route path="/admin" element={<AdminDashboard />} />
-            <Route path="/admin/create-event" element={<CreateEvent />} />
-            <Route path="/admin/edit-event/:id" element={<CreateEvent />} />
-            <Route path="/admin/settings" element={<AdminSettings />} />
-            <Route path="/admin/guests" element={<GuestList />} />
-            <Route path="/admin/teams" element={<AdminTeams />} />
-            <Route path="/admin/support" element={<AdminSupport />} />
-            <Route path="/admin/login" element={<AdminLogin />} />
+            {(isTargetAdmin || !isNative) && (
+              <>
+                <Route path="/admin" element={<AdminDashboard />} />
+                <Route path="/admin/create-event" element={<CreateEvent />} />
+                <Route path="/admin/edit-event/:id" element={<CreateEvent />} />
+                <Route path="/admin/settings" element={<AdminSettings />} />
+                <Route path="/admin/guests" element={<GuestList />} />
+                <Route path="/admin/teams" element={<AdminTeams />} />
+                <Route path="/admin/support" element={<AdminSupport />} />
+                <Route path="/admin/login" element={<AdminLogin />} />
+              </>
+            )}
             
             {/* Super Admin Routes */}
-            <Route path="/superadmin" element={<SuperDashboard />} />
-            <Route path="/superadmin/events" element={<SuperDashboard />} />
-            <Route path="/superadmin/partners" element={<SuperDashboard />} />
-            <Route path="/superadmin/issues" element={<SuperDashboard />} />
+            {(isTargetAdmin || !isNative) && (
+              <>
+                <Route path="/superadmin" element={<SuperDashboard />} />
+                <Route path="/superadmin/events" element={<SuperDashboard />} />
+                <Route path="/superadmin/partners" element={<SuperDashboard />} />
+                <Route path="/superadmin/issues" element={<SuperDashboard />} />
+              </>
+            )}
 
             {/* Fallback */}
-            <Route path="*" element={<Navigate to="/events" replace />} />
+            <Route path="*" element={
+              isTargetAdmin ? (
+                user?.role === 'superadmin' 
+                  ? <Navigate to="/superadmin" replace /> 
+                  : (user?.role === 'admin' || user?.role === 'subadmin') 
+                    ? <Navigate to="/admin" replace /> 
+                    : <Navigate to="/admin/login" replace />
+              ) : (
+                <Navigate to="/events" replace />
+              )
+            } />
           </Routes>
         </AnimatePresence>
       </main>

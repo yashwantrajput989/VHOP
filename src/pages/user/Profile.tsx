@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageWrapper } from '../../components/layout/PageWrapper';
+import { Capacitor } from '@capacitor/core';
 import { GlowButton } from '../../components/ui/GlowButton';
 import { GlassCard } from '../../components/ui/GlassCard';
 import { useAuthStore } from '../../store/authStore';
@@ -8,11 +9,12 @@ import { useTicketStore } from '../../store/ticketStore';
 import type { Ticket } from '../../store/ticketStore';
 import { 
   Settings, ShieldCheck, Lock, LogIn, Coins, Sparkles, User, Share2, 
-  Flame, CheckCircle, Copy, ChevronRight, Award, Zap, Check, AlertCircle, Camera
+  Flame, CheckCircle, Copy, ChevronRight, Award, Zap, Check, AlertCircle, Camera, MapPin
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { API_BASE_URL, getImageUrl } from '../../config';
 import { ProfileCompletionBanner } from '../../components/profile/ProfileCompletionBanner';
+import { VCardPass } from '../../components/profile/VCardPass';
 import { useUIStore } from '../../store/uiStore';
 import { FloatingOrb } from '../../components/ui/FloatingOrb';
 import { ImageCropper } from '../../components/profile/ImageCropper';
@@ -100,11 +102,19 @@ export const Profile: React.FC = () => {
   const [isVerifyingAadhaar, setIsVerifyingAadhaar] = useState(false);
   const [aadhaarModalOpen, setAadhaarModalOpen] = useState(false);
 
-  // Copy Referral Code
+  // Share / Copy Referral Code
   const copyReferral = (code: string) => {
-    navigator.clipboard.writeText(code);
-    setCopiedLink(true);
-    setTimeout(() => setCopiedLink(false), 2000);
+    if (navigator.share) {
+      navigator.share({
+        title: 'VHOP Nightlife',
+        text: 'join me in the app',
+        url: code
+      }).catch(console.error);
+    } else {
+      navigator.clipboard.writeText(`join me in the app ${code}`);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    }
   };
 
   const openEditModal = () => {
@@ -215,7 +225,8 @@ export const Profile: React.FC = () => {
               bookingId: dbTicket.booking_id || dbTicket.id,
               qrCode: dbTicket.qr_code || `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${dbTicket.id}`,
               bookedAt: dbTicket.booked_at || new Date().toISOString(),
-              guests: typeof dbTicket.guests === 'string' ? JSON.parse(dbTicket.guests) : (dbTicket.guests || [])
+              guests: typeof dbTicket.guests === 'string' ? JSON.parse(dbTicket.guests) : (dbTicket.guests || []),
+              googleMapsUrl: dbTicket.google_maps_url || undefined
             });
           }
         });
@@ -394,7 +405,7 @@ export const Profile: React.FC = () => {
             <span>{user.vip_tier || 'Regular'} • Aadhaar {user.aadhaar_verified ? 'verified' : 'unverified'}</span>
           </div>
 
-          {(user.role === 'admin' || user.role === 'superadmin' || user.role === 'subadmin') && (
+          {(import.meta.env.VITE_APP_TARGET === 'admin' || !Capacitor.isNativePlatform()) && (user.role === 'admin' || user.role === 'superadmin' || user.role === 'subadmin') && (
             <button 
               onClick={() => navigate('/admin')}
               className="mt-4 px-4 py-1.5 rounded-xl bg-[var(--violet-primary)]/20 border border-[var(--violet-primary)] text-[var(--violet-bright)] font-bold text-xs hover:bg-[var(--violet-primary)] hover:text-white transition-all active:scale-95"
@@ -402,6 +413,11 @@ export const Profile: React.FC = () => {
               Access Admin Panel
             </button>
           )}
+        </section>
+
+        {/* ================= V-CARD PASS ================= */}
+        <section className="mb-6">
+          <VCardPass />
         </section>
 
         {/* ================= THREE STATS COUNTERS (Image 1 Reference) ================= */}
@@ -796,7 +812,19 @@ export const Profile: React.FC = () => {
               <GlassCard className="p-8 text-center space-y-6 border-[var(--violet-bright)]/30 shadow-glow">
                 <div className="space-y-2">
                   <h3 className="text-2xl font-display font-bold">{selectedTicket.eventTitle}</h3>
-                  <p className="text-[var(--text-secondary)] text-sm">{selectedTicket.venueName}</p>
+                  <div className="flex flex-col items-center justify-center gap-1">
+                    <p className="text-[var(--text-secondary)] text-sm">{selectedTicket.venueName}</p>
+                    {selectedTicket.googleMapsUrl && (
+                      <a 
+                        href={selectedTicket.googleMapsUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-[10px] text-[var(--accent-cyan)] hover:underline flex items-center gap-1"
+                      >
+                        <MapPin className="w-3 h-3" /> Open in Maps
+                      </a>
+                    )}
+                  </div>
                 </div>
 
                 <div className="bg-white p-4 rounded-3xl mx-auto w-fit shadow-[0_0_40px_rgba(255,255,255,0.2)]">
@@ -819,9 +847,29 @@ export const Profile: React.FC = () => {
                   </div>
                 </div>
 
-                <GlowButton onClick={() => setSelectedTicket(null)} className="w-full py-4" variant="secondary">
-                  Close Ticket
-                </GlowButton>
+                <div className="flex gap-4">
+                  <GlowButton onClick={() => setSelectedTicket(null)} className="flex-1 py-4" variant="secondary">
+                    Close Ticket
+                  </GlowButton>
+                  <GlowButton 
+                    onClick={() => {
+                      const shareData = {
+                        title: selectedTicket.eventTitle,
+                        text: 'join me to this event',
+                        url: `https://vhop.in/events/${selectedTicket.eventId}`
+                      };
+                      if (navigator.share) {
+                        navigator.share(shareData).catch(console.error);
+                      } else {
+                        navigator.clipboard.writeText(`join me to this event https://vhop.in/events/${selectedTicket.eventId}`);
+                        alert('Link copied to clipboard!');
+                      }
+                    }}
+                    className="flex-1 py-4 flex items-center justify-center gap-2"
+                  >
+                    <Share2 className="w-4 h-4" /> Share
+                  </GlowButton>
+                </div>
               </GlassCard>
             </motion.div>
           </div>

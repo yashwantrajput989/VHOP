@@ -33,6 +33,13 @@ export const CreateEvent: React.FC = () => {
     start_date: '',
     total_tickets: '100',
     ticket_types: [] as any[],
+    google_maps_url: '',
+    artists: [] as any[],
+  });
+
+  const [newArtist, setNewArtist] = useState({
+    name: '',
+    role: '',
   });
 
   const [newTicketType, setNewTicketType] = useState({
@@ -79,6 +86,8 @@ export const CreateEvent: React.FC = () => {
             start_date: eventData.start_date ? new Date(eventData.start_date).toISOString().slice(0, 16) : '',
             total_tickets: eventData.total_tickets?.toString() || '100',
             ticket_types: eventData.ticket_types || [],
+            google_maps_url: eventData.google_maps_url || '',
+            artists: typeof eventData.artists === 'string' ? JSON.parse(eventData.artists) : eventData.artists || [],
           });
         }
       } catch (error) {
@@ -225,13 +234,13 @@ export const CreateEvent: React.FC = () => {
                     required
                     value={formData.category}
                     onChange={(e) => setFormData({...formData, category: e.target.value})}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:border-[var(--violet-bright)] outline-none transition-all"
+                    className="w-full bg-[#110F20] text-white border border-white/10 rounded-xl px-4 py-3 focus:border-[var(--violet-bright)] outline-none transition-all"
                   >
-                    <option value="">Select Category</option>
-                    <option value="Music">Music</option>
-                    <option value="Comedy">Comedy</option>
-                    <option value="Art">Art</option>
-                    <option value="Club">Club</option>
+                    <option value="" className="bg-[#110F20] text-white">Select Category</option>
+                    <option value="Music" className="bg-[#110F20] text-white">Music</option>
+                    <option value="Comedy" className="bg-[#110F20] text-white">Comedy</option>
+                    <option value="Art" className="bg-[#110F20] text-white">Art</option>
+                    <option value="Club" className="bg-[#110F20] text-white">Club</option>
                   </select>
                 </div>
                 <div className="space-y-2">
@@ -352,13 +361,13 @@ export const CreateEvent: React.FC = () => {
                     required
                     value={formData.city}
                     onChange={(e) => setFormData({...formData, city: e.target.value})}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:border-[var(--violet-bright)] outline-none"
+                    className="w-full bg-[#110F20] text-white border border-white/10 rounded-xl px-4 py-3 focus:border-[var(--violet-bright)] outline-none"
                   >
-                    <option value="Visakhapatnam">Visakhapatnam</option>
-                    <option value="Mumbai">Mumbai</option>
-                    <option value="Bangalore">Bangalore</option>
-                    <option value="Hyderabad">Hyderabad</option>
-                    <option value="Delhi">Delhi</option>
+                    <option value="Visakhapatnam" className="bg-[#110F20] text-white">Visakhapatnam</option>
+                    <option value="Mumbai" className="bg-[#110F20] text-white">Mumbai</option>
+                    <option value="Bangalore" className="bg-[#110F20] text-white">Bangalore</option>
+                    <option value="Hyderabad" className="bg-[#110F20] text-white">Hyderabad</option>
+                    <option value="Delhi" className="bg-[#110F20] text-white">Delhi</option>
                   </select>
                 </div>
                 <div className="space-y-2">
@@ -373,6 +382,16 @@ export const CreateEvent: React.FC = () => {
                   />
                 </div>
                 <div className="space-y-2">
+                  <label className="text-sm font-medium text-[var(--text-secondary)]">Google Maps URL</label>
+                  <input 
+                    type="url" 
+                    value={formData.google_maps_url}
+                    onChange={(e) => setFormData({...formData, google_maps_url: e.target.value})}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:border-[var(--violet-bright)] outline-none"
+                    placeholder="https://maps.app.goo.gl/..."
+                  />
+                </div>
+                <div className="space-y-2">
                   <label className="text-sm font-medium text-[var(--text-secondary)]">Date & Time</label>
                   <input 
                     type="datetime-local" 
@@ -382,6 +401,76 @@ export const CreateEvent: React.FC = () => {
                     className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:border-[var(--violet-bright)] outline-none"
                   />
                 </div>
+              </div>
+            </GlassCard>
+
+            <GlassCard className="p-8 space-y-6">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-bold font-display text-white">Artists / Lineup</h3>
+                <p className="text-xs text-[var(--text-secondary)]">Who is performing?</p>
+              </div>
+
+              {/* Add Artist Form */}
+              <div className="p-6 rounded-2xl bg-white/5 border border-white/10 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">Artist Name</label>
+                    <input 
+                      type="text" 
+                      value={newArtist.name}
+                      onChange={(e) => setNewArtist({...newArtist, name: e.target.value})}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:border-[var(--violet-bright)] outline-none"
+                      placeholder="e.g. DJ Snake"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">Role / Genre</label>
+                    <input 
+                      type="text" 
+                      value={newArtist.role}
+                      onChange={(e) => setNewArtist({...newArtist, role: e.target.value})}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:border-[var(--violet-bright)] outline-none"
+                      placeholder="e.g. Headliner"
+                    />
+                  </div>
+                </div>
+                <GlowButton 
+                  type="button"
+                  onClick={() => {
+                    if (!newArtist.name) return;
+                    setFormData({
+                      ...formData,
+                      artists: [...formData.artists, newArtist]
+                    });
+                    setNewArtist({ name: '', role: '' });
+                  }}
+                  className="w-full py-2.5 text-sm"
+                >
+                  Add Artist
+                </GlowButton>
+              </div>
+
+              {/* List of Added Artists */}
+              <div className="space-y-3">
+                {formData.artists.map((artist: any, index: number) => (
+                  <div key={index} className="p-4 rounded-xl bg-[var(--violet-bright)]/5 border border-[var(--violet-bright)]/20 flex items-center justify-between">
+                    <div>
+                      <span className="font-bold text-white">{artist.name}</span>
+                      {artist.role && <span className="text-[10px] text-[var(--text-secondary)] ml-2 bg-white/10 px-2 py-0.5 rounded-full">{artist.role}</span>}
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        const updated = [...formData.artists];
+                        updated.splice(index, 1);
+                        setFormData({...formData, artists: updated});
+                      }}
+                      className="p-2 text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
               </div>
             </GlassCard>
           </div>
