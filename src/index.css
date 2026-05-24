@@ -126,3 +126,50 @@ h1, h2, h3, h4, h5, h6 {
     scrollbar-width: none;
   }
 }
+
+/* Ensure select dropdown options are perfectly visible everywhere in Dark/Cyberpunk layout */
+select {
+  background-color: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+}
+
+select option {
+  background-color: #13111F !important; /* solid deep bg card color */
+  color: #F8F8FF !important; /* text primary color */
+  padding: 12px !important;
+}
+
+/* Fallback override specifically for standard browsers that enforce native option styling */
+select option:disabled {
+  color: var(--text-muted) !important;
+  background-color: #0A0A0F !important;
+}
+
+select option:checked {
+  background-color: var(--violet-primary) !important;
+  color: #FFFFFF !important;
+}
+
+/* Premium Solid Cyberpunk Notification Dropdown Popover */
+.notification-popover {
+  background-color: rgba(19, 17, 31, 0.98) !important; /* Solid deep bg secondary dark slate */
+  backdrop-filter: blur(24px) !important;
+  border: 1px solid rgba(139, 92, 246, 0.45) !important; /* glowing border */
+  border-radius: 20px !important;
+  box-shadow: 0 15px 50px -10px rgba(0, 0, 0, 0.8), 0 0 25px rgba(124, 58, 237, 0.25) !important; /* Premium dark shadows and violet aura */
+  padding: 1.25rem !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  z-index: 100 !important;
+}
+
+.notification-popover::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--violet-bright), var(--accent-pink), transparent);
+  border-radius: 20px 20px 0 0;
+}
+

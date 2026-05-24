@@ -8,7 +8,6 @@ import { useTicketStore } from '../../store/ticketStore';
 import { useLocationStore } from '../../store/locationStore';
 import { Avatar } from '../ui/Avatar';
 import { useState } from 'react';
-import { GlassCard } from '../ui/GlassCard';
 import { getImageUrl } from '../../config';
 
 export const Navbar: React.FC = () => {
@@ -140,48 +139,46 @@ export const Navbar: React.FC = () => {
                   initial={{ opacity: 0, y: 8, scale: 0.95 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 8, scale: 0.95 }}
-                  className="absolute top-full right-0 mt-2 w-72 z-50"
+                  className="absolute top-full right-0 mt-2 w-72 z-50 notification-popover"
                 >
-                  <GlassCard hoverEffect={false} className="p-4 shadow-glow border-[var(--violet-primary)]/20 text-left bg-[#110F20] backdrop-blur-2xl">
-                    <h4 className="font-display font-bold text-xs mb-3 text-white flex items-center justify-between">
-                      <span>Notifications</span>
-                      <span className="text-[9px] bg-[var(--violet-primary)] px-2 py-0.5 rounded-full font-medium">New</span>
-                    </h4>
-                    <div className="space-y-2.5 max-h-72 overflow-y-auto scrollbar-none">
-                      {user && !user.onboarded && (
-                        <div 
-                          className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 flex gap-2.5 cursor-pointer hover:bg-amber-500/20 transition-colors"
-                          onClick={() => {
-                            setShowNotifications(false);
-                            openModal('auth');
-                          }}
-                        >
-                          <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center shrink-0">
-                            <User className="w-4 h-4 text-amber-500" />
+                  <h4 className="font-display font-bold text-xs mb-3 text-white flex items-center justify-between border-b border-white/5 pb-2">
+                    <span>Notifications</span>
+                    <span className="text-[9px] bg-[var(--violet-primary)] px-2 py-0.5 rounded-full font-medium">New</span>
+                  </h4>
+                  <div className="space-y-2.5 max-h-72 overflow-y-auto scrollbar-none">
+                    {user && !user.onboarded && (
+                      <div 
+                        className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 flex gap-2.5 cursor-pointer hover:bg-amber-500/20 transition-colors"
+                        onClick={() => {
+                          setShowNotifications(false);
+                          openModal('auth');
+                        }}
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center shrink-0">
+                          <User className="w-4 h-4 text-amber-500" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[10px] font-bold text-amber-500 leading-tight">Complete Profile</p>
+                          <p className="text-[8px] text-amber-200/80 leading-normal mt-0.5">Claim 100 V-Coins reward & unlock V-Card.</p>
+                        </div>
+                      </div>
+                    )}
+                    {tickets.length === 0 && (!user || user.onboarded) ? (
+                      <p className="text-xs text-[var(--text-muted)] text-center py-4">No new notifications</p>
+                    ) : (
+                      tickets.map(ticket => (
+                        <div key={ticket.id} className="p-2.5 rounded-xl bg-white/5 border border-white/5 flex gap-2.5">
+                          <div className="w-8 h-8 rounded-lg bg-[var(--violet-primary)]/20 flex items-center justify-center shrink-0">
+                            <Sparkles className="w-4 h-4 text-[var(--violet-bright)]" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-[10px] font-bold text-amber-500 leading-tight">Complete Profile</p>
-                            <p className="text-[8px] text-amber-200/80 leading-normal mt-0.5">Claim 100 V-Coins reward & unlock V-Card.</p>
+                            <p className="text-[10px] font-bold text-white leading-tight">Booking Confirmed!</p>
+                            <p className="text-[8px] text-[var(--text-secondary)] leading-normal mt-0.5">Tickets for {ticket.eventTitle} are ready.</p>
                           </div>
                         </div>
-                      )}
-                      {tickets.length === 0 && (!user || user.onboarded) ? (
-                        <p className="text-xs text-[var(--text-muted)] text-center py-4">No new notifications</p>
-                      ) : (
-                        tickets.map(ticket => (
-                          <div key={ticket.id} className="p-2.5 rounded-xl bg-white/5 border border-white/5 flex gap-2.5">
-                            <div className="w-8 h-8 rounded-lg bg-[var(--violet-primary)]/20 flex items-center justify-center shrink-0">
-                              <Sparkles className="w-4 h-4 text-[var(--violet-bright)]" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-[10px] font-bold text-white leading-tight">Booking Confirmed!</p>
-                              <p className="text-[8px] text-[var(--text-secondary)] leading-normal mt-0.5">Tickets for {ticket.eventTitle} are ready.</p>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </GlassCard>
+                      ))
+                    )}
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -316,45 +313,43 @@ export const Navbar: React.FC = () => {
                   initial={{ opacity: 0, y: 10, scale: 0.95 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                  className="absolute top-full right-0 mt-4 w-80 z-[60]"
+                  className="absolute top-full right-0 mt-4 w-80 z-[60] notification-popover"
                 >
-                  <GlassCard hoverEffect={false} className="p-4 shadow-glow border-[var(--violet-primary)]/20 bg-[#110F20] backdrop-blur-2xl">
-                    <h4 className="font-display font-bold mb-4">Notifications</h4>
-                    <div className="space-y-3 max-h-96 overflow-y-auto">
-                      {user && !user.onboarded && (
-                        <div 
-                          className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 flex gap-3 cursor-pointer hover:bg-amber-500/20 transition-colors"
-                          onClick={() => {
-                            setShowNotifications(false);
-                            openModal('auth');
-                          }}
-                        >
-                          <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center flex-shrink-0">
-                            <User className="w-5 h-5 text-amber-500" />
+                  <h4 className="font-display font-bold mb-4 text-white border-b border-white/5 pb-2">Notifications</h4>
+                  <div className="space-y-3 max-h-96 overflow-y-auto">
+                    {user && !user.onboarded && (
+                      <div 
+                        className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 flex gap-3 cursor-pointer hover:bg-amber-500/20 transition-colors"
+                        onClick={() => {
+                          setShowNotifications(false);
+                          openModal('auth');
+                        }}
+                      >
+                        <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center flex-shrink-0">
+                          <User className="w-5 h-5 text-amber-500" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-xs font-bold text-amber-500">Complete Your Profile</p>
+                          <p className="text-[10px] text-amber-200/80 mt-1">Add your interests to personalize your experience.</p>
+                        </div>
+                      </div>
+                    )}
+                    {tickets.length === 0 && (!user || user.onboarded) ? (
+                      <p className="text-sm text-[var(--text-muted)] text-center py-4">No new notifications</p>
+                    ) : (
+                      tickets.map(ticket => (
+                        <div key={ticket.id} className="p-3 rounded-lg bg-white/5 border border-white/5 flex gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-[var(--violet-primary)]/20 flex items-center justify-center flex-shrink-0">
+                            <LogIn className="w-5 h-5 text-[var(--violet-bright)]" />
                           </div>
                           <div className="flex-1">
-                            <p className="text-xs font-bold text-amber-500">Complete Your Profile</p>
-                            <p className="text-[10px] text-amber-200/80 mt-1">Add your interests to personalize your experience.</p>
+                            <p className="text-xs font-bold text-white">Booking Confirmed!</p>
+                            <p className="text-[10px] text-[var(--text-secondary)] mt-1">Your tickets for {ticket.eventTitle} are ready.</p>
                           </div>
                         </div>
-                      )}
-                      {tickets.length === 0 && (!user || user.onboarded) ? (
-                        <p className="text-sm text-[var(--text-muted)] text-center py-4">No new notifications</p>
-                      ) : (
-                        tickets.map(ticket => (
-                          <div key={ticket.id} className="p-3 rounded-lg bg-white/5 border border-white/5 flex gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-[var(--violet-primary)]/20 flex items-center justify-center flex-shrink-0">
-                              <LogIn className="w-5 h-5 text-[var(--violet-bright)]" />
-                            </div>
-                            <div className="flex-1">
-                              <p className="text-xs font-bold text-white">Booking Confirmed!</p>
-                              <p className="text-[10px] text-[var(--text-secondary)] mt-1">Your tickets for {ticket.eventTitle} are ready.</p>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </GlassCard>
+                      ))
+                    )}
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>
