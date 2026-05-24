@@ -35,6 +35,7 @@ export const CreateEvent: React.FC = () => {
     ticket_types: [] as any[],
     google_maps_url: '',
     artists: [] as any[],
+    status: '',
   });
 
   const [newArtist, setNewArtist] = useState({
@@ -74,22 +75,23 @@ export const CreateEvent: React.FC = () => {
             if (typeof eventData.ticket_types === 'string') {
               eventData.ticket_types = JSON.parse(eventData.ticket_types);
             }
-          setFormData({
-            title: eventData.title,
-            short_description: eventData.short_description || '',
-            description: eventData.description || '',
-            category: eventData.category || '',
-            price: eventData.price.toString(),
-            city: eventData.city,
-            venue_name: eventData.venue_name || '',
-            cover_image: eventData.cover_image || '',
-            start_date: eventData.start_date ? new Date(eventData.start_date).toISOString().slice(0, 16) : '',
-            total_tickets: eventData.total_tickets?.toString() || '100',
-            ticket_types: eventData.ticket_types || [],
-            google_maps_url: eventData.google_maps_url || '',
-            artists: typeof eventData.artists === 'string' ? JSON.parse(eventData.artists) : eventData.artists || [],
-          });
-        }
+            setFormData({
+              title: eventData.title,
+              short_description: eventData.short_description || '',
+              description: eventData.description || '',
+              category: eventData.category || '',
+              price: eventData.price.toString(),
+              city: eventData.city,
+              venue_name: eventData.venue_name || '',
+              cover_image: eventData.cover_image || '',
+              start_date: eventData.start_date ? new Date(eventData.start_date).toISOString().slice(0, 16) : '',
+              total_tickets: eventData.total_tickets?.toString() || '100',
+              ticket_types: eventData.ticket_types || [],
+              google_maps_url: eventData.google_maps_url || '',
+              artists: typeof eventData.artists === 'string' ? JSON.parse(eventData.artists) : eventData.artists || [],
+              status: eventData.status || 'draft',
+            });
+          }
       } catch (error) {
         console.error('Error fetching event details:', error);
       }
@@ -127,7 +129,7 @@ export const CreateEvent: React.FC = () => {
       company_id: company.id,
       price: parseFloat(formData.price) || 0,
       total_tickets: parseInt(formData.total_tickets) || 100,
-      status: isSuperAdmin ? 'published' : 'draft',
+      status: id ? formData.status : (isSuperAdmin ? 'published' : 'draft'),
       start_date: new Date(formData.start_date).toISOString(),
       ticket_types: formData.ticket_types.map((t: any) => ({
         ...t,
@@ -137,19 +139,29 @@ export const CreateEvent: React.FC = () => {
     };
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/events`, {
-        method: 'POST',
+      const url = id ? `${API_BASE_URL}/api/events/${id}` : `${API_BASE_URL}/api/events`;
+      const method = id ? 'PUT' : 'POST';
+      const response = await fetch(url, {
+        method: method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(eventPayload)
       });
       
       if (response.ok) {
-        if (!isSuperAdmin) {
-          alert('Event submitted! Once approved by the Super Admin, it will go live on the website.');
+        if (id) {
+          alert('Event updated successfully!');
         } else {
-          alert('Event published successfully!');
+          if (!isSuperAdmin) {
+            alert('Event submitted! Once approved by the Super Admin, it will go live on the website.');
+          } else {
+            alert('Event published successfully!');
+          }
         }
-        navigate('/admin');
+        if (user?.role === 'superadmin') {
+          navigate('/superadmin/events');
+        } else {
+          navigate('/admin');
+        }
       } else {
         throw new Error('Failed to save event');
       }
@@ -566,28 +578,24 @@ export const CreateEvent: React.FC = () => {
               setIsCropperOpen(false);
               setSelectedImageSrc(null);
             }}
-            onCropComplete={async (blob) => {
+            onCropComplete={(blob) => {
               setIsCropperOpen(false);
               setSelectedImageSrc(null);
               setIsSubmitting(true);
               try {
-                const uploadFormData = new FormData();
-                uploadFormData.append('image', blob, 'event_cover.jpg');
-                const response = await fetch(`${API_BASE_URL}/api/upload`, {
-                  method: 'POST',
-                  body: uploadFormData
-                });
-                if (!response.ok) {
-                  throw new Error('Failed to upload cropped cover image.');
-                }
-                const data = await response.json();
-                if (data.url) {
-                  setFormData(prev => ({ ...prev, cover_image: data.url }));
-                }
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                  const base64data = reader.result as string;
+                  setFormData(prev => ({ ...prev, cover_image: base64data }));
+                  setIsSubmitting(false);
+                };
+                reader.onerror = () => {
+                  throw new Error('Failed to read cropped image blob.');
+                };
+                reader.readAsDataURL(blob);
               } catch (err: any) {
                 console.error(err);
-                setCropError(err.message || 'Failed to upload cropped image.');
-              } finally {
+                setCropError(err.message || 'Failed to prepare cropped image.');
                 setIsSubmitting(false);
               }
             }}

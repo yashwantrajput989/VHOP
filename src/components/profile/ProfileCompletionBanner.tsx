@@ -7,14 +7,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { API_BASE_URL } from '../../config';
 
 export const isProfileComplete = (user: any): boolean => {
-  return !!(user && user.full_name && user.email && user.phone && user.age && user.gender);
+  return !!(user && user.full_name && user.email && user.phone && user.birthday && user.gender);
 };
 
 export const ProfileCompletionBanner: React.FC = () => {
   const { user, setUser } = useAuthStore();
   const [isOpen, setIsOpen] = useState(false);
   const [phone, setPhone] = useState(user?.phone || '');
-  const [age, setAge] = useState(user?.age ? String(user.age) : '');
+  const [birthday, setBirthday] = useState(user?.birthday || '');
   const [gender, setGender] = useState(user?.gender || '');
   const [address, setAddress] = useState(user?.address || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -22,6 +22,17 @@ export const ProfileCompletionBanner: React.FC = () => {
   const [error, setError] = useState('');
 
   if (!user || isProfileComplete(user)) return null;
+
+  const calculateAge = (birthDateString: string): number => {
+    const today = new Date();
+    const birthDate = new Date(birthDateString);
+    let calculatedAge = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+      calculatedAge--;
+    }
+    return calculatedAge;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,8 +42,13 @@ export const ProfileCompletionBanner: React.FC = () => {
       setError('Phone number is required.');
       return;
     }
-    if (!age.trim() || isNaN(Number(age)) || Number(age) < 18) {
-      setError('Please enter a valid age (must be 18 or older).');
+    if (!birthday) {
+      setError('Birth date is required.');
+      return;
+    }
+    const calculatedAge = calculateAge(birthday);
+    if (isNaN(calculatedAge) || calculatedAge < 18) {
+      setError('Please enter a valid birthday (must be 18 or older).');
       return;
     }
     if (!gender) {
@@ -49,9 +65,10 @@ export const ProfileCompletionBanner: React.FC = () => {
         body: JSON.stringify({
           userId: user.id,
           phone,
-          age: Number(age),
+          age: calculatedAge,
           gender,
-          address
+          address,
+          birthday
         })
       });
 
@@ -207,15 +224,13 @@ export const ProfileCompletionBanner: React.FC = () => {
 
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5 text-[var(--violet-bright)]" /> Age *
+                      <Calendar className="w-3.5 h-3.5 text-[var(--violet-bright)]" /> Birth Date *
                     </label>
                     <input
-                      type="number"
-                      value={age}
-                      onChange={(e) => setAge(e.target.value)}
-                      placeholder="Enter age (must be 18+)"
-                      min="18"
-                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors"
+                      type="date"
+                      value={birthday}
+                      onChange={(e) => setBirthday(e.target.value)}
+                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors bg-[var(--bg-card)] cursor-pointer"
                       required
                     />
                   </div>

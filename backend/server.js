@@ -150,6 +150,21 @@ const pool = mysql.createPool({
         const [columns] = await pool.execute('DESCRIBE profiles');
         const existingColumns = columns.map(c => c.Field.toLowerCase());
 
+        // Alter profile and event tables to support Base64 images without truncation
+        try {
+            await pool.execute('ALTER TABLE profiles MODIFY COLUMN avatar_url MEDIUMTEXT');
+            console.log('🟢 Profiles avatar_url column modified to MEDIUMTEXT.');
+        } catch (err) {
+            console.error('🔴 Error altering profiles.avatar_url:', err);
+        }
+
+        try {
+            await pool.execute('ALTER TABLE events MODIFY COLUMN cover_image MEDIUMTEXT');
+            console.log('🟢 Events cover_image column modified to MEDIUMTEXT.');
+        } catch (err) {
+            console.error('🔴 Error altering events.cover_image:', err);
+        }
+
         const addColumnIfNeeded = async (columnName, columnDefinition) => {
             if (!existingColumns.includes(columnName.toLowerCase())) {
                 try {
@@ -179,6 +194,7 @@ const pool = mysql.createPool({
         await addColumnIfNeeded('age', 'INT NULL');
         await addColumnIfNeeded('address', 'TEXT NULL');
         await addColumnIfNeeded('gender', 'VARCHAR(20) NULL');
+        await addColumnIfNeeded('birthday', 'VARCHAR(50) NULL');
         await addColumnIfNeeded('v_coins_rewarded', 'BOOLEAN DEFAULT FALSE');
         await addColumnIfNeeded('referred_by', 'VARCHAR(255) NULL');
         await addColumnIfNeeded('referral_rewarded', 'BOOLEAN DEFAULT FALSE');
@@ -219,7 +235,13 @@ const pool = mysql.createPool({
             INSERT IGNORE INTO profiles (id, full_name, username, email, password, role, v_coins, city, onboarded)
             VALUES ('test-admin-123', 'Demo Admin', 'demoadmin', 'admin@vhop.in', 'vhop1234', 'admin', 500, 'Mumbai', true)
         `);
-        console.log('🟢 Demo admin account seeded/verified.');
+        
+        // Seed super admin profile (using INSERT IGNORE for safety in production) to resolve support messages foreign key constraint failures
+        await pool.execute(`
+            INSERT IGNORE INTO profiles (id, full_name, username, email, password, role, v_coins, city, onboarded)
+            VALUES ('super-admin-root', 'Super Admin', 'superadmin', 'superadmin@vhop.in', 'vhop1234', 'superadmin', 99999, 'Mumbai', true)
+        `);
+        console.log('🟢 Demo admin and Super admin accounts seeded/verified.');
 
         // 8. Seed default verified company and admin company for events
         await pool.execute(`
@@ -584,23 +606,23 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
 
 // Sync Firebase Profile with MySQL
 app.post('/api/auth/sync', async (req, res) => {
-    const { id, full_name, username, email, avatar_url, role, v_coins, city, phone } = req.body;
+    const { id, full_name, username, email, avatar_url, role, v_coins, city, phone, birthday } = req.body;
     try {
         const [rows] = await pool.execute('SELECT * FROM profiles WHERE id = ?', [id]);
 
         if (rows.length === 0) {
             // Create new profile
             await pool.execute(
-                'INSERT INTO profiles (id, full_name, username, email, avatar_url, role, v_coins, city, phone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                [id, full_name, username, email, avatar_url, role || 'user', v_coins || 500, city || 'Mumbai', phone || '']
+                'INSERT INTO profiles (id, full_name, username, email, avatar_url, role, v_coins, city, phone, birthday) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [id, full_name, username, email, avatar_url, role || 'user', v_coins || 500, city || 'Mumbai', phone || '', birthday || null]
             );
             logActivity({ type: 'profile_created', userId: id });
             return res.status(201).json({ message: 'Profile created', onboarded: false });
         } else {
             // Update existing profile
             await pool.execute(
-                'UPDATE profiles SET full_name = ?, avatar_url = ?, city = ? WHERE id = ?',
-                [full_name, avatar_url, city, id]
+                'UPDATE profiles SET full_name = ?, avatar_url = ?, city = ?, birthday = ? WHERE id = ?',
+                [full_name, avatar_url, city, birthday || rows[0].birthday, id]
             );
             return res.status(200).json({
                 message: 'Profile updated',
@@ -683,7 +705,7 @@ app.post('/api/auth/login', async (req, res) => {
 
 // Google Sign-in Sync/Simulated Login
 app.post('/api/auth/google-login', async (req, res) => {
-    const { email, full_name, avatar_url, id: googleId, referred_by_code } = req.body;
+    const { email, full_name, avatar_url, id: googleId, referred_by_code, birthday } = req.body;
     try {
         const [rows] = await pool.execute('SELECT * FROM profiles WHERE email = ?', [email]);
         if (rows.length > 0) {
@@ -696,8 +718,8 @@ app.post('/api/auth/google-login', async (req, res) => {
 
             // Update details if they changed
             await pool.execute(
-                'UPDATE profiles SET full_name = ?, avatar_url = ? WHERE id = ?',
-                [full_name || userProfile.full_name, avatar_url || userProfile.avatar_url, userProfile.id]
+                'UPDATE profiles SET full_name = ?, avatar_url = ?, birthday = ? WHERE id = ?',
+                [full_name || userProfile.full_name, avatar_url || userProfile.avatar_url, birthday || userProfile.birthday, userProfile.id]
             );
 
             // Also ensure their streak starts from w1 if it was 0/null
@@ -717,8 +739,8 @@ app.post('/api/auth/google-login', async (req, res) => {
         const username = email.split('@')[0] || `user_${id}`;
         
         await pool.execute(
-            'INSERT INTO profiles (id, full_name, username, email, avatar_url, role, v_coins, city, phone, streak_count, streak_updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())',
-            [id, full_name || 'Google User', username, email, avatar_url || '', 'user', 500, 'Mumbai', '']
+            'INSERT INTO profiles (id, full_name, username, email, avatar_url, role, v_coins, city, phone, streak_count, streak_updated_at, birthday) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), ?)',
+            [id, full_name || 'Google User', username, email, avatar_url || '', 'user', 500, 'Mumbai', '', birthday || null]
         );
 
         logActivity({ type: 'profile_created', userId: id });
@@ -753,7 +775,7 @@ app.post('/api/auth/onboard', async (req, res) => {
 
 // Complete Profile and claim 100 V-Coins reward
 app.put('/api/auth/profile/complete', async (req, res) => {
-    const { userId, age, phone, address, gender } = req.body;
+    const { userId, age, phone, address, gender, birthday } = req.body;
     try {
         const [rows] = await pool.execute('SELECT v_coins, v_coins_rewarded FROM profiles WHERE id = ?', [userId]);
         if (rows.length === 0) {
@@ -772,8 +794,8 @@ app.put('/api/auth/profile/complete', async (req, res) => {
         }
 
         await pool.execute(
-            'UPDATE profiles SET age = ?, phone = ?, address = ?, gender = ?, v_coins = ?, v_coins_rewarded = ? WHERE id = ?',
-            [age ? parseInt(age, 10) : null, phone || '', address || '', gender || null, v_coins, new_v_coins_rewarded, userId]
+            'UPDATE profiles SET age = ?, phone = ?, address = ?, gender = ?, birthday = ?, v_coins = ?, v_coins_rewarded = ? WHERE id = ?',
+            [age ? parseInt(age, 10) : null, phone || '', address || '', gender || null, birthday || null, v_coins, new_v_coins_rewarded, userId]
         );
 
         logActivity({ type: 'profile_completed', userId, coinsCredited: rewardCredited ? 100 : 0 });
@@ -792,7 +814,7 @@ app.put('/api/auth/profile/complete', async (req, res) => {
 
 // Update Profile details
 app.put('/api/auth/profile/update', async (req, res) => {
-    const { userId, fullName, username, city, phone, age, gender, address, avatarUrl } = req.body;
+    const { userId, fullName, username, city, phone, age, gender, address, avatarUrl, birthday } = req.body;
     try {
         // Verify unique username if changed
         if (username) {
@@ -802,7 +824,7 @@ app.put('/api/auth/profile/update', async (req, res) => {
             }
         }
 
-        let query = 'UPDATE profiles SET full_name = ?, username = ?, city = ?, phone = ?, age = ?, gender = ?, address = ?';
+        let query = 'UPDATE profiles SET full_name = ?, username = ?, city = ?, phone = ?, age = ?, gender = ?, address = ?, birthday = ?';
         let params = [
             fullName || null,
             username || null,
@@ -810,7 +832,8 @@ app.put('/api/auth/profile/update', async (req, res) => {
             phone || '',
             age ? parseInt(age, 10) : null,
             gender || null,
-            address || ''
+            address || '',
+            birthday || null
         ];
 
         if (avatarUrl !== undefined) {
@@ -1008,6 +1031,37 @@ app.post('/api/events', async (req, res) => {
         );
         res.status(201).json({ id, message: 'Event created' });
     } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Update event (Admin & Super Admin)
+app.put('/api/events/:id', async (req, res) => {
+    const { id } = req.params;
+    const event = req.body;
+    try {
+        await pool.execute(
+            'UPDATE events SET title = ?, short_description = ?, description = ?, venue_name = ?, city = ?, category = ?, price = ?, cover_image = ?, start_date = ?, ticket_types = ?, status = ?, google_maps_url = ?, artists = ? WHERE id = ?',
+            [
+                event.title,
+                event.short_description || null,
+                event.description || null,
+                event.venue_name || null,
+                event.city,
+                event.category || null,
+                event.price || 0,
+                event.cover_image || null,
+                event.start_date,
+                JSON.stringify(event.ticket_types || []),
+                event.status || 'draft',
+                event.google_maps_url || null,
+                event.artists ? JSON.stringify(event.artists) : null,
+                id
+            ]
+        );
+        res.json({ message: 'Event updated successfully' });
+    } catch (error) {
+        console.error('Error updating event:', error);
         res.status(500).json({ error: error.message });
     }
 });

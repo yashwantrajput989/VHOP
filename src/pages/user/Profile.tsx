@@ -35,7 +35,8 @@ export const Profile: React.FC = () => {
     age: '',
     gender: '',
     address: '',
-    avatarUrl: ''
+    avatarUrl: '',
+    birthday: ''
   });
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
   const [editError, setEditError] = useState('');
@@ -72,25 +73,20 @@ export const Profile: React.FC = () => {
     setEditError('');
 
     try {
-      const formData = new FormData();
-      formData.append('image', blob, 'avatar.jpg');
-
-      const response = await fetch(`${API_BASE_URL}/api/upload`, {
-        method: 'POST',
-        body: formData
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to upload cropped image.');
-      }
-
-      const data = await response.json();
-      setEditForm(prev => ({ ...prev, avatarUrl: data.url }));
-      setEditSuccess('Avatar cropped & prepared successfully!');
-      setTimeout(() => setEditSuccess(''), 2500);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64data = reader.result as string;
+        setEditForm(prev => ({ ...prev, avatarUrl: base64data }));
+        setEditSuccess('Avatar cropped & prepared successfully!');
+        setIsSubmittingEdit(false);
+        setTimeout(() => setEditSuccess(''), 2500);
+      };
+      reader.onerror = () => {
+        throw new Error('Failed to read cropped image blob.');
+      };
+      reader.readAsDataURL(blob);
     } catch (err: any) {
-      setEditError(err.message || 'Error uploading cropped image.');
-    } finally {
+      setEditError(err.message || 'Error preparing cropped image.');
       setIsSubmittingEdit(false);
     }
   };
@@ -126,7 +122,8 @@ export const Profile: React.FC = () => {
       age: user?.age ? String(user.age) : '',
       gender: user?.gender || '',
       address: user?.address || '',
-      avatarUrl: user?.avatar_url || ''
+      avatarUrl: user?.avatar_url || '',
+      birthday: user?.birthday || ''
     });
     setEditError('');
     setEditSuccess('');
@@ -140,6 +137,18 @@ export const Profile: React.FC = () => {
     setIsSubmittingEdit(true);
 
     try {
+      let calculatedAge = editForm.age ? Number(editForm.age) : null;
+      if (editForm.birthday) {
+        const today = new Date();
+        const birthDate = new Date(editForm.birthday);
+        let ageNum = today.getFullYear() - birthDate.getFullYear();
+        const m = today.getMonth() - birthDate.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+          ageNum--;
+        }
+        calculatedAge = ageNum;
+      }
+
       const response = await fetch(`${API_BASE_URL}/api/auth/profile/update`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -149,10 +158,11 @@ export const Profile: React.FC = () => {
           username: editForm.username,
           city: editForm.city,
           phone: editForm.phone,
-          age: editForm.age ? Number(editForm.age) : null,
+          age: calculatedAge,
           gender: editForm.gender,
           address: editForm.address,
-          avatarUrl: editForm.avatarUrl
+          avatarUrl: editForm.avatarUrl,
+          birthday: editForm.birthday
         })
       });
 
@@ -1037,15 +1047,13 @@ export const Profile: React.FC = () => {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
-                        Age
+                        Birth Date
                       </label>
                       <input
-                        type="number"
-                        value={editForm.age}
-                        onChange={(e) => setEditForm({ ...editForm, age: e.target.value })}
-                        placeholder="21"
-                        min="18"
-                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors"
+                        type="date"
+                        value={editForm.birthday}
+                        onChange={(e) => setEditForm({ ...editForm, birthday: e.target.value })}
+                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors bg-[var(--bg-card)] cursor-pointer"
                       />
                     </div>
 

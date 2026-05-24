@@ -8,6 +8,11 @@ const config: CapacitorConfig = {
   webDir: 'dist',
   android: {
     path: isAdmin ? 'android-admin' : 'android'
+  },
+  plugins: {
+    CapacitorHttp: {
+      enabled: true
+    }
   }
 };
 

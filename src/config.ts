@@ -11,5 +11,6 @@ export const RAZORPAY_KEY_ID = 'rzp_test_r9D7602T22FhJ5';
 export const getImageUrl = (url: string | null | undefined) => {
   if (!url) return 'https://images.unsplash.com/photo-1541701494587-cb58502866ab?q=80&w=1000'; // Default fallback
   if (url.startsWith('http')) return url;
+  if (url.startsWith('data:')) return url; // Support base64 data URLs!
   return `${IMAGE_BASE_URL}${url}`;
 };

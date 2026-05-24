@@ -7,7 +7,7 @@ import { GlassCard } from '../../components/ui/GlassCard';
 import { GlowButton } from '../../components/ui/GlowButton';
 import { Badge } from '../../components/ui/Badge';
 import { BookingModal } from '../../components/events/BookingModal';
-import { API_BASE_URL } from '../../config';
+import { API_BASE_URL, getImageUrl } from '../../config';
 
 export const EventDetails: React.FC = () => {
   const { id } = useParams();
@@ -90,7 +90,7 @@ export const EventDetails: React.FC = () => {
             className="relative h-[300px] md:h-[400px] rounded-[2rem] overflow-hidden border border-white/10"
           >
             <img 
-              src={event.cover_image?.startsWith('/uploads') ? `${API_BASE_URL}${event.cover_image}` : event.cover_image} 
+              src={getImageUrl(event.cover_image)} 
               className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" 
               alt={event.title} 
             />

@@ -2,7 +2,7 @@ import React from 'react';
 import { MapPin } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { API_BASE_URL } from '../../config';
+import { getImageUrl } from '../../config';
 
 interface EventCardProps {
   event: {
@@ -30,14 +30,14 @@ export const EventCard: React.FC<EventCardProps> = ({ event }) => {
       <div className="relative aspect-[4/3] overflow-hidden rounded-[1.5rem] md:rounded-[2rem] border border-white/5 bg-black/40 transition-all duration-500 group-hover:border-[var(--violet-bright)]/30 group-hover:shadow-glow flex items-center justify-center">
         {/* Background Blurred Underlay for zero truncation visual bleed */}
         <img 
-          src={event.cover_image?.startsWith('/uploads') ? `${API_BASE_URL}${event.cover_image}` : event.cover_image} 
+          src={getImageUrl(event.cover_image)} 
           alt=""
           className="absolute inset-0 w-full h-full object-cover blur-xl opacity-30 scale-110 pointer-events-none"
         />
 
         {/* Foreground High-Fidelity Contained Flyer (Zero Truncation) */}
         <motion.img 
-          src={event.cover_image?.startsWith('/uploads') ? `${API_BASE_URL}${event.cover_image}` : event.cover_image} 
+          src={getImageUrl(event.cover_image)} 
           alt={event.title}
           className="relative z-10 w-full h-full object-contain transition-transform duration-700 group-hover:scale-102"
         />

@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { logToBackend } from '../lib/logger';
 import { API_BASE_URL } from '../config';
+import { auth, googleProvider } from '../lib/firebase';
+import { signInWithPopup } from 'firebase/auth';
 
 interface UserProfile {
   id: string;
@@ -32,6 +34,7 @@ interface UserProfile {
   music_dna_edm?: number;
   music_dna_bollywood?: number;
   music_dna_live?: number;
+  birthday?: string;
 }
 
 const sanitizeUser = (user: any): UserProfile | null => {
@@ -192,18 +195,23 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      loginWithGoogle: async (email) => {
+      loginWithGoogle: async () => {
         set({ isLoading: true });
         try {
+          const result = await signInWithPopup(auth, googleProvider);
+          const firebaseUser = result.user;
+
+          if (!firebaseUser.email) {
+            throw new Error('Google Sign-in did not return an email.');
+          }
+
           const referredBy = localStorage.getItem('referred_by_code');
-          const googleEmail = email || `google_${Math.random().toString(36).substring(2, 7)}@gmail.com`;
-          const googleName = googleEmail.split('@')[0].split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || 'Google User';
           
           const profileData = {
-            email: googleEmail,
-            full_name: googleName,
-            avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${googleEmail}`,
-            id: `g_${Math.random().toString(36).substring(2, 15)}`,
+            email: firebaseUser.email,
+            full_name: firebaseUser.displayName || 'Google User',
+            avatar_url: firebaseUser.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${firebaseUser.email}`,
+            id: firebaseUser.uid,
             referred_by_code: referredBy || undefined
           };
 
@@ -215,7 +223,7 @@ export const useAuthStore = create<AuthState>()(
 
           if (!response.ok) {
             const errData = await response.json();
-            throw new Error(errData.error || 'Google login failed');
+            throw new Error(errData.error || 'Google login sync failed');
           }
 
           const profile = await response.json();

@@ -16,7 +16,8 @@ import {
   Trash2,
   Send,
   RefreshCw,
-  MessageSquare
+  MessageSquare,
+  Pencil
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -506,6 +507,13 @@ export const SuperDashboard: React.FC = () => {
                                 Approve & Publish
                               </button>
                               <button 
+                                onClick={() => navigate(`/admin/edit-event/${row.id}`)}
+                                className="p-2 rounded-lg bg-white/5 border border-white/10 text-[var(--text-muted)] hover:text-white hover:border-white/20 transition-all text-xs font-bold flex items-center justify-center"
+                                title="Edit Event"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                              <button 
                                 onClick={() => handleDeleteEvent(row.id)}
                                 className="p-2 rounded-lg bg-white/5 border border-white/10 text-red-500 hover:bg-red-500/20 hover:border-red-500/30 transition-all text-xs font-bold flex items-center justify-center"
                                 title="Delete Event"
@@ -558,6 +566,13 @@ export const SuperDashboard: React.FC = () => {
                                 className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-xs font-bold hover:bg-white/10 transition-all"
                               >
                                 View Guest List
+                              </button>
+                              <button 
+                                onClick={() => navigate(`/admin/edit-event/${row.id}`)}
+                                className="p-2 rounded-lg bg-white/5 border border-white/10 text-[var(--text-muted)] hover:text-white hover:border-white/20 transition-all text-xs font-bold flex items-center justify-center"
+                                title="Edit Event"
+                              >
+                                <Pencil className="w-4 h-4" />
                               </button>
                               <button 
                                 onClick={() => handleDeleteEvent(row.id)}
@@ -864,6 +879,15 @@ export const SuperDashboard: React.FC = () => {
                             <CheckCircle className="w-4 h-4" /> Live on Platform
                           </div>
                         )}
+                        <button 
+                          onClick={() => {
+                            navigate(`/admin/edit-event/${selectedEvent.id}`);
+                            setSelectedEvent(null);
+                          }}
+                          className="w-full px-4 py-2 rounded-xl bg-[var(--violet-primary)]/20 text-[var(--violet-bright)] border border-[var(--violet-primary)]/35 hover:bg-[var(--violet-primary)] hover:text-white transition-all text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <Pencil className="w-4 h-4" /> Edit Event Details
+                        </button>
                         <button 
                           onClick={() => {
                             handleDeleteEvent(selectedEvent.id);
