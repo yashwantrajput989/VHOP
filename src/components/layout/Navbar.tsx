@@ -7,8 +7,10 @@ import { useAuthStore } from '../../store/authStore';
 import { useTicketStore } from '../../store/ticketStore';
 import { useLocationStore } from '../../store/locationStore';
 import { Avatar } from '../ui/Avatar';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { getImageUrl } from '../../config';
+import { isProfileComplete } from '../profile/ProfileCompletionBanner';
+
 
 export const Navbar: React.FC = () => {
   const [showNotifications, setShowNotifications] = useState(false);
@@ -18,6 +20,16 @@ export const Navbar: React.FC = () => {
   const { user, logout } = useAuthStore();
   const { tickets } = useTicketStore();
   const { openModal } = useUIStore();
+
+  const [hasUnread, setHasUnread] = useState(true);
+  const [prevTicketCount, setPrevTicketCount] = useState(tickets.length);
+
+  useEffect(() => {
+    if (tickets.length > prevTicketCount) {
+      setHasUnread(true);
+      setPrevTicketCount(tickets.length);
+    }
+  }, [tickets.length, prevTicketCount]);
 
   const activeCity = city || 'Visakhapatnam';
 
@@ -53,7 +65,7 @@ export const Navbar: React.FC = () => {
 
   const navItems = [
     { label: 'Events', path: '/events', icon: Home },
-    { label: 'Social', path: '/social', icon: Users },
+    { label: 'Squad', path: '/social', icon: Users },
     { label: 'Community', path: '/community', icon: Map },
     { label: 'Profile', path: '/profile', icon: User },
   ];
@@ -123,11 +135,17 @@ export const Navbar: React.FC = () => {
           {/* Notifications Trigger */}
           <div className="relative">
             <button 
-              onClick={() => setShowNotifications(!showNotifications)}
+              onClick={() => {
+                const nextVal = !showNotifications;
+                setShowNotifications(nextVal);
+                if (nextVal) {
+                  setHasUnread(false);
+                }
+              }}
               className="relative w-8.5 h-8.5 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white active:scale-95 transition-all hover:bg-white/10"
             >
               <Bell className="w-4 h-4" />
-              {(tickets.length > 0 || (user && !user.onboarded)) && (
+              {hasUnread && (tickets.length > 0 || (user && !isProfileComplete(user))) && (
                 <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[var(--accent-pink)] border border-[var(--bg-primary)] animate-pulse" />
               )}
             </button>
@@ -146,12 +164,12 @@ export const Navbar: React.FC = () => {
                     <span className="text-[9px] bg-[var(--violet-primary)] px-2 py-0.5 rounded-full font-medium">New</span>
                   </h4>
                   <div className="space-y-2.5 max-h-72 overflow-y-auto scrollbar-none">
-                    {user && !user.onboarded && (
+                    {user && !isProfileComplete(user) && (
                       <div 
                         className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 flex gap-2.5 cursor-pointer hover:bg-amber-500/20 transition-colors"
                         onClick={() => {
                           setShowNotifications(false);
-                          openModal('auth');
+                          navigate('/profile?complete=true');
                         }}
                       >
                         <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center shrink-0">
@@ -163,7 +181,7 @@ export const Navbar: React.FC = () => {
                         </div>
                       </div>
                     )}
-                    {tickets.length === 0 && (!user || user.onboarded) ? (
+                    {tickets.length === 0 && (!user || isProfileComplete(user)) ? (
                       <p className="text-xs text-[var(--text-muted)] text-center py-4">No new notifications</p>
                     ) : (
                       tickets.map(ticket => (
@@ -298,11 +316,17 @@ export const Navbar: React.FC = () => {
 
           <div className="relative">
             <button 
-              onClick={() => setShowNotifications(!showNotifications)}
+              onClick={() => {
+                const nextVal = !showNotifications;
+                setShowNotifications(nextVal);
+                if (nextVal) {
+                  setHasUnread(false);
+                }
+              }}
               className="relative p-2 rounded-full hover:bg-white/10 transition-colors text-[var(--text-muted)] hover:text-white"
             >
               <Bell className="w-5 h-5" />
-              {(tickets.length > 0 || (user && !user.onboarded)) && (
+              {hasUnread && (tickets.length > 0 || (user && !isProfileComplete(user))) && (
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[var(--accent-pink)] border border-[var(--bg-primary)]" />
               )}
             </button>
@@ -317,12 +341,12 @@ export const Navbar: React.FC = () => {
                 >
                   <h4 className="font-display font-bold mb-4 text-white border-b border-white/5 pb-2">Notifications</h4>
                   <div className="space-y-3 max-h-96 overflow-y-auto">
-                    {user && !user.onboarded && (
+                    {user && !isProfileComplete(user) && (
                       <div 
                         className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 flex gap-3 cursor-pointer hover:bg-amber-500/20 transition-colors"
                         onClick={() => {
                           setShowNotifications(false);
-                          openModal('auth');
+                          navigate('/profile?complete=true');
                         }}
                       >
                         <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center flex-shrink-0">
@@ -334,7 +358,7 @@ export const Navbar: React.FC = () => {
                         </div>
                       </div>
                     )}
-                    {tickets.length === 0 && (!user || user.onboarded) ? (
+                    {tickets.length === 0 && (!user || isProfileComplete(user)) ? (
                       <p className="text-sm text-[var(--text-muted)] text-center py-4">No new notifications</p>
                     ) : (
                       tickets.map(ticket => (

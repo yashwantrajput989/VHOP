@@ -46,6 +46,7 @@ export const CreateEvent: React.FC = () => {
   const [newTicketType, setNewTicketType] = useState({
     name: '',
     price: '',
+    capacity: '',
     benefits: '',
   });
 
@@ -277,7 +278,7 @@ export const CreateEvent: React.FC = () => {
 
               {/* Add Ticket Type Form */}
               <div className="p-6 rounded-2xl bg-white/5 border border-white/10 space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">Type Name</label>
                     <input 
@@ -296,6 +297,16 @@ export const CreateEvent: React.FC = () => {
                       onChange={(e) => setNewTicketType({...newTicketType, price: e.target.value})}
                       className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:border-[var(--violet-bright)] outline-none"
                       placeholder="999"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">Available Tickets</label>
+                    <input 
+                      type="number" 
+                      value={newTicketType.capacity}
+                      onChange={(e) => setNewTicketType({...newTicketType, capacity: e.target.value})}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:border-[var(--violet-bright)] outline-none"
+                      placeholder="e.g. 50"
                     />
                   </div>
                 </div>
@@ -318,12 +329,14 @@ export const CreateEvent: React.FC = () => {
                       ticket_types: [
                         ...formData.ticket_types,
                         {
-                          ...newTicketType,
+                          name: newTicketType.name,
+                          price: newTicketType.price,
+                          capacity: newTicketType.capacity ? parseInt(newTicketType.capacity, 10) : null,
                           benefits: newTicketType.benefits.split('\n').filter(b => b.trim() !== '')
                         }
                       ]
                     });
-                    setNewTicketType({ name: '', price: '', benefits: '' });
+                    setNewTicketType({ name: '', price: '', capacity: '', benefits: '' });
                   }}
                   className="w-full py-2.5 text-sm"
                 >
@@ -339,6 +352,11 @@ export const CreateEvent: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-white">{type.name}</span>
                         <span className="text-[var(--violet-bright)] font-bold">₹{type.price}</span>
+                        {type.capacity && (
+                          <span className="text-[9px] bg-white/10 text-[var(--text-muted)] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                            {type.capacity} Tickets Available
+                          </span>
+                        )}
                       </div>
                       <div className="flex flex-wrap gap-x-3 mt-1">
                         {type.benefits.map((benefit: string, bIndex: number) => (
@@ -573,7 +591,7 @@ export const CreateEvent: React.FC = () => {
         {isCropperOpen && selectedImageSrc && (
           <ImageCropper
             imageSrc={selectedImageSrc}
-            aspectRatio="landscape"
+            aspectRatio="portrait"
             onCancel={() => {
               setIsCropperOpen(false);
               setSelectedImageSrc(null);

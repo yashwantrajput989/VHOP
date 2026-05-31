@@ -97,4 +97,293 @@ const sendBookingEmail = async (bookingData, eventData, userEmail) => {
     }
 };
 
-module.exports = { sendBookingEmail };
+/**
+ * Sends a password reset verification email with a 6-digit OTP code
+ * @param {string} userEmail - Recipient's email
+ * @param {string} otp - The 6-digit verification code
+ */
+const sendResetEmail = async (userEmail, otp) => {
+    try {
+        if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+            console.warn('Email credentials not configured. Skipping email.');
+            return;
+        }
+
+        const mailOptions = {
+            from: `"VHOP Accounts" <${process.env.EMAIL_USER}>`,
+            to: userEmail,
+            subject: `Password Reset Verification Code: ${otp} 🔒`,
+            html: `
+                <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background-color: #0a0a0b; color: #ffffff; border-radius: 20px; overflow: hidden; border: 1px solid #1f1f23;">
+                    <div style="background: linear-gradient(135deg, #7c3aed 0%, #db2777 100%); padding: 40px 20px; text-align: center;">
+                        <h1 style="margin: 0; font-size: 32px; letter-spacing: 2px; color: #ffffff;">VHOP</h1>
+                        <p style="margin-top: 10px; font-weight: 500; opacity: 0.9; color: #ffffff;">Password Reset Request</p>
+                    </div>
+                    
+                    <div style="padding: 30px;">
+                        <h2 style="color: #ffffff; margin-bottom: 20px; text-align: center;">Reset Your Password</h2>
+                        
+                        <p style="color: #a1a1aa; font-size: 15px; line-height: 1.6; text-align: center;">
+                            We received a request to reset the password for your VHOP account. 
+                            Use the verification code (OTP) below to complete your reset. This code is valid for 15 minutes.
+                        </p>
+
+                        <div style="text-align: center; background-color: #161618; border-radius: 15px; padding: 20px 30px; margin: 30px auto; border: 1px solid #27272a; width: fit-content;">
+                            <span style="font-family: monospace; font-size: 36px; letter-spacing: 6px; font-weight: bold; color: #7c3aed;">${otp}</span>
+                        </div>
+
+                        <p style="color: #71717a; font-size: 13px; text-align: center; margin-bottom: 30px;">
+                            If you did not request this, you can safely ignore this email. Your password will remain unchanged.
+                        </p>
+
+                        <div style="text-align: center; color: #a1a1aa; font-size: 14px;">
+                            <hr style="border: 0; border-top: 1px solid #27272a; margin: 25px 0;">
+                            <p style="font-size: 12px; color: #71717a;">VHOP - The Ultimate Live Experience Platform</p>
+                        </div>
+                    </div>
+                </div>
+            `
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Reset email sent: %s', info.messageId);
+        return info;
+    } catch (error) {
+        console.error('Error sending reset email:', error);
+        throw error;
+    }
+};
+
+/**
+ * Sends an email receipt confirming a partner application has been received
+ */
+const sendPartnerReceiptEmail = async (email, name) => {
+    try {
+        if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+            console.warn('Email credentials not configured. Skipping email.');
+            // Development logging so we can see what would be sent:
+            console.log(`[DEVELOPMENT ONLY] Partner receipt confirmation would be sent to: ${email}`);
+            return;
+        }
+
+        const mailOptions = {
+            from: `"VHOP Partnerships" <${process.env.EMAIL_USER}>`,
+            to: email,
+            subject: `We've Received Your Partner Application! 🤝`,
+            html: `
+                <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background-color: #0a0a0b; color: #ffffff; border-radius: 20px; overflow: hidden; border: 1px solid #1f1f23;">
+                    <div style="background: linear-gradient(135deg, #7c3aed 0%, #db2777 100%); padding: 40px 20px; text-align: center;">
+                        <h1 style="margin: 0; font-size: 32px; letter-spacing: 2px; color: #ffffff;">VHOP</h1>
+                        <p style="margin-top: 10px; font-weight: 500; opacity: 0.9; color: #ffffff;">Partnership Application Receipt</p>
+                    </div>
+                    
+                    <div style="padding: 30px;">
+                        <h2 style="color: #ffffff; margin-bottom: 20px;">Hi ${name},</h2>
+                        
+                        <p style="color: #a1a1aa; font-size: 15px; line-height: 1.6;">
+                            Thank you for applying to become a VHOP Venue Partner! We have successfully received your application.
+                        </p>
+
+                        <div style="background-color: #161618; border-radius: 15px; padding: 20px; border: 1px solid #27272a; margin: 25px 0;">
+                            <h3 style="color: #7c3aed; margin-top: 0; margin-bottom: 10px;">Application Status: Pending Review</h3>
+                            <p style="color: #e4e4e7; font-size: 14px; margin: 0; line-height: 1.5;">
+                                Our global administration team is currently reviewing your details. Please stay patient until our admin reviews and approves your request. This process usually takes 24-48 hours.
+                            </p>
+                        </div>
+
+                        <p style="color: #a1a1aa; font-size: 14px; line-height: 1.6;">
+                            Once approved, you will receive an automated email containing your partner credentials and portal login links to start hosting high-vibe premium events.
+                        </p>
+
+                        <div style="text-align: center; color: #a1a1aa; font-size: 14px;">
+                            <hr style="border: 0; border-top: 1px solid #27272a; margin: 25px 0;">
+                            <p style="font-size: 12px; color: #71717a;">VHOP - The Ultimate Live Experience Platform</p>
+                        </div>
+                    </div>
+                </div>
+            `
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Partner receipt email sent: %s', info.messageId);
+        return info;
+    } catch (error) {
+        console.error('Error sending partner receipt email:', error);
+        throw error;
+    }
+};
+
+/**
+ * Sends a notification email to Super Admin about a new partner application
+ */
+const sendPartnerNotificationToSuperEmail = async (appData) => {
+    try {
+        const superEmail = 'superadmin@vhop.in';
+        if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+            console.warn('Email credentials not configured. Skipping email.');
+            // Development logging
+            console.log(`[DEVELOPMENT ONLY] Super Admin alert: New Partner Application from ${appData.full_name} (${appData.email}) for ${appData.company_name}`);
+            return;
+        }
+
+        const mailOptions = {
+            from: `"VHOP System Alerts" <${process.env.EMAIL_USER}>`,
+            to: superEmail,
+            subject: `🚨 Alert: New Partner Application - ${appData.company_name}`,
+            html: `
+                <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background-color: #0a0a0b; color: #ffffff; border-radius: 20px; overflow: hidden; border: 1px solid #1f1f23;">
+                    <div style="background: #dc2626; padding: 30px 20px; text-align: center;">
+                        <h1 style="margin: 0; font-size: 28px; letter-spacing: 2px; color: #ffffff;">VHOP ALERTS</h1>
+                        <p style="margin-top: 5px; font-weight: 500; opacity: 0.9; color: #ffffff;">New Venue Partner Application Received</p>
+                    </div>
+                    
+                    <div style="padding: 30px;">
+                        <h2 style="color: #ffffff; margin-bottom: 20px;">Review Partnership Application</h2>
+                        
+                        <div style="background-color: #161618; border-radius: 15px; padding: 20px; border: 1px solid #27272a; margin-bottom: 25px;">
+                            <p style="margin: 8px 0; font-size: 14px;"><strong>Applicant Name:</strong> ${appData.full_name}</p>
+                            <p style="margin: 8px 0; font-size: 14px;"><strong>Email Address:</strong> ${appData.email}</p>
+                            <p style="margin: 8px 0; font-size: 14px;"><strong>Phone Number:</strong> ${appData.phone}</p>
+                            <p style="margin: 8px 0; font-size: 14px;"><strong>Company/Venue:</strong> ${appData.company_name}</p>
+                            <p style="margin: 8px 0; font-size: 14px;"><strong>Operating City:</strong> ${appData.company_city}</p>
+                            <p style="margin: 8px 0; font-size: 14px;"><strong>Description:</strong> ${appData.description || 'No description provided.'}</p>
+                        </div>
+
+                        <p style="color: #a1a1aa; font-size: 14px; line-height: 1.6; text-align: center;">
+                            Please log in to your Super Admin Dashboard at <a href="https://vhop.in/superadmin" style="color: #7c3aed; text-decoration: none; font-weight: bold;">vhop.in/superadmin</a> to approve or reject this request.
+                        </p>
+                    </div>
+                </div>
+            `
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Partner alert email sent: %s', info.messageId);
+        return info;
+    } catch (error) {
+        console.error('Error sending partner alert email:', error);
+        throw error;
+    }
+};
+
+/**
+ * Sends the generated login credentials to an approved partner
+ */
+const sendPartnerApprovalCredentialsEmail = async (email, name, password, companyName) => {
+    try {
+        if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+            console.warn('Email credentials not configured. Skipping email.');
+            // Development logging
+            console.log(`[DEVELOPMENT ONLY] Credentials email would be sent to: ${email}`);
+            console.log(`[DEVELOPMENT ONLY] Portal: vhop.in/admin | Email: ${email} | Password: ${password} | Company: ${companyName}`);
+            return;
+        }
+
+        const mailOptions = {
+            from: `"VHOP Partnerships" <${process.env.EMAIL_USER}>`,
+            to: email,
+            subject: `🎉 Congratulations! Your VHOP Partner Application is Approved!`,
+            html: `
+                <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background-color: #0a0a0b; color: #ffffff; border-radius: 20px; overflow: hidden; border: 1px solid #1f1f23;">
+                    <div style="background: linear-gradient(135deg, #10b981 0%, #06b6d4 100%); padding: 40px 20px; text-align: center;">
+                        <h1 style="margin: 0; font-size: 32px; letter-spacing: 2px; color: #ffffff;">APPROVED</h1>
+                        <p style="margin-top: 10px; font-weight: 500; opacity: 0.9; color: #ffffff;">Welcome to the VHOP Partner Ecosystem!</p>
+                    </div>
+                    
+                    <div style="padding: 30px;">
+                        <h2 style="color: #ffffff; margin-bottom: 20px;">Hi ${name},</h2>
+                        
+                        <p style="color: #a1a1aa; font-size: 15px; line-height: 1.6;">
+                            We are absolutely thrilled to inform you that your application for <strong>${companyName}</strong> has been officially approved by the Super Admin!
+                        </p>
+
+                        <p style="color: #a1a1aa; font-size: 15px; line-height: 1.6;">
+                            Your credentials have been securely generated. Use them to log in to the partner administration portal and start publishing your premium vertical gigs.
+                        </p>
+
+                        <div style="background-color: #161618; border-radius: 15px; padding: 25px; border: 1px solid #27272a; margin: 25px 0;">
+                            <h3 style="color: #10b981; margin-top: 0; margin-bottom: 15px;">Your Admin Account Details</h3>
+                            <p style="margin: 8px 0; font-size: 14px;"><strong>Admin Portal URL:</strong> <a href="https://vhop.in/admin" style="color: #06b6d4; font-weight: bold; text-decoration: underline;">vhop.in/admin</a></p>
+                            <p style="margin: 8px 0; font-size: 14px;"><strong>Sign-in Email:</strong> <span style="font-family: monospace; background: #000; padding: 2px 6px; border-radius: 4px;">${email}</span></p>
+                            <p style="margin: 8px 0; font-size: 14px;"><strong>Temporary Password:</strong> <span style="font-family: monospace; background: #000; padding: 2px 6px; border-radius: 4px; color: #10b981; font-weight: bold;">${password}</span></p>
+                            <p style="margin: 8px 0; font-size: 14px;"><strong>Associated Partner Brand:</strong> ${companyName}</p>
+                        </div>
+
+                        <p style="color: #71717a; font-size: 12px; line-height: 1.5; text-align: center; margin-bottom: 20px;">
+                            We highly recommend changing this temporary password in the settings panel after your initial login.
+                        </p>
+
+                        <div style="text-align: center; color: #a1a1aa; font-size: 14px;">
+                            <hr style="border: 0; border-top: 1px solid #27272a; margin: 25px 0;">
+                            <p style="font-size: 12px; color: #71717a;">VHOP - The Ultimate Live Experience Platform</p>
+                        </div>
+                    </div>
+                </div>
+            `
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Partner credentials delivery email sent: %s', info.messageId);
+        return info;
+    } catch (error) {
+        console.error('Error sending partner credentials delivery email:', error);
+        throw error;
+    }
+};
+
+/**
+ * Sends the details submitted through the contact support form to the Super Admin
+ */
+const sendContactFormDetailsToSuperEmail = async (contactData) => {
+    try {
+        const superEmail = 'superadmin@vhop.in';
+        if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+            console.warn('Email credentials not configured. Skipping email.');
+            // Development logging
+            console.log(`[DEVELOPMENT ONLY] Super Admin alert: New Guest Support message from ${contactData.name} (${contactData.email}): "${contactData.message}"`);
+            return;
+        }
+
+        const mailOptions = {
+            from: `"VHOP Guest Support" <${process.env.EMAIL_USER}>`,
+            to: superEmail,
+            subject: `✉️ New Contact Message from ${contactData.name}`,
+            html: `
+                <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background-color: #0a0a0b; color: #ffffff; border-radius: 20px; overflow: hidden; border: 1px solid #1f1f23;">
+                    <div style="background: #3b82f6; padding: 30px 20px; text-align: center;">
+                        <h1 style="margin: 0; font-size: 28px; letter-spacing: 2px; color: #ffffff;">SUPPORT</h1>
+                        <p style="margin-top: 5px; font-weight: 500; opacity: 0.9; color: #ffffff;">New Customer Contact Submission</p>
+                    </div>
+                    
+                    <div style="padding: 30px;">
+                        <h2 style="color: #ffffff; margin-bottom: 20px;">Guest Message Details</h2>
+                        
+                        <div style="background-color: #161618; border-radius: 15px; padding: 20px; border: 1px solid #27272a; margin-bottom: 25px;">
+                            <p style="margin: 8px 0; font-size: 14px;"><strong>Sender Name:</strong> ${contactData.name}</p>
+                            <p style="margin: 8px 0; font-size: 14px;"><strong>Email:</strong> ${contactData.email}</p>
+                            <p style="margin: 8px 0; font-size: 14px;"><strong>Phone:</strong> ${contactData.phone || 'Not provided'}</p>
+                            <hr style="border: 0; border-top: 1px solid #27272a; margin: 15px 0;">
+                            <p style="margin: 8px 0; font-size: 14px; line-height: 1.5; color: #e4e4e7;"><strong>Message Body:</strong><br>${contactData.message}</p>
+                        </div>
+                    </div>
+                </div>
+            `
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Contact message alert email sent: %s', info.messageId);
+        return info;
+    } catch (error) {
+        console.error('Error sending contact message alert email:', error);
+        throw error;
+    }
+};
+
+module.exports = { 
+    sendBookingEmail, 
+    sendResetEmail,
+    sendPartnerReceiptEmail,
+    sendPartnerNotificationToSuperEmail,
+    sendPartnerApprovalCredentialsEmail,
+    sendContactFormDetailsToSuperEmail
+};

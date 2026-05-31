@@ -178,7 +178,14 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, eve
                     <div>
                       <h4 className="font-bold text-white">{event.title}</h4>
                       <p className="text-xs text-[var(--text-secondary)] mt-1">{event.venue_name}, {event.city}</p>
-                      <div className="mt-2 text-[var(--violet-glow)] font-bold text-sm">{ticket.name}</div>
+                      <div className="mt-2 text-[var(--violet-glow)] font-bold text-sm flex items-center gap-2">
+                        <span>{ticket.name}</span>
+                        {ticket.capacity && (
+                          <span className="text-[9px] bg-white/10 text-white font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                            {ticket.capacity} Available
+                          </span>
+                        )}
+                      </div>
                       {ticket.benefits && (
                         <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
                           {ticket.benefits.map((benefit: string, idx: number) => (

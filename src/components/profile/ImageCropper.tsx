@@ -8,7 +8,7 @@ interface ImageCropperProps {
   imageSrc: string;
   onCropComplete: (blob: Blob) => void;
   onCancel: () => void;
-  aspectRatio?: 'circle' | 'landscape';
+  aspectRatio?: 'circle' | 'landscape' | 'portrait';
 }
 
 export const ImageCropper: React.FC<ImageCropperProps> = ({
@@ -26,13 +26,14 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
   const imageRef = useRef<HTMLImageElement>(null);
 
   const isLandscape = aspectRatio === 'landscape';
+  const isPortrait = aspectRatio === 'portrait';
   
   // Set crop dimensions dynamically
-  const CROP_BOX_WIDTH = isLandscape ? 300 : 260; // Landscape 16:9 width
-  const CROP_BOX_HEIGHT = isLandscape ? 169 : 260; // Landscape 16:9 height (approx 300 / 1.77)
+  const CROP_BOX_WIDTH = isLandscape ? 300 : isPortrait ? 240 : 260; // Landscape/Portrait widths
+  const CROP_BOX_HEIGHT = isLandscape ? 169 : isPortrait ? 300 : 260; // Landscape/Portrait heights
   
-  const CANVAS_WIDTH = isLandscape ? 800 : 400;
-  const CANVAS_HEIGHT = isLandscape ? 450 : 400;
+  const CANVAS_WIDTH = isLandscape ? 800 : isPortrait ? 480 : 400;
+  const CANVAS_HEIGHT = isLandscape ? 450 : isPortrait ? 600 : 400;
 
   // Reset values when source changes
   useEffect(() => {
@@ -174,6 +175,8 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
             className={`bg-slate-950/60 rounded-3xl overflow-hidden border border-white/10 relative cursor-grab active:cursor-grabbing select-none flex items-center justify-center shadow-inner ${
               isLandscape 
                 ? 'w-72 h-44 xs:w-[340px] xs:h-[210px]' 
+                : isPortrait
+                ? 'w-72 h-[350px] xs:w-[280px] xs:h-[350px]'
                 : 'w-72 h-72 xs:w-80 xs:h-80'
             }`}
             onMouseDown={onMouseDown}
@@ -200,7 +203,7 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
 
             {/* Visual Mask Overlay */}
             <div 
-              className={`absolute pointer-events-none ${isLandscape ? 'rounded-2xl' : 'rounded-full'}`}
+              className={`absolute pointer-events-none ${isLandscape || isPortrait ? 'rounded-2xl' : 'rounded-full'}`}
               style={{
                 width: `${CROP_BOX_WIDTH}px`,
                 height: `${CROP_BOX_HEIGHT}px`,
@@ -211,7 +214,7 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
             {/* Dotted Alignment Border */}
             <div 
               className={`absolute pointer-events-none border-2 border-dashed border-[var(--violet-bright)] shadow-[0_0_20px_rgba(139,92,246,0.3)] animate-pulse ${
-                isLandscape ? 'rounded-2xl' : 'rounded-full'
+                isLandscape || isPortrait ? 'rounded-2xl' : 'rounded-full'
               }`}
               style={{
                 width: `${CROP_BOX_WIDTH}px`,

@@ -87,22 +87,48 @@ export const EventDetails: React.FC = () => {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="relative h-[300px] md:h-[400px] rounded-[2rem] overflow-hidden border border-white/10"
+            className="relative rounded-[2.5rem] overflow-hidden border border-white/10 bg-slate-900/35 p-4 md:p-8 flex flex-col md:flex-row gap-6 md:gap-8 items-center md:items-stretch shadow-2xl"
           >
-            <img 
-              src={getImageUrl(event.cover_image)} 
-              className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" 
-              alt={event.title} 
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
-            <div className="absolute bottom-6 left-6 right-6">
-              <Badge variant="violet" className="mb-3">{event.category}</Badge>
-              <h1 className="text-3xl md:text-5xl font-display font-bold text-white mb-2 leading-tight">
-                {event.title}
-              </h1>
-              <p className="text-white/80 text-sm md:text-lg max-w-2xl line-clamp-2 font-medium">
-                {event.short_description}
-              </p>
+            {/* Blurred cover image backdrop bleed */}
+            <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden rounded-[2.5rem]">
+              <img
+                src={getImageUrl(event.cover_image)}
+                alt=""
+                className="w-full h-full object-cover blur-3xl opacity-30 scale-110"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-[var(--bg-primary)]/90 via-[var(--bg-primary)]/40 to-transparent" />
+            </div>
+
+            {/* Contained Vertical Flyer */}
+            <div className="relative z-10 w-full xs:w-[240px] md:w-[260px] aspect-[4/5] rounded-[1.8rem] overflow-hidden border border-white/10 shrink-0 shadow-[0_12px_32px_rgba(0,0,0,0.55)]">
+              <img 
+                src={getImageUrl(event.cover_image)} 
+                className="w-full h-full object-cover" 
+                alt={event.title} 
+              />
+            </div>
+
+            {/* Right Column: Title, tags, description */}
+            <div className="relative z-10 flex-1 flex flex-col justify-between py-2 text-center md:text-left space-y-4">
+              <div className="space-y-4">
+                <Badge variant="violet" className="px-3.5 py-1 text-[10px] font-extrabold uppercase tracking-widest">{event.category}</Badge>
+                <h1 className="text-2xl md:text-4xl font-display font-black text-white leading-tight">
+                  {event.title}
+                </h1>
+                <p className="text-[var(--text-secondary)] text-sm md:text-base leading-relaxed">
+                  {event.short_description}
+                </p>
+              </div>
+
+              {/* Quick details strip */}
+              <div className="flex flex-wrap justify-center md:justify-start gap-3 mt-auto">
+                <span className="text-[10px] font-extrabold bg-[var(--violet-primary)]/20 border border-[var(--violet-primary)]/40 text-[var(--violet-bright)] px-3 py-1.5 rounded-xl">
+                  📅 {new Date(event.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                </span>
+                <span className="text-[10px] font-extrabold bg-[var(--accent-green)]/20 border border-[var(--accent-green)]/40 text-[var(--accent-green)] px-3 py-1.5 rounded-xl">
+                  ₹{event.price === 0 ? 'FREE' : `${event.price}+`}
+                </span>
+              </div>
             </div>
           </motion.div>
 

@@ -9,8 +9,10 @@ import { useTicketStore } from '../../store/ticketStore';
 import type { Ticket } from '../../store/ticketStore';
 import { 
   Settings, ShieldCheck, Lock, LogIn, Coins, Sparkles, User, Share2, 
-  Flame, CheckCircle, Copy, ChevronRight, Award, Zap, Check, AlertCircle, Camera, MapPin
+  Flame, CheckCircle, Copy, ChevronRight, Award, Zap, Check, AlertCircle, Camera, MapPin, Calendar, Clock,
+  MessageCircle, Handshake
 } from 'lucide-react';
+
 import { motion, AnimatePresence } from 'framer-motion';
 import { API_BASE_URL, getImageUrl } from '../../config';
 import { ProfileCompletionBanner } from '../../components/profile/ProfileCompletionBanner';
@@ -92,24 +94,50 @@ export const Profile: React.FC = () => {
   };
 
   // Notification Toast States (e.g. for Aadhaar verification success/error alerts)
-  const [simulationMessage, setSimulationMessage] = useState('');
-  const [simulationError, setSimulationError] = useState('');
+  const [simulationMessage] = useState('');
+  const [simulationError] = useState('');
   const [copiedLink, setCopiedLink] = useState(false);
-  const [isVerifyingAadhaar, setIsVerifyingAadhaar] = useState(false);
   const [aadhaarModalOpen, setAadhaarModalOpen] = useState(false);
 
+  // New Modals State
+  const [showAllPassesModal, setShowAllPassesModal] = useState(false);
+  const [showEarnMoreModal, setShowEarnMoreModal] = useState(false);
+  const [showRedeemModal, setShowRedeemModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [showContactModal, setShowContactModal] = useState(false);
+  const [showPartnerModal, setShowPartnerModal] = useState(false);
+
+  // Contact form state
+  const [contactForm, setContactForm] = useState({ name: '', email: '', phone: '', message: '' });
+  const [isContactSubmitting, setIsContactSubmitting] = useState(false);
+  const [contactResult, setContactResult] = useState<{success: boolean; message: string} | null>(null);
+
+  // Partner application form state
+  const [partnerForm, setPartnerForm] = useState({ full_name: '', email: '', phone: '', company_name: '', company_city: '', description: '' });
+  const [isPartnerSubmitting, setIsPartnerSubmitting] = useState(false);
+  const [partnerResult, setPartnerResult] = useState<{success: boolean; message: string} | null>(null);
+
   // Share / Copy Referral Code
-  const copyReferral = (code: string) => {
+  const copyReferral = async (textToCopy: string) => {
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+      alert('Referral link copied to clipboard!');
+    } catch (err) {
+      console.error('Failed to copy link:', err);
+    }
+  };
+
+  const shareReferral = (textToShare: string) => {
     if (navigator.share) {
       navigator.share({
         title: 'VHOP Nightlife',
-        text: 'join me in the app',
-        url: code
+        text: 'Join me on VHOP, the premium nightlife pass!',
+        url: textToShare
       }).catch(console.error);
     } else {
-      navigator.clipboard.writeText(`join me in the app ${code}`);
-      setCopiedLink(true);
-      setTimeout(() => setCopiedLink(false), 2000);
+      copyReferral(textToShare);
     }
   };
 
@@ -182,33 +210,7 @@ export const Profile: React.FC = () => {
     }
   };
 
-  // Verify Aadhaar Action
-  const handleVerifyAadhaar = async () => {
-    if (!user) return;
-    setIsVerifyingAadhaar(true);
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/profile/verify-aadhaar`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id })
-      });
 
-      if (!response.ok) {
-        throw new Error('Aadhaar verification failed.');
-      }
-
-      const data = await response.json();
-      setUser(data.user);
-      setSimulationMessage(data.message);
-      setAadhaarModalOpen(false);
-      setTimeout(() => setSimulationMessage(''), 4000);
-    } catch (err: any) {
-      setSimulationError(err.message || 'Verification error.');
-      setTimeout(() => setSimulationError(''), 4000);
-    } finally {
-      setIsVerifyingAadhaar(false);
-    }
-  };
 
 
   useEffect(() => {
@@ -364,7 +366,7 @@ export const Profile: React.FC = () => {
           {/* Top Actions: settings and share */}
           <div className="absolute top-6 right-6 flex items-center gap-2">
             <button 
-              onClick={() => copyReferral(`Hey! Join me on VHOP, the premium nightlife pass. Use my referral link: https://vhop.in/r/${referralCode}`)}
+              onClick={() => shareReferral(`https://vhop.in/r/${referralCode}`)}
               className="p-3 bg-white/[0.04] border border-white/5 rounded-full hover:bg-white/10 active:scale-95 transition-all text-slate-300 hover:text-white cursor-pointer"
               title="Share Profile"
             >
@@ -451,7 +453,13 @@ export const Profile: React.FC = () => {
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-black text-slate-300 tracking-wider uppercase">NIGHT DNA</h3>
             <button 
-              onClick={() => alert("DNA history shows details of all your checked-in bookings.")}
+              onClick={() => {
+                if (tickets.length > 0) {
+                  setSelectedTicket(tickets[0]);
+                } else {
+                  alert("No checked-in booking history found.");
+                }
+              }}
               className="text-xs font-bold text-emerald-400 hover:text-emerald-300 transition-colors"
             >
               See history
@@ -520,7 +528,7 @@ export const Profile: React.FC = () => {
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-black text-slate-300 tracking-wider uppercase">TONIGHT'S PASS</h3>
               <button 
-                onClick={() => setSelectedTicket(tickets[0])}
+                onClick={() => setShowAllPassesModal(true)}
                 className="text-xs font-bold text-emerald-400 hover:text-emerald-300 transition-colors"
               >
                 View all
@@ -642,7 +650,7 @@ export const Profile: React.FC = () => {
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-black text-slate-300 tracking-wider uppercase">V COINS</h3>
             <button 
-              onClick={() => alert("Complete profile, refer friends or scan tickets to earn more V-Coins!")}
+              onClick={() => setShowEarnMoreModal(true)}
               className="text-xs font-bold text-emerald-400 hover:text-emerald-300 transition-colors"
             >
               Earn more
@@ -691,13 +699,13 @@ export const Profile: React.FC = () => {
             {/* Action buttons */}
             <div className="grid grid-cols-2 gap-3 pt-2">
               <button 
-                onClick={() => alert("Redemption code is active at checkout when purchasing passes.")}
+                onClick={() => setShowRedeemModal(true)}
                 className="py-3 bg-white/[0.03] border border-white/5 hover:bg-white/[0.08] active:scale-95 transition-all text-white font-bold text-xs rounded-2xl cursor-pointer"
               >
                 Redeem
               </button>
               <button 
-                onClick={() => alert("Coin history shows initial reward: 100V, referrals: 25V, streak milestones: 250V.")}
+                onClick={() => setShowHistoryModal(true)}
                 className="py-3 bg-white/[0.03] border border-white/5 hover:bg-white/[0.08] active:scale-95 transition-all text-white font-bold text-xs rounded-2xl cursor-pointer"
               >
                 History
@@ -711,7 +719,7 @@ export const Profile: React.FC = () => {
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-black text-slate-300 tracking-wider uppercase">REFERRALS</h3>
             <button 
-              onClick={() => copyReferral(`https://vhop.in/r/${referralCode}`)}
+              onClick={() => shareReferral(`https://vhop.in/r/${referralCode}`)}
               className="text-xs font-bold text-emerald-400 hover:text-emerald-300 transition-colors"
             >
               Share link
@@ -799,6 +807,35 @@ export const Profile: React.FC = () => {
           </div>
         </section>
 
+        {/* ================= CONTACT & PARTNER SECTION ================= */}
+        <section className="space-y-3">
+          <h3 className="text-sm font-black text-slate-300 tracking-wider uppercase">GET IN TOUCH</h3>
+          <div className="grid grid-cols-2 gap-3">
+            {/* Contact Us */}
+            <button
+              onClick={() => { setContactResult(null); setContactForm({ name: user?.full_name || '', email: user?.email || '', phone: user?.phone || '', message: '' }); setShowContactModal(true); }}
+              className="bg-slate-900/65 border border-sky-500/20 rounded-3xl p-4 text-center backdrop-blur-xl hover:bg-sky-500/5 hover:border-sky-500/40 active:scale-95 transition-all group cursor-pointer"
+            >
+              <div className="w-10 h-10 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center mx-auto mb-2.5 group-hover:scale-110 transition-transform">
+                <MessageCircle className="w-5 h-5 text-sky-400" />
+              </div>
+              <p className="text-xs font-bold text-white">Contact Us</p>
+              <p className="text-[9px] text-slate-400 mt-1">Support & Queries</p>
+            </button>
+
+            {/* Partner With Us */}
+            <button
+              onClick={() => { setPartnerResult(null); setPartnerForm({ full_name: '', email: '', phone: '', company_name: '', company_city: '', description: '' }); setShowPartnerModal(true); }}
+              className="bg-slate-900/65 border border-violet-500/20 rounded-3xl p-4 text-center backdrop-blur-xl hover:bg-violet-500/5 hover:border-violet-500/40 active:scale-95 transition-all group cursor-pointer"
+            >
+              <div className="w-10 h-10 rounded-2xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center mx-auto mb-2.5 group-hover:scale-110 transition-transform">
+                <Handshake className="w-5 h-5 text-violet-400" />
+              </div>
+              <p className="text-xs font-bold text-white">Partner With Us</p>
+              <p className="text-[9px] text-slate-400 mt-1">Host Your Events</p>
+            </button>
+          </div>
+        </section>
 
       </div>
 
@@ -858,8 +895,14 @@ export const Profile: React.FC = () => {
                 </div>
 
                 <div className="flex gap-4">
-                  <GlowButton onClick={() => setSelectedTicket(null)} className="flex-1 py-4" variant="secondary">
-                    Close Ticket
+                  <GlowButton 
+                    onClick={() => {
+                      setSelectedTicket(null);
+                      navigate(`/events/${selectedTicket.eventId}`);
+                    }}
+                    className="flex-1 py-4 flex items-center justify-center gap-1 bg-[var(--violet-primary)] hover:bg-[var(--violet-bright)] text-white text-xs font-bold"
+                  >
+                    View Event Details
                   </GlowButton>
                   <GlowButton 
                     onClick={() => {
@@ -878,6 +921,11 @@ export const Profile: React.FC = () => {
                     className="flex-1 py-4 flex items-center justify-center gap-2"
                   >
                     <Share2 className="w-4 h-4" /> Share
+                  </GlowButton>
+                </div>
+                <div className="w-full">
+                  <GlowButton onClick={() => setSelectedTicket(null)} className="w-full py-3.5" variant="secondary">
+                    Close Ticket
                   </GlowButton>
                 </div>
               </GlassCard>
@@ -1129,37 +1177,332 @@ export const Profile: React.FC = () => {
               exit={{ scale: 0.9, opacity: 0 }}
               className="relative w-full max-w-sm z-10"
             >
-              <GlassCard className="p-6 text-center space-y-6 border-sky-500/30 shadow-glow">
-                <div className="w-16 h-16 rounded-full bg-sky-500/10 flex items-center justify-center mx-auto text-sky-400 shadow-inner">
-                  <User className="w-8 h-8" />
+              <GlassCard className="p-7 text-center space-y-6 border-sky-500/30 shadow-[0_0_30px_rgba(56,189,248,0.15)] relative overflow-hidden group">
+                <div className="absolute -top-24 -left-24 w-48 h-48 bg-sky-500/10 blur-3xl rounded-full pointer-events-none" />
+                <div className="w-16 h-16 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center mx-auto text-sky-400 relative">
+                  <ShieldCheck className="w-8 h-8 animate-pulse" />
+                  <div className="absolute inset-0 rounded-2xl bg-sky-400/15 blur-lg opacity-100" />
                 </div>
                 <div className="space-y-2">
-                  <h3 className="text-xl font-display font-bold text-white">Aadhaar Instant Verification</h3>
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    Verify your Aadhaar credentials securely via digilocker interface. Instantly unlocks VIP status, Priority entry lists, and a reward of <strong>100 V-Coins</strong>.
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-sky-500/10 border border-sky-500/25 rounded-full text-[9px] font-black text-sky-400 uppercase tracking-widest">
+                    Coming Soon
+                  </div>
+                  <h3 className="text-xl font-display font-extrabold text-white">Aadhaar Instant Verification</h3>
+                  <p className="text-[11px] text-slate-400 leading-relaxed max-w-[270px] mx-auto">
+                    Direct e-KYC integration via UIDAI secure gateway is currently in development.
                   </p>
                 </div>
 
-                <div className="bg-slate-950 p-4 border border-white/5 rounded-2xl space-y-2 text-left">
-                  <p className="text-[10px] text-slate-500 uppercase tracking-wide leading-none">Selected Identity Profile</p>
-                  <p className="text-xs font-bold text-white">{user.full_name}</p>
-                  <p className="text-[10px] text-slate-500">Security Note: Data is encrypted and authenticated through UIDAI gateways directly.</p>
+                <div className="bg-slate-950/60 p-4 border border-white/5 rounded-2xl space-y-3.5 text-left">
+                  <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wide leading-none">VIP Verified Benefits</p>
+                  <div className="space-y-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-5 h-5 rounded bg-emerald-500/10 flex items-center justify-center shrink-0">
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      </div>
+                      <span className="text-[10px] text-slate-300 font-bold">Exclusive priority guest-list entry</span>
+                    </div>
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-5 h-5 rounded bg-emerald-500/10 flex items-center justify-center shrink-0">
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      </div>
+                      <span className="text-[10px] text-slate-300 font-bold">Instant unlock of VIP Silver Pass tier</span>
+                    </div>
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-5 h-5 rounded bg-emerald-500/10 flex items-center justify-center shrink-0">
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      </div>
+                      <span className="text-[10px] text-slate-300 font-bold">Huge reward of +200 V-Coins</span>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="flex gap-3">
                   <button 
                     onClick={() => setAadhaarModalOpen(false)}
-                    className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-white font-bold text-xs rounded-xl cursor-pointer"
+                    className="w-full py-3.5 bg-sky-500/10 border border-sky-400/25 hover:bg-sky-500/20 active:scale-95 text-sky-400 font-black text-xs rounded-xl shadow-lg cursor-pointer transition-all uppercase tracking-wider"
                   >
-                    Cancel
+                    Got It, Notify Me
                   </button>
-                  <button 
-                    disabled={isVerifyingAadhaar}
-                    onClick={handleVerifyAadhaar}
-                    className="flex-1 py-3 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-lg cursor-pointer flex items-center justify-center gap-1"
-                  >
-                    {isVerifyingAadhaar ? 'Verifying...' : 'Verify Now'}
-                  </button>
+                </div>
+              </GlassCard>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* All Passes Modal */}
+      <AnimatePresence>
+        {showAllPassesModal && (
+          <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowAllPassesModal(false)}
+              className="fixed inset-0 bg-black/90 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative w-full max-w-md z-10"
+            >
+              <GlassCard className="p-6 space-y-6 border-[var(--violet-bright)]/30 shadow-glow max-h-[85vh] flex flex-col overflow-hidden">
+                <div className="flex justify-between items-center pb-3 border-b border-white/5">
+                  <h3 className="text-lg font-display font-black text-white flex items-center gap-2">
+                    <Calendar className="w-5 h-5 text-[var(--violet-bright)]" /> All Booked Passes
+                  </h3>
+                  <button onClick={() => setShowAllPassesModal(false)} className="text-slate-400 hover:text-white font-extrabold text-xl">&times;</button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto space-y-5 pr-1 custom-scrollbar">
+                  {/* 1. Active Passes Section */}
+                  <div className="space-y-2.5">
+                    <h4 className="text-[10px] font-black text-emerald-400 uppercase tracking-widest flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" /> Active / Upcoming
+                    </h4>
+                    {tickets.filter(t => new Date(t.startDate) >= new Date(new Date().setHours(0,0,0,0))).length === 0 ? (
+                      <p className="text-[11px] text-slate-500 py-3 text-center italic">No upcoming passes booked.</p>
+                    ) : (
+                      tickets.filter(t => new Date(t.startDate) >= new Date(new Date().setHours(0,0,0,0))).map(ticket => (
+                        <div 
+                          key={ticket.id} 
+                          onClick={() => {
+                            setShowAllPassesModal(false);
+                            setSelectedTicket(ticket);
+                          }}
+                          className="p-3 bg-white/[0.02] border border-white/5 rounded-2xl flex items-center justify-between cursor-pointer hover:bg-white/5 transition-all animate-fadeIn"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-white truncate">{ticket.eventTitle}</p>
+                            <p className="text-[9px] text-slate-400 mt-1 truncate">{ticket.venueName} • Pax: {ticket.quantity}</p>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-slate-500 shrink-0" />
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {/* 2. Past Passes Section */}
+                  <div className="space-y-2.5">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Past Event Passes</h4>
+                    {tickets.filter(t => new Date(t.startDate) < new Date(new Date().setHours(0,0,0,0))).length === 0 ? (
+                      <p className="text-[11px] text-slate-500 py-3 text-center italic">No past passes in your history.</p>
+                    ) : (
+                      tickets.filter(t => new Date(t.startDate) < new Date(new Date().setHours(0,0,0,0))).map(ticket => (
+                        <div 
+                          key={ticket.id} 
+                          onClick={() => {
+                            setShowAllPassesModal(false);
+                            setSelectedTicket(ticket);
+                          }}
+                          className="p-3 bg-white/[0.01] border border-white/5 rounded-2xl flex items-center justify-between opacity-60 hover:opacity-100 cursor-pointer hover:bg-white/5 transition-all"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-300 truncate">{ticket.eventTitle}</p>
+                            <p className="text-[9px] text-slate-500 mt-1 truncate">{ticket.venueName} • Finished</p>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-slate-500 shrink-0" />
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </GlassCard>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Earn More Modal */}
+      <AnimatePresence>
+        {showEarnMoreModal && (
+          <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowEarnMoreModal(false)}
+              className="fixed inset-0 bg-black/90 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative w-full max-w-sm z-10"
+            >
+              <GlassCard className="p-6 space-y-5 border-orange-500/30 shadow-[0_0_30px_rgba(249,115,22,0.15)] text-center relative overflow-hidden">
+                <div className="absolute -top-20 -right-20 w-44 h-44 bg-orange-500/10 blur-3xl rounded-full pointer-events-none" />
+                <div className="w-14 h-14 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center mx-auto text-orange-400 shrink-0">
+                  <Coins className="w-7 h-7" />
+                </div>
+                <div className="space-y-1.5">
+                  <h3 className="text-lg font-display font-black text-white">How to Earn V-Coins</h3>
+                  <p className="text-[10px] text-slate-400 leading-normal">Boost your balance and save on entry passes using these rewards actions!</p>
+                </div>
+
+                <div className="bg-slate-950 p-4 border border-white/5 rounded-2xl text-left space-y-3.5">
+                  <div className="flex items-start gap-3">
+                    <div className="w-6 h-6 rounded-md bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-[10px] font-black text-emerald-400 shrink-0 mt-0.5">+100</div>
+                    <div>
+                      <p className="text-xs font-bold text-white leading-tight">Complete Profile</p>
+                      <p className="text-[9px] text-slate-400 mt-0.5">Finish onboarding details to claim initial rewards.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-6 h-6 rounded-md bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-[10px] font-black text-emerald-400 shrink-0 mt-0.5">+25</div>
+                    <div>
+                      <p className="text-xs font-bold text-white leading-tight">Invite Friends to Squad</p>
+                      <p className="text-[9px] text-slate-400 mt-0.5">Earn 25 V-Coins for every friend who signs up using your code.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-6 h-6 rounded-md bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-[10px] font-black text-emerald-400 shrink-0 mt-0.5">5%</div>
+                    <div>
+                      <p className="text-xs font-bold text-white leading-tight">Ticket Bookings</p>
+                      <p className="text-[9px] text-slate-400 mt-0.5">Get 5% back in V-Coins on every single ticket pass purchase.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-6 h-6 rounded-md bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-[10px] font-black text-emerald-400 shrink-0 mt-0.5">+250</div>
+                    <div>
+                      <p className="text-xs font-bold text-white leading-tight">Maintain Night Streaks</p>
+                      <p className="text-[9px] text-slate-400 mt-0.5">Log in and perform check-ins 5 weeks in a row to get awarded.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <GlowButton onClick={() => setShowEarnMoreModal(false)} className="w-full py-3.5 text-xs font-bold uppercase tracking-wider">
+                  Got It, Let's Earn
+                </GlowButton>
+              </GlassCard>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Redeem Modal */}
+      <AnimatePresence>
+        {showRedeemModal && (
+          <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowRedeemModal(false)}
+              className="fixed inset-0 bg-black/90 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative w-full max-w-sm z-10"
+            >
+              <GlassCard className="p-6 space-y-5 border-orange-500/30 shadow-[0_0_30px_rgba(249,115,22,0.15)] text-center relative overflow-hidden">
+                <div className="absolute -top-20 -right-20 w-44 h-44 bg-orange-500/10 blur-3xl rounded-full pointer-events-none" />
+                <div className="w-14 h-14 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center mx-auto text-orange-400 shrink-0">
+                  <Zap className="w-7 h-7" />
+                </div>
+                <div className="space-y-1.5">
+                  <h3 className="text-lg font-display font-black text-white">Redeem V-Coins</h3>
+                  <p className="text-[10px] text-slate-400 leading-normal">Value: <strong>2 V-Coins = ₹1 Discount</strong>. Discount code automatically applies at ticket checkout.</p>
+                </div>
+
+                <div className="bg-slate-950 p-4 border border-white/5 rounded-2xl text-left space-y-3">
+                  <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wide leading-none">Available Coupons</p>
+                  <div className="space-y-2">
+                    <div className="p-2.5 bg-white/[0.02] border border-white/5 rounded-xl flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-bold text-white">₹100 Off Discount Pass</p>
+                        <p className="text-[9px] text-orange-400 font-bold">Cost: 200 V-Coins</p>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          if ((user?.v_coins || 0) >= 200) {
+                            alert("Coupon redeemed! Code: VHOP100 applied at checkout.");
+                            setShowRedeemModal(false);
+                          } else {
+                            alert("Insufficient V-Coins balance.");
+                          }
+                        }}
+                        className="px-3 py-1.5 bg-orange-500 hover:bg-orange-600 active:scale-95 text-xs text-slate-950 font-black rounded-lg transition-colors cursor-pointer"
+                      >
+                        Redeem
+                      </button>
+                    </div>
+                    
+                    <div className="p-2.5 bg-white/[0.02] border border-white/5 rounded-xl flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-bold text-white">₹250 Off Discount Pass</p>
+                        <p className="text-[9px] text-orange-400 font-bold">Cost: 500 V-Coins</p>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          if ((user?.v_coins || 0) >= 500) {
+                            alert("Coupon redeemed! Code: VHOP250 applied at checkout.");
+                            setShowRedeemModal(false);
+                          } else {
+                            alert("Insufficient V-Coins balance.");
+                          }
+                        }}
+                        className="px-3 py-1.5 bg-orange-500 hover:bg-orange-600 active:scale-95 text-xs text-slate-950 font-black rounded-lg transition-colors cursor-pointer"
+                      >
+                        Redeem
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <GlowButton onClick={() => setShowRedeemModal(false)} className="w-full py-3.5 text-xs font-bold uppercase tracking-wider" variant="secondary">
+                  Close
+                </GlowButton>
+              </GlassCard>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* History Modal */}
+      <AnimatePresence>
+        {showHistoryModal && (
+          <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowHistoryModal(false)}
+              className="fixed inset-0 bg-black/90 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative w-full max-w-sm z-10"
+            >
+              <GlassCard className="p-6 space-y-5 border-orange-500/30 shadow-[0_0_30px_rgba(249,115,22,0.15)] max-h-[80vh] flex flex-col overflow-hidden">
+                <div className="flex justify-between items-center pb-3 border-b border-white/5 shrink-0">
+                  <h3 className="text-base font-display font-black text-white flex items-center gap-2">
+                    <Clock className="w-4.5 h-4.5 text-orange-400" /> Transaction Ledger
+                  </h3>
+                  <button onClick={() => setShowHistoryModal(false)} className="text-slate-400 hover:text-white font-extrabold text-xl">&times;</button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto space-y-3 pr-1 custom-scrollbar">
+                  {[
+                    { title: 'Welcome Sign-in Bonus', change: '+500 V', desc: 'Credited on user signup', date: 'May 2026', pos: true },
+                    { title: 'Profile Onboarding Reward', change: '+100 V', desc: 'Credited on details check-in', date: 'May 2026', pos: true },
+                    { title: 'Referral Code Kabir', change: '+25 V', desc: 'Kabir sharma registration', date: 'May 2026', pos: true },
+                    { title: 'Night Streak Week 1', change: '+250 V', desc: 'Streak milestone achieved', date: 'May 2026', pos: true }
+                  ].map((item, idx) => (
+                    <div key={idx} className="p-3 bg-white/[0.02] border border-white/5 rounded-2xl flex justify-between items-center gap-3">
+                      <div>
+                        <p className="text-xs font-bold text-white leading-snug">{item.title}</p>
+                        <p className="text-[9px] text-slate-400 mt-1 font-medium">{item.desc} • {item.date}</p>
+                      </div>
+                      <span className="text-xs font-extrabold text-emerald-400 shrink-0">{item.change}</span>
+                    </div>
+                  ))}
                 </div>
               </GlassCard>
             </motion.div>
@@ -1175,6 +1518,334 @@ export const Profile: React.FC = () => {
             onCropComplete={handleCropComplete} 
             onCancel={() => setIsCropperOpen(false)} 
           />
+        )}
+      </AnimatePresence>
+
+      {/* ================= CONTACT US MODAL ================= */}
+      <AnimatePresence>
+        {showContactModal && (
+          <div className="fixed inset-0 z-[140] flex items-end sm:items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowContactModal(false)}
+              className="fixed inset-0 bg-black/90 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ y: 80, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 80, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 260, damping: 22 }}
+              className="relative w-full max-w-md z-10"
+            >
+              <GlassCard className="p-6 space-y-5 border-sky-500/30 shadow-[0_0_40px_rgba(56,189,248,0.12)] relative overflow-hidden max-h-[90vh] overflow-y-auto">
+                <div className="absolute -top-20 -right-20 w-44 h-44 bg-sky-500/8 blur-3xl rounded-full pointer-events-none" />
+
+                <div className="flex justify-between items-center pb-3 border-b border-white/5">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center">
+                      <MessageCircle className="w-5 h-5 text-sky-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-display font-black text-white leading-none">Contact Support</h3>
+                      <p className="text-[9px] text-slate-400 mt-0.5">We typically respond within 24 hours</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setShowContactModal(false)} className="text-slate-400 hover:text-white font-extrabold text-xl cursor-pointer">×</button>
+                </div>
+
+                {contactResult ? (
+                  <div className={`py-8 text-center space-y-4 ${contactResult.success ? '' : ''}`}>
+                    <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto ${
+                      contactResult.success ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-red-500/10 border border-red-500/20'
+                    }`}>
+                      {contactResult.success ? <CheckCircle className="w-8 h-8 text-emerald-400" /> : <AlertCircle className="w-8 h-8 text-red-400" />}
+                    </div>
+                    <div>
+                      <h4 className="text-white font-bold text-sm">{contactResult.success ? 'Message Sent!' : 'Submission Failed'}</h4>
+                      <p className="text-[11px] text-slate-400 mt-1 leading-relaxed max-w-[260px] mx-auto">{contactResult.message}</p>
+                    </div>
+                    <button
+                      onClick={() => { if (contactResult.success) setShowContactModal(false); else setContactResult(null); }}
+                      className="px-5 py-2.5 bg-sky-500/10 border border-sky-400/25 text-sky-400 font-bold text-xs rounded-xl cursor-pointer hover:bg-sky-500/20 transition-all"
+                    >
+                      {contactResult.success ? 'Close' : 'Try Again'}
+                    </button>
+                  </div>
+                ) : (
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      setIsContactSubmitting(true);
+                      try {
+                        const res = await fetch(`${API_BASE_URL}/api/contact/submit`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify(contactForm)
+                        });
+                        const data = await res.json();
+                        if (res.ok) {
+                          setContactResult({ success: true, message: data.message });
+                        } else {
+                          setContactResult({ success: false, message: data.error || 'Failed to send. Please try again.' });
+                        }
+                      } catch {
+                        setContactResult({ success: false, message: 'Network error. Please check your connection.' });
+                      } finally {
+                        setIsContactSubmitting(false);
+                      }
+                    }}
+                    className="space-y-4"
+                  >
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Full Name *</label>
+                        <input
+                          required
+                          type="text"
+                          value={contactForm.name}
+                          onChange={e => setContactForm(p => ({ ...p, name: e.target.value }))}
+                          placeholder="Your Name"
+                          className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white text-xs focus:border-sky-400 focus:outline-none transition-colors"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Phone</label>
+                        <input
+                          type="tel"
+                          value={contactForm.phone}
+                          onChange={e => setContactForm(p => ({ ...p, phone: e.target.value }))}
+                          placeholder="+91 XXXXX XXXXX"
+                          className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white text-xs focus:border-sky-400 focus:outline-none transition-colors"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Email Address *</label>
+                      <input
+                        required
+                        type="email"
+                        value={contactForm.email}
+                        onChange={e => setContactForm(p => ({ ...p, email: e.target.value }))}
+                        placeholder="your@email.com"
+                        className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white text-xs focus:border-sky-400 focus:outline-none transition-colors"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Message *</label>
+                      <textarea
+                        required
+                        value={contactForm.message}
+                        onChange={e => setContactForm(p => ({ ...p, message: e.target.value }))}
+                        placeholder="Describe your query or issue in detail..."
+                        rows={4}
+                        className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white text-xs focus:border-sky-400 focus:outline-none transition-colors resize-none"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isContactSubmitting}
+                      className="w-full py-3 bg-sky-500/20 border border-sky-400/40 hover:bg-sky-500/30 active:scale-95 text-sky-300 font-black text-xs rounded-xl shadow-lg cursor-pointer transition-all uppercase tracking-wider disabled:opacity-50"
+                    >
+                      {isContactSubmitting ? 'Sending...' : 'Send Message →'}
+                    </button>
+                  </form>
+                )}
+              </GlassCard>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ================= PARTNER WITH US MODAL ================= */}
+      <AnimatePresence>
+        {showPartnerModal && (
+          <div className="fixed inset-0 z-[140] flex items-end sm:items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowPartnerModal(false)}
+              className="fixed inset-0 bg-black/90 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ y: 80, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 80, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 260, damping: 22 }}
+              className="relative w-full max-w-md z-10"
+            >
+              <GlassCard className="p-6 space-y-5 border-violet-500/30 shadow-[0_0_40px_rgba(139,92,246,0.18)] relative overflow-hidden max-h-[90vh] overflow-y-auto">
+                <div className="absolute -top-20 -left-20 w-44 h-44 bg-violet-500/8 blur-3xl rounded-full pointer-events-none" />
+
+                <div className="flex justify-between items-center pb-3 border-b border-white/5">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center">
+                      <Handshake className="w-5 h-5 text-violet-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-display font-black text-white leading-none">Partner With Us</h3>
+                      <p className="text-[9px] text-slate-400 mt-0.5">List your venue & host premium events</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setShowPartnerModal(false)} className="text-slate-400 hover:text-white font-extrabold text-xl cursor-pointer">×</button>
+                </div>
+
+                {/* Benefit pills */}
+                <div className="flex flex-wrap gap-1.5">
+                  {['🎤 Host Events', '🎫 Sell Tickets', '📊 Analytics', '💰 Earn Revenue'].map(b => (
+                    <span key={b} className="px-2.5 py-1 bg-violet-500/10 border border-violet-500/20 rounded-full text-[9px] font-bold text-violet-300">{b}</span>
+                  ))}
+                </div>
+
+                {partnerResult ? (
+                  <div className="py-8 text-center space-y-4">
+                    <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto ${
+                      partnerResult.success ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-red-500/10 border border-red-500/20'
+                    }`}>
+                      {partnerResult.success ? <CheckCircle className="w-8 h-8 text-emerald-400" /> : <AlertCircle className="w-8 h-8 text-red-400" />}
+                    </div>
+                    <div>
+                      <h4 className="text-white font-bold text-sm">{partnerResult.success ? '🎉 Application Submitted!' : 'Submission Failed'}</h4>
+                      <p className="text-[11px] text-slate-400 mt-1 leading-relaxed max-w-[260px] mx-auto">{partnerResult.message}</p>
+                    </div>
+                    {partnerResult.success && (
+                      <div className="p-3 bg-violet-500/5 border border-violet-500/20 rounded-2xl text-[10px] text-slate-300 leading-relaxed">
+                        📧 A confirmation email has been sent to you. Once our Super Admin reviews and approves your request, you'll receive login credentials to access <strong>vhop.in/admin</strong>.
+                      </div>
+                    )}
+                    <button
+                      onClick={() => { if (partnerResult.success) setShowPartnerModal(false); else setPartnerResult(null); }}
+                      className="px-5 py-2.5 bg-violet-500/10 border border-violet-400/25 text-violet-400 font-bold text-xs rounded-xl cursor-pointer hover:bg-violet-500/20 transition-all"
+                    >
+                      {partnerResult.success ? 'Close' : 'Try Again'}
+                    </button>
+                  </div>
+                ) : (
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      setIsPartnerSubmitting(true);
+                      try {
+                        const res = await fetch(`${API_BASE_URL}/api/partners/apply`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify(partnerForm)
+                        });
+                        const data = await res.json();
+                        if (res.ok) {
+                          setPartnerResult({ success: true, message: data.message });
+                        } else {
+                          setPartnerResult({ success: false, message: data.error || 'Failed to submit. Please try again.' });
+                        }
+                      } catch {
+                        setPartnerResult({ success: false, message: 'Network error. Please check your connection.' });
+                      } finally {
+                        setIsPartnerSubmitting(false);
+                      }
+                    }}
+                    className="space-y-3.5"
+                  >
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Full Name *</label>
+                        <input
+                          required
+                          type="text"
+                          value={partnerForm.full_name}
+                          onChange={e => setPartnerForm(p => ({ ...p, full_name: e.target.value }))}
+                          placeholder="John Doe"
+                          className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white text-xs focus:border-violet-400 focus:outline-none transition-colors"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Phone *</label>
+                        <input
+                          required
+                          type="tel"
+                          value={partnerForm.phone}
+                          onChange={e => setPartnerForm(p => ({ ...p, phone: e.target.value }))}
+                          placeholder="+91 XXXXX XXXXX"
+                          className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white text-xs focus:border-violet-400 focus:outline-none transition-colors"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Business Email *</label>
+                      <input
+                        required
+                        type="email"
+                        value={partnerForm.email}
+                        onChange={e => setPartnerForm(p => ({ ...p, email: e.target.value }))}
+                        placeholder="venue@company.com"
+                        className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white text-xs focus:border-violet-400 focus:outline-none transition-colors"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Company / Venue *</label>
+                        <input
+                          required
+                          type="text"
+                          value={partnerForm.company_name}
+                          onChange={e => setPartnerForm(p => ({ ...p, company_name: e.target.value }))}
+                          placeholder="Velvet Lounge"
+                          className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white text-xs focus:border-violet-400 focus:outline-none transition-colors"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider">City *</label>
+                        <select
+                          required
+                          value={partnerForm.company_city}
+                          onChange={e => setPartnerForm(p => ({ ...p, company_city: e.target.value }))}
+                          className="w-full px-3 py-2.5 bg-[#110F20] border border-white/10 rounded-xl text-white text-xs focus:border-violet-400 focus:outline-none transition-colors"
+                        >
+                          <option value="" disabled>Select City</option>
+                          <option value="Visakhapatnam">Visakhapatnam</option>
+                          <option value="Hyderabad">Hyderabad</option>
+                          <option value="Mumbai">Mumbai</option>
+                          <option value="Bangalore">Bangalore</option>
+                          <option value="Delhi">Delhi</option>
+                          <option value="Chennai">Chennai</option>
+                          <option value="Pune">Pune</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Tell us about your venue</label>
+                      <textarea
+                        value={partnerForm.description}
+                        onChange={e => setPartnerForm(p => ({ ...p, description: e.target.value }))}
+                        placeholder="Describe your venue, capacity, type of events you host..."
+                        rows={3}
+                        className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white text-xs focus:border-violet-400 focus:outline-none transition-colors resize-none"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isPartnerSubmitting}
+                      className="w-full py-3 bg-[var(--violet-primary)] hover:bg-violet-600 active:scale-95 text-white font-black text-xs rounded-xl shadow-glow cursor-pointer transition-all uppercase tracking-wider disabled:opacity-50"
+                    >
+                      {isPartnerSubmitting ? 'Submitting Application...' : 'Submit Partner Application →'}
+                    </button>
+
+                    <p className="text-[9px] text-slate-500 text-center">
+                      By submitting, you agree to our terms. Once approved, credentials will be sent to your email.
+                    </p>
+                  </form>
+                )}
+              </GlassCard>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 

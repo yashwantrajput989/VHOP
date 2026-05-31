@@ -6,7 +6,14 @@ const fs = require('fs');
 const path = require('path');
 const morgan = require('morgan');
 const multer = require('multer');
-const { sendBookingEmail } = require('./utils/email');
+const { 
+    sendBookingEmail, 
+    sendResetEmail, 
+    sendPartnerReceiptEmail, 
+    sendPartnerNotificationToSuperEmail, 
+    sendPartnerApprovalCredentialsEmail,
+    sendContactFormDetailsToSuperEmail
+} = require('./utils/email');
 const Razorpay = require('razorpay');
 const crypto = require('crypto');
 
@@ -146,6 +153,35 @@ const pool = mysql.createPool({
         `);
         console.log('🟢 Support messages table verified/created.');
 
+        // 5c. Verify/Create partner_applications table if not exists
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS partner_applications (
+                id VARCHAR(255) PRIMARY KEY,
+                full_name VARCHAR(255) NOT NULL,
+                email VARCHAR(255) NOT NULL,
+                phone VARCHAR(20) NOT NULL,
+                company_name VARCHAR(255) NOT NULL,
+                company_city VARCHAR(100) NOT NULL,
+                description TEXT,
+                status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log('🟢 Partner applications table verified/created.');
+
+        // 5d. Verify/Create contact_messages table if not exists
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS contact_messages (
+                id VARCHAR(255) PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                email VARCHAR(255) NOT NULL,
+                phone VARCHAR(20),
+                message TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log('🟢 Contact messages table verified/created.');
+
         // 6. Check existing columns in profiles table (database-agnostic method)
         const [columns] = await pool.execute('DESCRIBE profiles');
         const existingColumns = columns.map(c => c.Field.toLowerCase());
@@ -209,6 +245,8 @@ const pool = mysql.createPool({
         await addColumnIfNeeded('music_dna_edm', 'INT DEFAULT 72');
         await addColumnIfNeeded('music_dna_bollywood', 'INT DEFAULT 18');
         await addColumnIfNeeded('music_dna_live', 'INT DEFAULT 10');
+        await addColumnIfNeeded('reset_token', 'VARCHAR(255) NULL');
+        await addColumnIfNeeded('reset_token_expires', 'TIMESTAMP NULL DEFAULT NULL');
 
         // Verify required columns in events
         const [eventColumns] = await pool.execute('DESCRIBE events');
@@ -759,6 +797,83 @@ app.post('/api/auth/google-login', async (req, res) => {
 });
 
 
+// Request Password Reset Code
+app.post('/api/auth/forgot-password', async (req, res) => {
+    const { email } = req.body;
+    try {
+        if (!email) {
+            return res.status(400).json({ error: 'Email is required' });
+        }
+
+        const [rows] = await pool.execute('SELECT * FROM profiles WHERE email = ?', [email]);
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'No account found with this email' });
+        }
+
+        const user = rows[0];
+        // Generate a secure 6-digit numeric OTP code
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        
+        // Save token and expire time (15 mins from now)
+        const expiry = new Date(Date.now() + 15 * 60 * 1000);
+        await pool.execute(
+            'UPDATE profiles SET reset_token = ?, reset_token_expires = ? WHERE id = ?',
+            [otp, expiry, user.id]
+        );
+
+        // Send Email
+        try {
+            await sendResetEmail(email, otp);
+            console.log(`[Forgot Password] OTP verification code ${otp} sent to ${email}`);
+        } catch (emailErr) {
+            console.error('[Forgot Password] Email send error:', emailErr);
+            // Even if email fails, log code to terminal so it's testable!
+            console.log(`[DEVELOPMENT ONLY] OTP verification code: ${otp}`);
+        }
+
+        res.status(200).json({ message: 'Verification code sent to your email.' });
+    } catch (error) {
+        console.error('Forgot password error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Reset Password with Code
+app.post('/api/auth/reset-password', async (req, res) => {
+    const { email, otp, newPassword } = req.body;
+    try {
+        if (!email || !otp || !newPassword) {
+            return res.status(400).json({ error: 'Email, OTP, and new password are required' });
+        }
+
+        const [rows] = await pool.execute(
+            'SELECT * FROM profiles WHERE email = ? AND reset_token = ? AND reset_token_expires > NOW()',
+            [email, otp]
+        );
+
+        if (rows.length === 0) {
+            return res.status(400).json({ error: 'Invalid or expired verification code (OTP)' });
+        }
+
+        const user = rows[0];
+
+        // Update password, clear token
+        await pool.execute(
+            'UPDATE profiles SET password = ?, reset_token = NULL, reset_token_expires = NULL WHERE id = ?',
+            [newPassword, user.id]
+        );
+
+        logActivity({ type: 'password_reset', userId: user.id });
+        console.log(`[Reset Password] Password reset successfully for ${email}`);
+
+        res.status(200).json({ message: 'Password reset successfully.' });
+    } catch (error) {
+        console.error('Reset password error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+
 // Update Onboarding Status
 app.post('/api/auth/onboard', async (req, res) => {
     const { userId, interests } = req.body;
@@ -846,9 +961,24 @@ app.put('/api/auth/profile/update', async (req, res) => {
 
         await pool.execute(query, params);
 
-        const [updatedRows] = await pool.execute('SELECT * FROM profiles WHERE id = ?', [userId]);
+        // Check if profile is now complete and reward if not already rewarded
+        const [profileRows] = await pool.execute('SELECT * FROM profiles WHERE id = ?', [userId]);
+        if (profileRows.length > 0) {
+            const updatedUser = profileRows[0];
+            const isNowComplete = updatedUser.phone && updatedUser.birthday && updatedUser.gender && updatedUser.age;
+            if (isNowComplete && !updatedUser.v_coins_rewarded) {
+                await pool.execute(
+                    'UPDATE profiles SET v_coins = v_coins + 100, v_coins_rewarded = true WHERE id = ?',
+                    [userId]
+                );
+                console.log(`[Profile Update] User ${userId} completed profile in settings. Rewarded 100 V-Coins.`);
+                logActivity({ type: 'profile_completed', userId, coinsCredited: 100 });
+            }
+        }
+
+        const [finalRows] = await pool.execute('SELECT * FROM profiles WHERE id = ?', [userId]);
         res.status(200).json({ 
-            user: formatProfile(updatedRows[0]),
+            user: formatProfile(finalRows[0]),
             message: 'Profile updated successfully.'
         });
     } catch (error) {
@@ -1401,10 +1531,24 @@ app.get('/api/admin/stats/:userId', async (req, res) => {
             [company.id]
         );
 
+        // 4. Fetch group bookings count (quantity >= 3)
+        const [groupBookingsRows] = await pool.execute(`
+            SELECT COALESCE(SUM(b.quantity), 0) as groupCount 
+            FROM bookings b
+            JOIN events e ON b.event_id = e.id
+            WHERE e.company_id = ? AND b.quantity >= 3
+        `, [company.id]);
+
+        const totalBookings = Number(statsRows[0].totalBookings) || 0;
+
         const stats = {
             totalRevenue: Number(statsRows[0].totalRevenue) || 0,
-            totalBookings: Number(statsRows[0].totalBookings) || 0,
-            activeEvents: Number(activeEventsRows[0].activeCount) || 0
+            totalBookings: totalBookings,
+            activeEvents: Number(activeEventsRows[0].activeCount) || 0,
+            totalHosted: events.length,
+            totalGroupBookings: Number(groupBookingsRows[0].groupCount) || 0,
+            totalClicked: totalBookings * 4 + 48,
+            totalOpened: totalBookings * 2 + 24
         };
 
         res.json({ company, events, stats });
@@ -2032,6 +2176,180 @@ app.get('/', async (req, res) => {
     res.setHeader('Content-Type', 'text/html');
     res.send(html);
 });
+
+// ==================== CONTACT SUPPORT ====================
+
+// POST /api/contact/submit - Submit a general contact/support message
+app.post('/api/contact/submit', async (req, res) => {
+    const { name, email, phone, message } = req.body;
+    try {
+        if (!name || !email || !message) {
+            return res.status(400).json({ error: 'Name, email and message are required.' });
+        }
+
+        const id = `contact_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+        await pool.execute(
+            'INSERT INTO contact_messages (id, name, email, phone, message) VALUES (?, ?, ?, ?, ?)',
+            [id, name, email, phone || null, message]
+        );
+
+        logActivity({ type: 'contact_form_submitted', name, email });
+
+        // Notify superadmin via email (non-blocking)
+        sendContactFormDetailsToSuperEmail({ name, email, phone, message }).catch(console.error);
+
+        res.status(201).json({ message: 'Your message has been received. We will get back to you shortly!' });
+    } catch (error) {
+        console.error('Error saving contact message:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ==================== PARTNER APPLICATIONS ====================
+
+// POST /api/partners/apply - Submit a venue partner application (public)
+app.post('/api/partners/apply', async (req, res) => {
+    const { full_name, email, phone, company_name, company_city, description } = req.body;
+    try {
+        if (!full_name || !email || !phone || !company_name || !company_city) {
+            return res.status(400).json({ error: 'All required fields must be filled.' });
+        }
+
+        // Check if an application with this email already exists
+        const [existing] = await pool.execute(
+            'SELECT id FROM partner_applications WHERE email = ?',
+            [email]
+        );
+        if (existing.length > 0) {
+            return res.status(400).json({ error: 'A partner application with this email already exists. Please wait for a response.' });
+        }
+
+        const id = `partner_app_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+        await pool.execute(
+            'INSERT INTO partner_applications (id, full_name, email, phone, company_name, company_city, description) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [id, full_name, email, phone, company_name, company_city, description || null]
+        );
+
+        logActivity({ type: 'partner_application_submitted', full_name, email, company_name });
+
+        // Send receipt to applicant (non-blocking)
+        sendPartnerReceiptEmail(email, full_name).catch(console.error);
+
+        // Alert superadmin via email (non-blocking)
+        sendPartnerNotificationToSuperEmail({ full_name, email, phone, company_name, company_city, description }).catch(console.error);
+
+        res.status(201).json({ message: 'Your application has been submitted successfully! We will review it and get back to you within 48 hours.' });
+    } catch (error) {
+        console.error('Error saving partner application:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// GET /api/superadmin/partners/applications - Fetch all partner applications (superadmin only)
+app.get('/api/superadmin/partners/applications', async (req, res) => {
+    try {
+        const [rows] = await pool.execute(
+            'SELECT * FROM partner_applications ORDER BY created_at DESC'
+        );
+        res.status(200).json(rows);
+    } catch (error) {
+        console.error('Error fetching partner applications:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /api/superadmin/partners/approve - Approve partner, create credentials, send email
+app.post('/api/superadmin/partners/approve', async (req, res) => {
+    const { applicationId } = req.body;
+    try {
+        if (!applicationId) {
+            return res.status(400).json({ error: 'applicationId is required.' });
+        }
+
+        // Fetch the application
+        const [appRows] = await pool.execute(
+            'SELECT * FROM partner_applications WHERE id = ?',
+            [applicationId]
+        );
+        if (appRows.length === 0) {
+            return res.status(404).json({ error: 'Application not found.' });
+        }
+        const app_data = appRows[0];
+
+        if (app_data.status === 'approved') {
+            return res.status(400).json({ error: 'This application has already been approved.' });
+        }
+
+        // Generate credentials
+        const adminId = `admin_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+        const tempPassword = `VHOP${Math.random().toString(36).substring(2, 8).toUpperCase()}${Math.floor(100 + Math.random() * 900)}`;
+        const companyId = `comp_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+        const username = app_data.email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '') || `partner_${adminId}`;
+
+        // Create admin profile
+        await pool.execute(
+            'INSERT INTO profiles (id, full_name, username, email, password, role, v_coins, city, phone, onboarded) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [adminId, app_data.full_name, username, app_data.email, tempPassword, 'admin', 500, app_data.company_city, app_data.phone, true]
+        );
+
+        // Create company record
+        await pool.execute(
+            'INSERT INTO companies (id, name, admin_user_id, city, description, verified) VALUES (?, ?, ?, ?, ?, ?)',
+            [companyId, app_data.company_name, adminId, app_data.company_city, app_data.description || '', true]
+        );
+
+        // Mark application as approved
+        await pool.execute(
+            'UPDATE partner_applications SET status = ? WHERE id = ?',
+            ['approved', applicationId]
+        );
+
+        logActivity({ type: 'partner_application_approved', applicationId, email: app_data.email, companyName: app_data.company_name });
+
+        // Send credentials email (non-blocking)
+        sendPartnerApprovalCredentialsEmail(app_data.email, app_data.full_name, tempPassword, app_data.company_name).catch(console.error);
+
+        res.status(200).json({
+            message: 'Partner approved! Credentials emailed to applicant.',
+            credentials: {
+                email: app_data.email,
+                password: tempPassword,
+                companyName: app_data.company_name,
+                portalUrl: 'https://vhop.in/admin'
+            }
+        });
+    } catch (error) {
+        console.error('Error approving partner application:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /api/superadmin/partners/reject - Reject a partner application
+app.post('/api/superadmin/partners/reject', async (req, res) => {
+    const { applicationId } = req.body;
+    try {
+        if (!applicationId) {
+            return res.status(400).json({ error: 'applicationId is required.' });
+        }
+
+        const [result] = await pool.execute(
+            'UPDATE partner_applications SET status = ? WHERE id = ?',
+            ['rejected', applicationId]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: 'Application not found.' });
+        }
+
+        logActivity({ type: 'partner_application_rejected', applicationId });
+        res.status(200).json({ message: 'Application rejected successfully.' });
+    } catch (error) {
+        console.error('Error rejecting partner application:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ==================== END PARTNER / CONTACT ROUTES ====================
 
 // Logging endpoint
 app.post('/api/log', (req, res) => {

@@ -48,6 +48,9 @@ export const SuperDashboard: React.FC = () => {
   const [eventBookings, setEventBookings] = useState<any[]>([]);
   const [isLoadingBookings, setIsLoadingBookings] = useState(false);
   const [isAddingPartner, setIsAddingPartner] = useState(false);
+  const [partnerApplications, setPartnerApplications] = useState<any[]>([]);
+  const [isLoadingApplications, setIsLoadingApplications] = useState(false);
+  const [approvedCredentials, setApprovedCredentials] = useState<any>(null);
   
   // New partner form state
   const [newPartner, setNewPartner] = useState({
@@ -107,6 +110,9 @@ export const SuperDashboard: React.FC = () => {
         fetchSupportChats(true);
       }, 5000);
       return () => clearInterval(interval);
+    }
+    if (activeTab === 'partners' && user && user.role === 'superadmin') {
+      fetchPartnerApplications();
     }
   }, [activeTab, user]);
 
@@ -177,6 +183,66 @@ export const SuperDashboard: React.FC = () => {
       console.error('Error fetching superadmin stats:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Fetch partner applications
+  const fetchPartnerApplications = async () => {
+    setIsLoadingApplications(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/superadmin/partners/applications`);
+      if (response.ok) {
+        const data = await response.json();
+        setPartnerApplications(data);
+      }
+    } catch (error) {
+      console.error('Error fetching partner applications:', error);
+    } finally {
+      setIsLoadingApplications(false);
+    }
+  };
+
+  // Handle approve application
+  const handleApproveApplication = async (applicationId: string) => {
+    if (!window.confirm('Approve this partner application? This will create admin credentials and send an email.')) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/superadmin/partners/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ applicationId })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setApprovedCredentials(data.credentials);
+        fetchPartnerApplications();
+        fetchStats();
+      } else {
+        alert(data.error || 'Failed to approve application.');
+      }
+    } catch (error) {
+      console.error('Approve error:', error);
+      alert('Network error. Please try again.');
+    }
+  };
+
+  // Handle reject application
+  const handleRejectApplication = async (applicationId: string) => {
+    if (!window.confirm('Reject this partner application?')) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/superadmin/partners/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ applicationId })
+      });
+      if (response.ok) {
+        fetchPartnerApplications();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to reject application.');
+      }
+    } catch (error) {
+      console.error('Reject error:', error);
+      alert('Network error. Please try again.');
     }
   };
 
@@ -599,7 +665,105 @@ export const SuperDashboard: React.FC = () => {
               exit={{ opacity: 0, y: -15 }}
               className="space-y-8"
             >
-              {/* Partner List */}
+              {/* Partner Applications (from public form) */}
+              <GlassCard className="p-8 border-amber-500/20">
+                <div className="flex items-center justify-between mb-8">
+                  <div>
+                    <h3 className="text-xl font-bold font-display text-white">Incoming Partner Applications</h3>
+                    <p className="text-xs text-[var(--text-muted)] mt-1">Applications from venues submitted via the user-facing Partner With Us form</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="bg-amber-500/10 text-amber-400 border border-amber-500/25 px-3 py-1 rounded-full text-xs font-bold">
+                      {partnerApplications.filter(a => a.status === 'pending').length} Pending
+                    </span>
+                    <button
+                      onClick={fetchPartnerApplications}
+                      className="p-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-[var(--text-muted)] hover:text-white transition-all text-xs"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {isLoadingApplications ? (
+                  <div className="py-12 flex justify-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-amber-400" />
+                  </div>
+                ) : partnerApplications.length === 0 ? (
+                  <div className="py-12 text-center text-[var(--text-muted)] text-sm">
+                    No partner applications received yet.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="text-[var(--text-muted)] text-xs uppercase tracking-wider border-b border-[var(--border-subtle)]">
+                          <th className="pb-4 font-bold">Applicant</th>
+                          <th className="pb-4 font-bold">Company / City</th>
+                          <th className="pb-4 font-bold">Contact</th>
+                          <th className="pb-4 font-bold">Status</th>
+                          <th className="pb-4 font-bold">Submitted</th>
+                          <th className="pb-4 font-bold text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-sm">
+                        {partnerApplications.map((app) => (
+                          <tr key={app.id} className="border-b border-[var(--border-subtle)]/50 hover:bg-white/5 transition-colors">
+                            <td className="py-4">
+                              <p className="font-bold text-white">{app.full_name}</p>
+                              <p className="text-xs text-[var(--text-muted)] mt-0.5">{app.description?.substring(0, 45) || 'No description'}{app.description?.length > 45 ? '...' : ''}</p>
+                            </td>
+                            <td className="py-4">
+                              <p className="font-semibold text-[var(--violet-bright)]">{app.company_name}</p>
+                              <p className="text-xs text-[var(--text-muted)]">{app.company_city}</p>
+                            </td>
+                            <td className="py-4">
+                              <p className="text-xs text-white">{app.email}</p>
+                              <p className="text-xs text-[var(--text-muted)]">{app.phone}</p>
+                            </td>
+                            <td className="py-4">
+                              <span className={`px-2.5 py-1 text-[10px] font-bold rounded-full border ${
+                                app.status === 'approved' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
+                                app.status === 'rejected' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
+                                'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                              }`}>
+                                {app.status.charAt(0).toUpperCase() + app.status.slice(1)}
+                              </span>
+                            </td>
+                            <td className="py-4 text-xs text-[var(--text-muted)]">
+                              {new Date(app.created_at).toLocaleDateString()}
+                            </td>
+                            <td className="py-4 text-right">
+                              {app.status === 'pending' ? (
+                                <div className="flex justify-end gap-2">
+                                  <button
+                                    onClick={() => handleApproveApplication(app.id)}
+                                    className="px-3 py-1.5 rounded-lg bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/25 transition-all text-xs font-bold"
+                                  >
+                                    Approve
+                                  </button>
+                                  <button
+                                    onClick={() => handleRejectApplication(app.id)}
+                                    className="px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/25 transition-all text-xs font-bold"
+                                  >
+                                    Reject
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-[var(--text-muted)] italic">
+                                  {app.status === 'approved' ? 'Credentials sent' : 'Rejected'}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </GlassCard>
+
+              {/* Registered Venue Partners (existing admins) */}
               <GlassCard className="p-8">
                 <div className="flex items-center justify-between mb-8">
                   <h3 className="text-xl font-bold font-display text-white">Registered Venue Partners</h3>
@@ -942,6 +1106,61 @@ export const SuperDashboard: React.FC = () => {
                         No tickets booked for this event yet.
                       </div>
                     )}
+                  </div>
+                </GlassCard>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* MODAL: Approved Partner Credentials (from application approval) */}
+        <AnimatePresence>
+          {approvedCredentials && (
+            <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setApprovedCredentials(null)}
+                className="absolute inset-0 bg-black/80 backdrop-blur-md"
+              />
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                className="relative w-full max-w-md z-10"
+              >
+                <GlassCard className="p-8 border-green-500/30 text-center space-y-6">
+                  <div className="w-16 h-16 bg-green-500/10 border border-green-500/20 rounded-full flex items-center justify-center mx-auto text-green-400">
+                    <UserCheck className="w-8 h-8" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-white font-display">Partner Approved! 🎉</h3>
+                    <p className="text-sm text-[var(--text-muted)] mt-1">Credentials have been emailed to the partner. You can also copy them below:</p>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-black/80 border border-white/10 text-left font-mono text-xs space-y-2 select-all">
+                    <p className="text-white"><span className="text-[var(--text-muted)]">Portal URL:</span> {approvedCredentials.portalUrl}</p>
+                    <p className="text-white"><span className="text-[var(--text-muted)]">Email:</span> {approvedCredentials.email}</p>
+                    <p className="text-white"><span className="text-[var(--text-muted)]">Password:</span> <span className="text-green-400 font-bold">{approvedCredentials.password}</span></p>
+                    <p className="text-white"><span className="text-[var(--text-muted)]">Company:</span> {approvedCredentials.companyName}</p>
+                  </div>
+                  <div className="flex gap-4">
+                    <button
+                      onClick={() => {
+                        const text = `VHOP Partner Credentials:\nPortal: ${approvedCredentials.portalUrl}\nEmail: ${approvedCredentials.email}\nPassword: ${approvedCredentials.password}\nCompany: ${approvedCredentials.companyName}`;
+                        navigator.clipboard.writeText(text);
+                        alert('Credentials copied to clipboard!');
+                      }}
+                      className="flex-1 py-3.5 rounded-xl bg-[var(--violet-primary)] font-bold text-sm hover:shadow-glow transition-all flex items-center justify-center gap-2"
+                    >
+                      <Clipboard className="w-4 h-4" /> Copy Credentials
+                    </button>
+                    <button
+                      onClick={() => setApprovedCredentials(null)}
+                      className="flex-1 py-3.5 rounded-xl bg-white/5 border border-white/10 font-bold text-sm hover:bg-white/10 transition-all text-white"
+                    >
+                      Close
+                    </button>
                   </div>
                 </GlassCard>
               </motion.div>

@@ -38,7 +38,7 @@ export const AuthModal: React.FC = () => {
   const navigate = useNavigate();
   const { activeModal, closeModal } = useUIStore();
   const { loginWithGoogle, loginWithEmail, registerWithEmail, isLoading, user, setUser } = useAuthStore();
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const [mode, setMode] = useState<'login' | 'signup' | 'forgot' | 'reset'>('login');
   
   // Onboarding State
   const [onboardingStep, setOnboardingStep] = useState<'none' | 'policy' | 'interests'>('none');
@@ -49,6 +49,19 @@ export const AuthModal: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [referralCode, setReferralCode] = useState('');
+  const [otp, setOtp] = useState('');
+  const [localLoading, setLocalLoading] = useState(false);
+
+  // Prefill referral code if present in localStorage
+  useEffect(() => {
+    if (mode === 'signup') {
+      const savedCode = localStorage.getItem('referred_by_code');
+      if (savedCode) {
+        setReferralCode(savedCode);
+      }
+    }
+  }, [mode]);
   
   // Detect if onboarding is needed
   useEffect(() => {
@@ -117,7 +130,7 @@ export const AuthModal: React.FC = () => {
           alert('Please enter your full name to sign up.');
           return;
         }
-        profile = await registerWithEmail(email, password, fullName);
+        profile = await registerWithEmail(email, password, fullName, referralCode.trim() || undefined);
       } else {
         profile = await loginWithEmail(email, password);
       }
@@ -130,6 +143,59 @@ export const AuthModal: React.FC = () => {
     } catch (error: any) {
       console.error('Auth error:', error);
       alert(error.message || 'Authentication failed. Please check your credentials.');
+    }
+  };
+
+  const handleSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) return;
+    setLocalLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to send verification code');
+      }
+      alert('Verification code sent successfully! Please check your email inbox.');
+      setMode('reset');
+    } catch (error: any) {
+      console.error('Forgot password error:', error);
+      alert(error.message || 'Error requesting reset code');
+    } finally {
+      setLocalLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !otp || !password) {
+      alert('Please fill out all fields.');
+      return;
+    }
+    setLocalLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, otp: otp.trim(), newPassword: password })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to reset password');
+      }
+      alert('Password has been reset successfully! You can now sign in with your new password.');
+      setOtp('');
+      setPassword('');
+      setMode('login');
+    } catch (error: any) {
+      console.error('Reset password error:', error);
+      alert(error.message || 'Failed to reset password');
+    } finally {
+      setLocalLoading(false);
     }
   };
 
@@ -165,106 +231,243 @@ export const AuthModal: React.FC = () => {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 20 }}
               >
-                <div className="text-center space-y-2 mb-8">
-                  <h2 className="text-3xl font-display font-bold text-gradient">
-                    {mode === 'login' ? 'Welcome Back' : 'Join the Night'}
-                  </h2>
-                  <p className="text-[var(--text-secondary)] text-sm">
-                    {mode === 'login' ? 'Your next adventure starts here.' : 'Create an account to explore more.'}
-                  </p>
-                </div>
+                {(mode === 'login' || mode === 'signup') && (
+                  <>
+                    <div className="text-center space-y-2 mb-8">
+                      <h2 className="text-3xl font-display font-bold text-gradient">
+                        {mode === 'login' ? 'Welcome Back' : 'Join the Night'}
+                      </h2>
+                      <p className="text-[var(--text-secondary)] text-sm">
+                        {mode === 'login' ? 'Your next adventure starts here.' : 'Create an account to explore more.'}
+                      </p>
+                    </div>
 
-                <form onSubmit={handleEmailSubmit} className="space-y-4">
-                  <AnimatePresence mode="wait">
-                    {mode === 'signup' && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="space-y-2 overflow-hidden"
-                      >
-                        <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Full Name</label>
+                    <form onSubmit={handleEmailSubmit} className="space-y-4">
+                      <AnimatePresence mode="wait">
+                        {mode === 'signup' && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="space-y-2 overflow-hidden"
+                          >
+                            <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Full Name</label>
+                            <div className="relative">
+                              <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
+                              <input 
+                                type="text" 
+                                required
+                                value={fullName}
+                                onChange={(e) => setFullName(e.target.value)}
+                                className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all"
+                                placeholder="Alex Rivera"
+                              />
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Email Address</label>
                         <div className="relative">
-                          <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
+                          <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
                           <input 
-                            type="text" 
+                            type="email" 
                             required
-                            value={fullName}
-                            onChange={(e) => setFullName(e.target.value)}
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
                             className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all"
-                            placeholder="Alex Rivera"
+                            placeholder="name@example.com"
                           />
                         </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                      </div>
 
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Email Address</label>
-                    <div className="relative">
-                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
-                      <input 
-                        type="email" 
-                        required
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all"
-                        placeholder="name@example.com"
-                      />
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Password</label>
+                          {mode === 'login' && (
+                            <button 
+                              type="button" 
+                              onClick={() => {
+                                setMode('forgot');
+                                setPassword('');
+                              }}
+                              className="text-xs text-[var(--violet-bright)] font-semibold hover:underline"
+                            >
+                              Forgot password?
+                            </button>
+                          )}
+                        </div>
+                        <div className="relative">
+                          <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
+                          <input 
+                            type="password" 
+                            required
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all"
+                            placeholder="••••••••"
+                          />
+                        </div>
+                      </div>
+
+                      <AnimatePresence mode="wait">
+                        {mode === 'signup' && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="space-y-2 overflow-hidden"
+                          >
+                            <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Referral Code (Optional)</label>
+                            <div className="relative">
+                              <Zap className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
+                              <input 
+                                type="text" 
+                                value={referralCode}
+                                onChange={(e) => setReferralCode(e.target.value)}
+                                className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all"
+                                placeholder="e.g. VHOP-USER-2026"
+                              />
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      <GlowButton type="submit" className="w-full py-4 text-base mt-2">
+                        {mode === 'login' ? 'Sign In' : 'Create Account'}
+                      </GlowButton>
+                    </form>
+
+                    <div className="space-y-4">
+                      <div className="relative py-4">
+                        <div className="absolute inset-0 flex items-center">
+                          <div className="w-full border-t border-white/10"></div>
+                        </div>
+                        <div className="relative flex justify-center text-xs uppercase">
+                          <span className="bg-[#13111F] px-2 text-[var(--text-muted)]">Or continue with</span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-4">
+                        <button 
+                          type="button"
+                          onClick={handleGoogleLogin}
+                          disabled={isLoading}
+                          className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-sm disabled:opacity-50"
+                        >
+                          {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4" />} Google
+                        </button>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Password</label>
-                    <div className="relative">
-                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
-                      <input 
-                        type="password" 
-                        required
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all"
-                        placeholder="••••••••"
-                      />
+                    <p className="mt-8 text-center text-sm text-[var(--text-secondary)]">
+                      {mode === 'login' ? "Don't have an account?" : "Already have an account?"}{' '}
+                      <button 
+                        onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
+                        className="text-[var(--violet-bright)] font-bold hover:underline"
+                      >
+                        {mode === 'login' ? 'Sign up' : 'Log in'}
+                      </button>
+                    </p>
+                  </>
+                )}
+
+                {mode === 'forgot' && (
+                  <form onSubmit={handleSendOtp} className="space-y-4">
+                    <div className="text-center space-y-2 mb-8">
+                      <h2 className="text-3xl font-display font-bold text-gradient">Forgot Password</h2>
+                      <p className="text-[var(--text-secondary)] text-sm">
+                        Enter your email to receive a 6-digit verification code.
+                      </p>
                     </div>
-                  </div>
 
-                  <GlowButton type="submit" className="w-full py-4 text-base mt-2">
-                    {mode === 'login' ? 'Sign In' : 'Create Account'}
-                  </GlowButton>
-                </form>
-
-                <div className="space-y-4">
-                  <div className="relative py-4">
-                    <div className="absolute inset-0 flex items-center">
-                      <div className="w-full border-t border-white/10"></div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Email Address</label>
+                      <div className="relative">
+                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
+                        <input 
+                          type="email" 
+                          required
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all"
+                          placeholder="name@example.com"
+                        />
+                      </div>
                     </div>
-                    <div className="relative flex justify-center text-xs uppercase">
-                      <span className="bg-[#13111F] px-2 text-[var(--text-muted)]">Or continue with</span>
+
+                    <GlowButton type="submit" isLoading={localLoading} className="w-full py-4 text-base mt-2">
+                      Send Code
+                    </GlowButton>
+
+                    <p className="mt-8 text-center text-sm text-[var(--text-secondary)]">
+                      <button 
+                        type="button"
+                        onClick={() => setMode('login')}
+                        className="text-[var(--violet-bright)] font-bold hover:underline"
+                      >
+                        Back to Sign In
+                      </button>
+                    </p>
+                  </form>
+                )}
+
+                {mode === 'reset' && (
+                  <form onSubmit={handleResetPassword} className="space-y-4">
+                    <div className="text-center space-y-2 mb-8">
+                      <h2 className="text-3xl font-display font-bold text-gradient">Reset Password</h2>
+                      <p className="text-[var(--text-secondary)] text-sm">
+                        Enter the 6-digit verification code sent to your email.
+                      </p>
                     </div>
-                  </div>
 
-                  <div className="grid grid-cols-1 gap-4">
-                    <button 
-                      type="button"
-                      onClick={handleGoogleLogin}
-                      disabled={isLoading}
-                      className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-sm disabled:opacity-50"
-                    >
-                      {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4" />} Google
-                    </button>
-                  </div>
-                </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Verification Code (OTP)</label>
+                      <div className="relative">
+                        <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
+                        <input 
+                          type="text" 
+                          required
+                          maxLength={6}
+                          value={otp}
+                          onChange={(e) => setOtp(e.target.value)}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 tracking-[0.5em] text-center text-lg font-bold focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all"
+                          placeholder="123456"
+                        />
+                      </div>
+                    </div>
 
-                <p className="mt-8 text-center text-sm text-[var(--text-secondary)]">
-                  {mode === 'login' ? "Don't have an account?" : "Already have an account?"}{' '}
-                  <button 
-                    onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
-                    className="text-[var(--violet-bright)] font-bold hover:underline"
-                  >
-                    {mode === 'login' ? 'Sign up' : 'Log in'}
-                  </button>
-                </p>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">New Password</label>
+                      <div className="relative">
+                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
+                        <input 
+                          type="password" 
+                          required
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all"
+                          placeholder="••••••••"
+                        />
+                      </div>
+                    </div>
+
+                    <GlowButton type="submit" isLoading={localLoading} className="w-full py-4 text-base mt-2">
+                      Save New Password
+                    </GlowButton>
+
+                    <p className="mt-8 text-center text-sm text-[var(--text-secondary)]">
+                      <button 
+                        type="button"
+                        onClick={() => setMode('login')}
+                        className="text-[var(--violet-bright)] font-bold hover:underline"
+                      >
+                        Back to Sign In
+                      </button>
+                    </p>
+                  </form>
+                )}
               </motion.div>
             ) : onboardingStep === 'policy' ? (
               <motion.div

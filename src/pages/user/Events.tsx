@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Search, MapPin, Music, Mic2, HeartPulse, GlassWater, Trophy, Palette, Settings2, ChevronDown, Sparkles } from 'lucide-react';
+import { Search, MapPin, Music, Mic2, HeartPulse, GlassWater, Trophy, Palette, Settings2, ChevronDown, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 import { PageWrapper } from '../../components/layout/PageWrapper';
 import { FloatingOrb } from '../../components/ui/FloatingOrb';
 import { EventCard } from '../../components/events/EventCard';
 import { useLocationStore } from '../../store/locationStore';
 import { LocationPrompt } from '../../components/events/LocationPrompt';
 import { ComingSoon } from '../../components/ui/ComingSoon';
+import { GlowButton } from '../../components/ui/GlowButton';
 import { useNavigate } from 'react-router-dom';
 import { API_BASE_URL, getImageUrl } from '../../config';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -29,6 +30,8 @@ export const Events: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [showCityDropdown, setShowCityDropdown] = useState(false);
+  const [currentSlide, setCurrentSlide] = useState(0);
+  const [isHovered, setIsHovered] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -55,6 +58,20 @@ export const Events: React.FC = () => {
     (activeCategory === 'all' || e.category === activeCategory) &&
     (!searchQuery || e.title.toLowerCase().includes(searchQuery.toLowerCase()))
   );
+
+  const featuredEvents = filteredEvents.slice(0, 5);
+
+  useEffect(() => {
+    setCurrentSlide(0);
+  }, [activeCategory, searchQuery]);
+
+  useEffect(() => {
+    if (featuredEvents.length <= 1 || isHovered) return;
+    const interval = setInterval(() => {
+      setCurrentSlide((prev) => (prev + 1) % featuredEvents.length);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [featuredEvents.length, isHovered]);
 
   const isComingSoon = activeCity !== 'Visakhapatnam' && events.length === 0;
 
@@ -186,111 +203,139 @@ export const Events: React.FC = () => {
         ) : (
           <div className="space-y-8 md:space-y-12 pb-24">
 
-            {/* ── Featured Hero Redesigned ── */}
-            {events.length > 0 && (
+            {/* ── Premium Vertical Carousel ── */}
+            {featuredEvents.length > 0 && (
               <section 
-                onClick={() => navigate(`/events/${events[0].id}`)}
-                className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-black/40 group shadow-[0_20px_50px_rgba(0,0,0,0.5)] cursor-pointer transition-all duration-300 hover:border-[var(--violet-bright)]/30"
+                onMouseEnter={() => setIsHovered(true)}
+                onMouseLeave={() => setIsHovered(false)}
+                className="relative overflow-hidden rounded-[2.5rem] border border-white/10 bg-slate-900/35 shadow-[0_20px_50px_rgba(0,0,0,0.65)] hover:border-[var(--violet-bright)]/30 transition-all duration-500 h-[500px] md:h-[450px]"
               >
-                {/* Background blurred visual bleed underlay */}
-                <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
-                  <img
-                    src={getImageUrl(events[0].cover_image)}
-                    alt=""
-                    className="w-full h-full object-cover blur-3xl opacity-45 scale-110"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-[var(--bg-primary)] via-[var(--bg-primary)]/40 to-transparent" />
-                </div>
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={featuredEvents[currentSlide].id}
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    transition={{ duration: 0.5, ease: "easeInOut" }}
+                    onClick={() => navigate(`/events/${featuredEvents[currentSlide].id}`)}
+                    className="relative w-full h-full flex flex-col md:flex-row items-stretch cursor-pointer p-4 md:p-6 select-none"
+                  >
+                    {/* Blurred Cover Image Background Bleed */}
+                    <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden rounded-[2.5rem]">
+                      <img
+                        src={getImageUrl(featuredEvents[currentSlide].cover_image)}
+                        alt=""
+                        className="w-full h-full object-cover blur-3xl opacity-35 scale-110"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[var(--bg-primary)]/90 via-[var(--bg-primary)]/40 to-transparent" />
+                    </div>
 
-                {/* Card Layout Engine */}
-                <div className="relative z-10 flex flex-col md:flex-row items-stretch gap-0 md:gap-8 p-0 md:p-6">
-                  {/* Visual Image Container */}
-                  <div className="w-full md:w-5/12 aspect-video md:aspect-auto md:h-auto rounded-t-[2rem] md:rounded-2xl rounded-b-none overflow-hidden md:border border-white/5 shrink-0 relative bg-black/20 group-hover:shadow-[0_0_30px_rgba(124,58,237,0.15)] transition-all duration-500">
-                    {/* The real image - crisp and perfectly scaled */}
-                    <img
-                      src={getImageUrl(events[0].cover_image)}
-                      alt={events[0].title}
-                      className="w-full h-full object-cover relative z-10 transition-transform duration-700 group-hover:scale-105"
-                    />
-                    {/* Glowing underlay */}
-                    <img
-                      src={getImageUrl(events[0].cover_image)}
-                      alt=""
-                      className="absolute inset-0 w-full h-full object-cover blur-xl opacity-60 scale-110 pointer-events-none"
-                    />
-                    {/* Mobile Only: bottom vignette gradient to cover the image text overlay */}
-                    <div className="md:hidden absolute inset-0 z-20 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
-                    
-                    {/* Mobile Only: Text overlay directly inside the image container on mobile */}
-                    <div className="md:hidden absolute bottom-0 inset-x-0 z-30 p-5 space-y-3">
-                      <span className="inline-flex items-center gap-1 bg-[var(--violet-primary)] text-white text-[8px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider shadow-[0_0_10px_rgba(124,58,237,0.4)]">
-                        <Sparkles className="w-2.5 h-2.5 text-amber-300 animate-pulse" /> Trending
-                      </span>
-                      <h3 className="text-base font-display font-extrabold text-white leading-snug line-clamp-1 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
-                        {events[0].title}
-                      </h3>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <div className="flex items-center gap-1 text-white/95 text-[10px] bg-white/10 backdrop-blur-md px-2 py-0.5 rounded-lg border border-white/5">
-                          <MapPin className="w-3 h-3 text-[var(--violet-bright)] shrink-0" />
-                          <span className="font-bold truncate max-w-[120px]">{events[0].venue_name}</span>
-                        </div>
-                        <span className="text-[10px] font-extrabold bg-[var(--accent-green)]/20 text-[var(--accent-green)] border border-[var(--accent-green)]/30 px-2 py-0.5 rounded-lg backdrop-blur-md">
-                          ₹{events[0].price === 0 ? 'FREE' : `${events[0].price}+`}
+                    {/* Left: Premium Contained Vertical Flyer */}
+                    <div className="relative z-10 w-full md:w-auto h-3/5 md:h-full aspect-[4/5] rounded-[1.8rem] overflow-hidden border border-white/10 shrink-0 mx-auto md:mx-0 shadow-[0_12px_32px_rgba(0,0,0,0.5)]">
+                      <img
+                        src={getImageUrl(featuredEvents[currentSlide].cover_image)}
+                        alt={featuredEvents[currentSlide].title}
+                        className="w-full h-full object-cover"
+                      />
+                      {/* Mobile gradient vignette */}
+                      <div className="md:hidden absolute inset-0 z-20 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
+                      
+                      {/* Mobile Only overlay info directly inside the flyer frame */}
+                      <div className="md:hidden absolute bottom-0 inset-x-0 z-30 p-4 space-y-2 text-left">
+                        <span className="inline-flex items-center gap-1 bg-[var(--violet-primary)] text-white text-[8px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider shadow-md">
+                          <Sparkles className="w-2.5 h-2.5 text-amber-300 animate-pulse" /> {featuredEvents[currentSlide].category}
                         </span>
+                        <h3 className="text-sm font-display font-extrabold text-white leading-snug line-clamp-1">
+                          {featuredEvents[currentSlide].title}
+                        </h3>
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1 text-white/90 text-[9px] bg-white/10 backdrop-blur-md px-2 py-0.5 rounded-lg">
+                            <MapPin className="w-3 h-3 text-[var(--violet-bright)] shrink-0" />
+                            <span className="font-bold truncate max-w-[120px]">{featuredEvents[currentSlide].venue_name}</span>
+                          </div>
+                          <span className="text-[9px] font-extrabold bg-[var(--accent-green)]/20 text-[var(--accent-green)] border border-[var(--accent-green)]/35 px-2 py-0.5 rounded-lg">
+                            ₹{featuredEvents[currentSlide].price === 0 ? 'FREE' : `${featuredEvents[currentSlide].price}+`}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Desktop Only Details: Hidden on mobile, beautiful on desktop */}
-                  <div className="hidden md:flex flex-1 flex-col justify-between items-start py-4 pr-4 space-y-6">
-                    <div className="space-y-3">
-                      <span className="inline-flex items-center gap-1 bg-[var(--violet-primary)] text-white text-[9px] font-extrabold px-2.5 py-1 rounded-full uppercase tracking-wider shadow-[0_0_15px_rgba(124,58,237,0.4)]">
-                        <Sparkles className="w-3.5 h-3.5 text-amber-300" /> Trending Experiences
-                      </span>
-                      <h3 className="text-2xl md:text-3xl font-display font-extrabold text-white leading-snug group-hover:text-[var(--violet-bright)] transition-colors line-clamp-2">
-                        {events[0].title}
-                      </h3>
-                      <p className="text-xs text-[var(--text-muted)] line-clamp-2 leading-relaxed">
-                        Join the most anticipated experience in the city. Book tickets now before slots run out!
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-3 text-white/80 text-xs flex-wrap bg-white/5 border border-white/5 px-4 py-2.5 rounded-2xl backdrop-blur-md">
-                      <div className="flex items-center gap-1.5">
-                        <MapPin className="w-3.5 h-3.5 text-[var(--violet-bright)] shrink-0 animate-pulse" />
-                        <span className="font-semibold">{events[0].venue_name}</span>
+                    {/* Right/Desktop details: Beautiful split pane screen */}
+                    <div className="hidden md:flex relative z-10 flex-1 flex-col justify-between items-start pl-8 pr-6 py-4 space-y-6 text-left">
+                      <div className="space-y-4">
+                        <span className="inline-flex items-center gap-1 bg-[var(--violet-primary)] text-white text-[9px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider shadow-[0_0_15px_rgba(124,58,237,0.4)]">
+                          <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" /> FEATURED EXPERIENCE
+                        </span>
+                        <h2 className="text-3xl font-display font-black text-white leading-tight group-hover:text-[var(--violet-bright)] transition-colors line-clamp-2">
+                          {featuredEvents[currentSlide].title}
+                        </h2>
+                        <p className="text-xs text-[var(--text-secondary)] line-clamp-3 leading-relaxed">
+                          {featuredEvents[currentSlide].short_description || 'Join us for this premier event! Experience the absolute best nightlife, music, and social vibe in the city. Book tickets now before reservations sell out.'}
+                        </p>
                       </div>
-                      <span className="w-1.5 h-1.5 rounded-full bg-white/20 shrink-0" />
-                      <span className="font-extrabold text-[var(--accent-green)]">₹{events[0].price === 0 ? 'FREE' : `${events[0].price}+`}</span>
-                    </div>
-                  </div>
-                </div>
-              </section>
-            )}
 
-            {/* ── Recommended ── */}
-            {events.length > 1 && (
-              <section>
-                <div className="flex items-center justify-between mb-3 md:mb-4">
-                  <div>
-                    <h2 className="text-base md:text-2xl font-display font-bold text-white">Recommended</h2>
-                    <p className="text-[9px] md:text-xs text-[var(--text-muted)] mt-0.5">Curated for you</p>
-                  </div>
-                  <button className="text-xs font-bold text-[var(--violet-bright)] flex items-center gap-0.5 hover:gap-1.5 transition-all">
-                    See All
-                    <ChevronDown className="w-3.5 h-3.5 -rotate-90" />
-                  </button>
-                </div>
-                {/* Horizontal Scrollable Carousel with custom snap layout */}
-                <div className="overflow-x-auto scrollbar-none -mx-4 px-4 unique-snap-scroller">
-                  <div className="flex gap-4 pb-4">
-                    {events.slice(1, 10).map((event) => (
-                      <div key={event.id} className="w-[170px] sm:w-[220px] md:w-[240px] shrink-0">
-                        <EventCard event={event} />
+                      <div className="space-y-4 w-full">
+                        <div className="flex flex-wrap gap-4 text-xs">
+                          <div className="flex items-center gap-2 bg-white/5 border border-white/5 px-3 py-1.5 rounded-xl text-slate-200">
+                            <MapPin className="w-4 h-4 text-[var(--violet-bright)] animate-pulse" />
+                            <span className="font-bold">{featuredEvents[currentSlide].venue_name}</span>
+                          </div>
+                          <div className="flex items-center gap-2 bg-white/5 border border-white/5 px-3 py-1.5 rounded-xl text-slate-200">
+                            <span className="font-extrabold text-[var(--accent-green)]">₹{featuredEvents[currentSlide].price === 0 ? 'FREE' : `${featuredEvents[currentSlide].price}+`}</span>
+                          </div>
+                        </div>
+
+                        <GlowButton className="py-3 px-8 text-xs font-extrabold tracking-wider uppercase">
+                          View Event Details
+                        </GlowButton>
                       </div>
+                    </div>
+                  </motion.div>
+                </AnimatePresence>
+
+                {/* Left/Right Chevron manual controls (desktop only) */}
+                {featuredEvents.length > 1 && (
+                  <>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCurrentSlide((prev) => (prev === 0 ? featuredEvents.length - 1 : prev - 1));
+                      }}
+                      className="absolute left-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-black/60 border border-white/10 flex items-center justify-center text-white hover:bg-[var(--violet-primary)] hover:border-[var(--violet-bright)] active:scale-90 transition-all opacity-0 group-hover:opacity-100"
+                    >
+                      <ChevronLeft className="w-5 h-5" />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCurrentSlide((prev) => (prev + 1) % featuredEvents.length);
+                      }}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-black/60 border border-white/10 flex items-center justify-center text-white hover:bg-[var(--violet-primary)] hover:border-[var(--violet-bright)] active:scale-90 transition-all opacity-0 group-hover:opacity-100"
+                    >
+                      <ChevronRight className="w-5 h-5" />
+                    </button>
+                  </>
+                )}
+
+                {/* Page dots indicators */}
+                {featuredEvents.length > 1 && (
+                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex gap-2">
+                    {featuredEvents.map((_, idx) => (
+                      <button
+                        key={idx}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCurrentSlide(idx);
+                        }}
+                        className={`w-2 h-2 rounded-full transition-all duration-300 focus:outline-none ${
+                          currentSlide === idx 
+                            ? 'bg-[var(--violet-bright)] w-6 shadow-[0_0_8px_var(--violet-bright)]' 
+                            : 'bg-white/30 hover:bg-white/50'
+                        }`}
+                      />
                     ))}
                   </div>
-                </div>
+                )}
               </section>
             )}
 

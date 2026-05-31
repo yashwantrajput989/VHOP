@@ -27,19 +27,19 @@ export const EventCard: React.FC<EventCardProps> = ({ event }) => {
       onClick={() => navigate(`/events/${event.id}`)}
       className="group cursor-pointer space-y-2 md:space-y-4 w-full min-w-0"
     >
-      <div className="relative aspect-[4/3] overflow-hidden rounded-[1.5rem] md:rounded-[2rem] border border-white/5 bg-black/40 transition-all duration-500 group-hover:border-[var(--violet-bright)]/30 group-hover:shadow-glow flex items-center justify-center">
-        {/* Background Blurred Underlay for zero truncation visual bleed */}
+      <div className="relative aspect-[4/5] overflow-hidden rounded-[1.5rem] md:rounded-[2rem] border border-white/5 bg-black/40 transition-all duration-500 group-hover:border-[var(--violet-bright)]/30 group-hover:shadow-glow flex items-center justify-center">
+        {/* Background Blurred Underlay for depth */}
         <img 
           src={getImageUrl(event.cover_image)} 
           alt=""
           className="absolute inset-0 w-full h-full object-cover blur-xl opacity-30 scale-110 pointer-events-none"
         />
 
-        {/* Foreground High-Fidelity Contained Flyer (Zero Truncation) */}
+        {/* Foreground High-Fidelity flyer in portrait vertical aspect ratio */}
         <motion.img 
           src={getImageUrl(event.cover_image)} 
           alt={event.title}
-          className="relative z-10 w-full h-full object-contain transition-transform duration-700 group-hover:scale-102"
+          className="relative z-10 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
         />
         
         {/* Date Overlay - Simplified */}

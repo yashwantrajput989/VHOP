@@ -5,6 +5,7 @@ import { GlowButton } from '../ui/GlowButton';
 import { AlertCircle, Smartphone, Calendar, MapPin, Award, CheckCircle, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { API_BASE_URL } from '../../config';
+import { useLocation } from 'react-router-dom';
 
 export const isProfileComplete = (user: any): boolean => {
   return !!(user && user.full_name && user.email && user.phone && user.birthday && user.gender);
@@ -20,6 +21,17 @@ export const ProfileCompletionBanner: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
   const [error, setError] = useState('');
+
+  const location = useLocation();
+
+  React.useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('complete') === 'true' && user && !isProfileComplete(user)) {
+      setIsOpen(true);
+      // Clean up parameter
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, [location, user]);
 
   if (!user || isProfileComplete(user)) return null;
 

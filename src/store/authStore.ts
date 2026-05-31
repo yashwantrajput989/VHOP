@@ -76,7 +76,7 @@ interface AuthState {
   setLoading: (loading: boolean) => void;
   loginWithGoogle: (email?: string) => Promise<UserProfile>;
   loginWithEmail: (email: string, password: string) => Promise<UserProfile>;
-  registerWithEmail: (email: string, password: string, fullName: string) => Promise<UserProfile>;
+  registerWithEmail: (email: string, password: string, fullName: string, referralCode?: string) => Promise<UserProfile>;
   loginAdmin: (email: string, password: string, role: 'admin' | 'superadmin') => Promise<void>;
   logout: () => Promise<void>;
   initialize: () => Promise<void>;
@@ -168,10 +168,10 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      registerWithEmail: async (email, password, fullName) => {
+      registerWithEmail: async (email, password, fullName, referralCode) => {
         set({ isLoading: true });
         try {
-          const referredBy = localStorage.getItem('referred_by_code');
+          const referredBy = referralCode || localStorage.getItem('referred_by_code');
           const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
