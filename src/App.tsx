@@ -19,6 +19,9 @@ import { AdminLogin } from './pages/admin/AdminLogin';
 
 import { EventDetails } from './pages/user/EventDetails';
 import { Dashboard } from './pages/user/Dashboard';
+import { ContactUs } from './pages/user/ContactUs';
+import { TermsConditions } from './pages/user/TermsConditions';
+import { RefundsCancellations } from './pages/user/RefundsCancellations';
 
 import { useAuthStore } from './store/authStore';
 import { useEffect } from 'react';
@@ -103,6 +106,9 @@ function App() {
             <Route path="/social" element={<Social />} />
             <Route path="/community" element={<Community />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/contact-us" element={<ContactUs />} />
+            <Route path="/terms-conditions" element={<TermsConditions />} />
+            <Route path="/refunds-cancellations" element={<RefundsCancellations />} />
 
             {/* Admin Routes */}
             {(isTargetAdmin || !isNative) && (

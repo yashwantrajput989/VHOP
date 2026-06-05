@@ -108,6 +108,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ isAdmin = false }) => {
           </button>
         </div>
       )}
+
+      {/* Policies Footer for Payment Whitelisting */}
+      <div className="px-6 py-4 border-t border-white/5 text-[10px] text-[var(--text-muted)] flex flex-wrap gap-x-2 gap-y-1 justify-center shrink-0">
+        <NavLink to="/contact-us" className={({ isActive }) => cn("hover:text-white hover:underline transition-colors", isActive && "text-[var(--violet-bright)] font-bold")}>Contact Us</NavLink>
+        <span>•</span>
+        <NavLink to="/terms-conditions" className={({ isActive }) => cn("hover:text-white hover:underline transition-colors", isActive && "text-[var(--violet-bright)] font-bold")}>Terms & Conditions</NavLink>
+        <span>•</span>
+        <NavLink to="/refunds-cancellations" className={({ isActive }) => cn("hover:text-white hover:underline transition-colors", isActive && "text-[var(--violet-bright)] font-bold")}>Refunds & Cancellations</NavLink>
+      </div>
     </aside>
   );
 };

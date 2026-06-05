@@ -19,7 +19,7 @@ interface EventCardProps {
 }
 
 export const EventCard: React.FC<EventCardProps> = ({ event }) => {
-  const date = new Date(event.start_date);
+  const date = new Date(typeof event.start_date === 'string' ? event.start_date.replace(' ', 'T') : event.start_date);
   const navigate = useNavigate();
 
   return (

@@ -53,9 +53,9 @@ export const Profile: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Check if file is a JPEG/JPG image
-    if (!['image/jpeg', 'image/jpg'].includes(file.type)) {
-      setEditError('Only JPEG/JPG files are accepted.');
+    // Check if file is a valid image
+    if (!file.type.startsWith('image/')) {
+      setEditError('Only image files (JPEG, PNG, WebP, etc.) are accepted.');
       return;
     }
 
@@ -229,14 +229,14 @@ export const Profile: React.FC = () => {
               eventTitle: dbTicket.event_title || 'Event',
               venueName: dbTicket.venue_name || 'Venue',
               city: dbTicket.city || 'City',
-              startDate: dbTicket.start_date || new Date().toISOString(),
+              startDate: dbTicket.start_date ? dbTicket.start_date.replace(' ', 'T') : new Date().toISOString(),
               coverImage: dbTicket.cover_image || '',
               ticketName: dbTicket.ticket_name,
               price: dbTicket.price,
               quantity: dbTicket.quantity,
               bookingId: dbTicket.booking_id || dbTicket.id,
               qrCode: dbTicket.qr_code || `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${dbTicket.id}`,
-              bookedAt: dbTicket.booked_at || new Date().toISOString(),
+              bookedAt: dbTicket.booked_at ? dbTicket.booked_at.replace(' ', 'T') : new Date().toISOString(),
               guests: typeof dbTicket.guests === 'string' ? JSON.parse(dbTicket.guests) : (dbTicket.guests || []),
               googleMapsUrl: dbTicket.google_maps_url || undefined
             });

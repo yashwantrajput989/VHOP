@@ -10,6 +10,24 @@ import { API_BASE_URL, getImageUrl } from '../../config';
 import { AdminLogin } from './AdminLogin';
 import { ImageCropper } from '../../components/profile/ImageCropper';
 
+const formatToDateTimeLocal = (dateStr: string | null | undefined): string => {
+  if (!dateStr) return '';
+  try {
+    const formattedStr = dateStr.includes(' ') ? dateStr.replace(' ', 'T') : dateStr;
+    const d = new Date(formattedStr);
+    if (isNaN(d.getTime())) return '';
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  } catch (error) {
+    console.error('Error formatting date:', error);
+    return '';
+  }
+};
+
 export const CreateEvent: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -85,7 +103,7 @@ export const CreateEvent: React.FC = () => {
               city: eventData.city,
               venue_name: eventData.venue_name || '',
               cover_image: eventData.cover_image || '',
-              start_date: eventData.start_date ? new Date(eventData.start_date).toISOString().slice(0, 16) : '',
+              start_date: formatToDateTimeLocal(eventData.start_date),
               total_tickets: eventData.total_tickets?.toString() || '100',
               ticket_types: eventData.ticket_types || [],
               google_maps_url: eventData.google_maps_url || '',
@@ -131,7 +149,14 @@ export const CreateEvent: React.FC = () => {
       price: parseFloat(formData.price) || 0,
       total_tickets: parseInt(formData.total_tickets) || 100,
       status: id ? formData.status : (isSuperAdmin ? 'published' : 'draft'),
-      start_date: new Date(formData.start_date).toISOString(),
+      start_date: (() => {
+        try {
+          const d = new Date(formData.start_date);
+          return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+        } catch {
+          return new Date().toISOString();
+        }
+      })(),
       ticket_types: formData.ticket_types.map((t: any) => ({
         ...t,
         id: t.id || `t-${Math.random().toString(36).substring(2, 9)}`,

@@ -116,7 +116,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, eve
         eventTitle: event.title,
         venueName: event.venue_name,
         city: event.city,
-        startDate: event.start_date,
+        startDate: typeof event.start_date === 'string' ? event.start_date.replace(' ', 'T') : event.start_date,
         coverImage: event.cover_image,
         ticketName: ticket.name,
         price: ticket.price,

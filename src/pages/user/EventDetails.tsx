@@ -123,7 +123,7 @@ export const EventDetails: React.FC = () => {
               {/* Quick details strip */}
               <div className="flex flex-wrap justify-center md:justify-start gap-3 mt-auto">
                 <span className="text-[10px] font-extrabold bg-[var(--violet-primary)]/20 border border-[var(--violet-primary)]/40 text-[var(--violet-bright)] px-3 py-1.5 rounded-xl">
-                  📅 {new Date(event.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                  📅 {new Date(typeof event.start_date === 'string' ? event.start_date.replace(' ', 'T') : event.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                 </span>
                 <span className="text-[10px] font-extrabold bg-[var(--accent-green)]/20 border border-[var(--accent-green)]/40 text-[var(--accent-green)] px-3 py-1.5 rounded-xl">
                   ₹{event.price === 0 ? 'FREE' : `${event.price}+`}
@@ -131,7 +131,7 @@ export const EventDetails: React.FC = () => {
               </div>
             </div>
           </motion.div>
-
+ 
           <GlassCard className="p-6 md:p-8">
             <h3 className="text-xl font-display font-bold mb-4">About this Event</h3>
             <p className="text-[var(--text-secondary)] leading-relaxed text-base md:text-lg">
@@ -143,7 +143,7 @@ export const EventDetails: React.FC = () => {
                 <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest font-bold">Date</span>
                 <div className="flex items-center gap-2 text-white">
                   <Calendar className="w-3.5 h-3.5 text-[var(--violet-bright)]" />
-                  <span className="text-sm md:text-base font-bold">{new Date(event.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+                  <span className="text-sm md:text-base font-bold">{new Date(typeof event.start_date === 'string' ? event.start_date.replace(' ', 'T') : event.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
                 </div>
               </div>
               <div className="space-y-1">
