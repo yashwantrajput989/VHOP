@@ -182,6 +182,58 @@ const pool = mysql.createPool({
         `);
         console.log('🟢 Contact messages table verified/created.');
 
+        // 5e. Verify/Create coupons table if not exists
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS coupons (
+                code VARCHAR(50) PRIMARY KEY,
+                discount_type ENUM('fixed', 'percentage', 'fixed_price') NOT NULL,
+                discount_value DECIMAL(10, 2) NOT NULL,
+                min_purchase DECIMAL(10, 2) DEFAULT 0.00,
+                active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log('🟢 Coupons table verified/created.');
+
+        // Seed default coupons (using INSERT IGNORE for safety in production)
+        await pool.execute(`
+            INSERT IGNORE INTO coupons (code, discount_type, discount_value, min_purchase, active)
+            VALUES 
+            ('RUPEE1', 'fixed_price', 1.00, 0.00, true),
+            ('SAVE99', 'fixed', 99.00, 100.00, true)
+        `);
+        console.log('🟢 Default coupons seeded/verified.');
+
+        // 5f. Verify/Create system_settings table if not exists
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS system_settings (
+                setting_key VARCHAR(100) PRIMARY KEY,
+                setting_value VARCHAR(255) NOT NULL
+            )
+        `);
+        console.log('🟢 System settings table verified/created.');
+
+        // Seed default system fees (using INSERT IGNORE for safety in production)
+        await pool.execute(`
+            INSERT IGNORE INTO system_settings (setting_key, setting_value)
+            VALUES 
+            ('platform_fee', '0'),
+            ('gst_rate', '0'),
+            ('high_demand_fee', '0')
+        `);
+        console.log('🟢 Default fee settings seeded/verified.');
+
+        // 5g. Verify/Create genre_fees table if not exists
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS genre_fees (
+                genre VARCHAR(100) PRIMARY KEY,
+                price DECIMAL(10, 2) NOT NULL DEFAULT 0.00
+            )
+        `);
+        console.log('🟢 Genre fees table verified/created.');
+
+
+
         // 6. Check existing columns in profiles table (database-agnostic method)
         const [columns] = await pool.execute('DESCRIBE profiles');
         const existingColumns = columns.map(c => c.Field.toLowerCase());
@@ -267,6 +319,27 @@ const pool = mysql.createPool({
 
         await addEventColumnIfNeeded('google_maps_url', 'TEXT NULL');
         await addEventColumnIfNeeded('artists', 'JSON NULL');
+
+        // Verify required columns in bookings
+        const [bookingColumns] = await pool.execute('DESCRIBE bookings');
+        const existingBookingColumns = bookingColumns.map(c => c.Field.toLowerCase());
+
+        const addBookingColumnIfNeeded = async (columnName, columnDefinition) => {
+            if (!existingBookingColumns.includes(columnName.toLowerCase())) {
+                try {
+                    await pool.execute(`ALTER TABLE bookings ADD COLUMN ${columnName} ${columnDefinition}`);
+                    console.log(`🟢 Added missing column: bookings.${columnName}`);
+                } catch (alterErr) {
+                    console.error(`🔴 Error adding bookings.${columnName} column:`, alterErr);
+                }
+            } else {
+                console.log(`🟢 Column bookings.${columnName} is verified/ready.`);
+            }
+        };
+
+        await addBookingColumnIfNeeded('coupon_code', 'VARCHAR(50) NULL');
+        await addBookingColumnIfNeeded('discount_amount', 'DECIMAL(10, 2) DEFAULT 0.00');
+
 
         // 7. Seed default admin profile (using INSERT IGNORE for safety in production)
         await pool.execute(`
@@ -1245,7 +1318,7 @@ app.post('/api/bookings', async (req, res) => {
         try {
             // 1. Insert Booking with pending status
             await connection.execute(
-                'INSERT INTO bookings (id, event_id, user_id, quantity, total_amount, ticket_name, price, payment_id, payment_status, booking_status, booking_id, qr_code, guests) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                'INSERT INTO bookings (id, event_id, user_id, quantity, total_amount, ticket_name, price, payment_id, payment_status, booking_status, booking_id, qr_code, guests, coupon_code, discount_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 [
                     id, 
                     booking.event_id, 
@@ -1259,7 +1332,9 @@ app.post('/api/bookings', async (req, res) => {
                     'pending', 
                     booking.booking_id, 
                     booking.qr_code, 
-                    JSON.stringify(booking.guests || [])
+                    JSON.stringify(booking.guests || []),
+                    booking.coupon_code || null,
+                    booking.discount_amount || 0.00
                 ]
             );
 
@@ -2181,8 +2256,208 @@ app.post('/api/payments/webhook', async (req, res) => {
     }
 });
 
+
+// --- COUPONS SYSTEM ENDPOINTS ---
+
+// Apply Coupon (public checkout)
+app.post('/api/coupons/apply', async (req, res) => {
+    const { code, subtotal } = req.body;
+    try {
+        if (!code) {
+            return res.status(400).json({ error: 'Coupon code is required' });
+        }
+        
+        const [rows] = await pool.execute(
+            'SELECT * FROM coupons WHERE code = ? AND active = true',
+            [code.toUpperCase()]
+        );
+        
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Invalid or expired coupon code' });
+        }
+        
+        const coupon = rows[0];
+        
+        if (Number(subtotal) < Number(coupon.min_purchase)) {
+            return res.status(400).json({ 
+                error: `This coupon requires a minimum purchase of ₹${coupon.min_purchase}` 
+            });
+        }
+        
+        let discount = 0;
+        if (coupon.discount_type === 'fixed_price') {
+            // e.g. ticket for 1 rupee
+            discount = Number(subtotal) - Number(coupon.discount_value);
+            if (discount < 0) discount = 0; // cannot discount more than subtotal
+        } else if (coupon.discount_type === 'fixed') {
+            discount = Number(coupon.discount_value);
+            if (discount > Number(subtotal)) {
+                discount = Number(subtotal);
+            }
+        } else if (coupon.discount_type === 'percentage') {
+            discount = Number(subtotal) * (Number(coupon.discount_value) / 100);
+            if (discount > Number(subtotal)) {
+                discount = Number(subtotal);
+            }
+        }
+        
+        res.status(200).json({
+            code: coupon.code,
+            discount_type: coupon.discount_type,
+            discount_value: Number(coupon.discount_value),
+            discount: Number(discount.toFixed(2))
+        });
+    } catch (error) {
+        console.error('Error applying coupon:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Admin: Get all coupons
+app.get('/api/admin/coupons', async (req, res) => {
+    try {
+        const [rows] = await pool.execute('SELECT * FROM coupons ORDER BY created_at DESC');
+        res.status(200).json(rows);
+    } catch (error) {
+        console.error('Error fetching admin coupons:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Admin: Create/update coupon
+app.post('/api/admin/coupons', async (req, res) => {
+    const { code, discount_type, discount_value, min_purchase, active } = req.body;
+    try {
+        if (!code || !discount_type || discount_value === undefined) {
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+        
+        const upperCode = code.toUpperCase().replace(/\s/g, '');
+        
+        // Insert or update on duplicate key
+        await pool.execute(
+            `INSERT INTO coupons (code, discount_type, discount_value, min_purchase, active) 
+             VALUES (?, ?, ?, ?, ?) 
+             ON DUPLICATE KEY UPDATE 
+             discount_type = VALUES(discount_type), 
+             discount_value = VALUES(discount_value), 
+             min_purchase = VALUES(min_purchase), 
+             active = VALUES(active)`,
+            [upperCode, discount_type, Number(discount_value), Number(min_purchase || 0), active !== false]
+        );
+        
+        res.status(200).json({ message: 'Coupon saved successfully', code: upperCode });
+    } catch (error) {
+        console.error('Error saving coupon:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Admin: Delete coupon
+app.delete('/api/admin/coupons/:code', async (req, res) => {
+    const { code } = req.params;
+    try {
+        await pool.execute('DELETE FROM coupons WHERE code = ?', [code.toUpperCase()]);
+        res.status(200).json({ message: 'Coupon deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting coupon:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// --- DYNAMIC SYSTEM FEES ENDPOINTS ---
+
+// Fetch all system settings and genre fees
+app.get('/api/settings/fees', async (req, res) => {
+    try {
+        const [settingsRows] = await pool.execute('SELECT * FROM system_settings');
+        const [genreRows] = await pool.execute('SELECT * FROM genre_fees');
+        
+        const fees = {
+            platform_fee: 0.00,
+            gst_rate: 0.00,
+            high_demand_fee: 0.00,
+            genre_fees: genreRows
+        };
+        
+        settingsRows.forEach(row => {
+            if (row.setting_key === 'platform_fee') fees.platform_fee = Number(row.setting_value) || 0;
+            if (row.setting_key === 'gst_rate') fees.gst_rate = Number(row.setting_value) || 0;
+            if (row.setting_key === 'high_demand_fee') fees.high_demand_fee = Number(row.setting_value) || 0;
+        });
+        
+        res.status(200).json(fees);
+    } catch (error) {
+        console.error('Error fetching system fees:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Update global fee settings
+app.post('/api/admin/settings/fees', async (req, res) => {
+    const { platform_fee, gst_rate, high_demand_fee } = req.body;
+    try {
+        if (platform_fee !== undefined) {
+            await pool.execute(
+                'INSERT INTO system_settings (setting_key, setting_value) VALUES (\'platform_fee\', ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)',
+                [platform_fee.toString()]
+            );
+        }
+        if (gst_rate !== undefined) {
+            await pool.execute(
+                'INSERT INTO system_settings (setting_key, setting_value) VALUES (\'gst_rate\', ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)',
+                [gst_rate.toString()]
+            );
+        }
+        if (high_demand_fee !== undefined) {
+            await pool.execute(
+                'INSERT INTO system_settings (setting_key, setting_value) VALUES (\'high_demand_fee\', ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)',
+                [high_demand_fee.toString()]
+            );
+        }
+        
+        res.status(200).json({ message: 'Global fee settings updated successfully' });
+    } catch (error) {
+        console.error('Error updating system fees:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Create/Update genre fee mapping
+app.post('/api/admin/settings/genre-fees', async (req, res) => {
+    const { genre, price } = req.body;
+    try {
+        if (!genre || price === undefined) {
+            return res.status(400).json({ error: 'Missing genre or price' });
+        }
+        
+        await pool.execute(
+            'INSERT INTO genre_fees (genre, price) VALUES (?, ?) ON DUPLICATE KEY UPDATE price = VALUES(price)',
+            [genre, Number(price)]
+        );
+        
+        res.status(200).json({ message: 'Genre fee saved successfully' });
+    } catch (error) {
+        console.error('Error saving genre fee:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Delete a genre fee mapping
+app.delete('/api/admin/settings/genre-fees/:genre', async (req, res) => {
+    const { genre } = req.params;
+    try {
+        await pool.execute('DELETE FROM genre_fees WHERE genre = ?', [genre]);
+        res.status(200).json({ message: 'Genre fee deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting genre fee:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // --- STATUS & LOGS CONSOLE ---
 app.get('/', async (req, res) => {
+
     let dbStatus = '🟢 Connected';
     let dbError = null;
     try {

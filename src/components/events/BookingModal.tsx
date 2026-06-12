@@ -35,17 +35,103 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, eve
   
   const ticket = event.ticket_types?.find((t: any) => t.id === selectedTicketId) || event.ticket_types?.[0];
   
+  const [couponCode, setCouponCode] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
+  const [isApplying, setIsApplying] = useState(false);
+  const [couponError, setCouponError] = useState('');
+
+  const [feeSettings, setFeeSettings] = useState<{
+    platform_fee: number;
+    gst_rate: number;
+    high_demand_fee: number;
+    genre_fees: { genre: string; price: number }[];
+  }>({
+    platform_fee: 0,
+    gst_rate: 0,
+    high_demand_fee: 0,
+    genre_fees: []
+  });
+
   const subtotal = (ticket?.price || 0) * quantity;
-  const platformFee = 49;
-  const totalAmount = subtotal + platformFee;
+  
+  // Resolve matching genre fee
+  const genreFee = feeSettings.genre_fees.find(
+    (gf) => gf.genre.toLowerCase() === (event.category || '').toLowerCase()
+  );
+  const genreFeeValue = genreFee ? Number(genreFee.price) : 0;
+  const totalGenreFee = genreFeeValue * quantity;
+
+  const discountAmount = appliedCoupon ? appliedCoupon.discount : 0;
+  const gstAmount = Math.max(0, subtotal - discountAmount) * (feeSettings.gst_rate / 100);
+  const highDemandFee = feeSettings.high_demand_fee * quantity;
+  const platformFee = feeSettings.platform_fee;
+
+  const totalAmount = Number((Math.max(0, subtotal - discountAmount) + platformFee + gstAmount + highDemandFee + totalGenreFee).toFixed(2));
 
   useEffect(() => {
     if (!isOpen) {
       setStep('details');
       setQuantity(1);
       setGuests([{ name: '', age: '' }]);
+      setCouponCode('');
+      setAppliedCoupon(null);
+      setCouponError('');
+    } else {
+      // Fetch dynamic settings on modal open
+      fetch(`${API_BASE_URL}/api/settings/fees`)
+        .then(res => res.json())
+        .then(data => {
+          if (data) {
+            setFeeSettings({
+              platform_fee: Number(data.platform_fee) || 0,
+              gst_rate: Number(data.gst_rate) || 0,
+              high_demand_fee: Number(data.high_demand_fee) || 0,
+              genre_fees: data.genre_fees || []
+            });
+          }
+        })
+        .catch(err => console.error('Failed to fetch fee settings:', err));
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    setAppliedCoupon(null);
+    setCouponError('');
+  }, [quantity]);
+
+  const handleApplyCoupon = async () => {
+    if (!couponCode.trim()) return;
+    setIsApplying(true);
+    setCouponError('');
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/coupons/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: couponCode,
+          subtotal: subtotal
+        })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setAppliedCoupon(data);
+      } else {
+        setCouponError(data.error || 'Failed to apply coupon');
+        setAppliedCoupon(null);
+      }
+    } catch (err) {
+      console.error('Apply coupon error:', err);
+      setCouponError('Network error. Please try again.');
+    } finally {
+      setIsApplying(false);
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponCode('');
+    setCouponError('');
+  };
 
   const updateGuestDetail = (index: number, field: keyof GuestDetail, value: string) => {
     const newGuests = [...guests];
@@ -100,7 +186,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, eve
         booking_id: bookingId,
         qr_code: qrCode,
         booked_at: new Date().toISOString(),
-        guests: guests
+        guests: guests,
+        coupon_code: appliedCoupon ? appliedCoupon.code : null,
+        discount_amount: discountAmount
       };
 
       // Save to MySQL Backend as pending and obtain Cashfree order session ID
@@ -253,15 +341,82 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, eve
                       </div>
                     </div>
 
+                    {/* Coupon Code Section */}
+                    <div className="pt-4 border-t border-white/5 space-y-2">
+                      <span className="text-white font-bold text-xs">Have a coupon?</span>
+                      {!appliedCoupon ? (
+                        <div className="space-y-1.5">
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              placeholder="Enter coupon code"
+                              value={couponCode}
+                              onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                              className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-xs focus:border-[var(--violet-bright)] outline-none transition-all text-white font-mono"
+                            />
+                            <button
+                              onClick={handleApplyCoupon}
+                              disabled={isApplying || !couponCode.trim()}
+                              className="px-4 py-2 rounded-xl bg-[var(--violet-primary)] text-white text-xs font-bold hover:bg-[var(--violet-bright)] transition-colors disabled:opacity-50"
+                            >
+                              {isApplying ? 'Applying...' : 'Apply'}
+                            </button>
+                          </div>
+                          {couponError && (
+                            <p className="text-[10px] text-red-400 font-bold">{couponError}</p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between p-3 rounded-xl bg-green-500/10 border border-green-500/20">
+                          <div>
+                            <p className="text-xs font-mono font-bold text-green-400">Coupon "{appliedCoupon.code}" Applied</p>
+                            <p className="text-[10px] text-white/70">Saved ₹{appliedCoupon.discount}!</p>
+                          </div>
+                          <button
+                            onClick={handleRemoveCoupon}
+                            className="text-xs text-[var(--text-muted)] hover:text-white font-bold transition-colors"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
                     <div className="space-y-3 pt-4 border-t border-white/5">
                       <div className="flex justify-between text-sm">
                         <span className="text-[var(--text-secondary)]">Subtotal ({quantity} x ₹{ticket.price})</span>
                         <span className="text-white">₹{subtotal}</span>
                       </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-[var(--text-secondary)]">Platform Fee</span>
-                        <span className="text-white">₹{platformFee}</span>
-                      </div>
+                      {appliedCoupon && (
+                        <div className="flex justify-between text-sm text-green-400">
+                          <span>Coupon Discount ({appliedCoupon.code})</span>
+                          <span>-₹{appliedCoupon.discount}</span>
+                        </div>
+                      )}
+                      {platformFee > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-[var(--text-secondary)]">Platform Fee</span>
+                          <span className="text-white">₹{platformFee}</span>
+                        </div>
+                      )}
+                      {gstAmount > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-[var(--text-secondary)]">GST ({feeSettings.gst_rate}%)</span>
+                          <span className="text-white">₹{gstAmount.toFixed(2)}</span>
+                        </div>
+                      )}
+                      {highDemandFee > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-[var(--text-secondary)]">High Demand Fee</span>
+                          <span className="text-white">₹{highDemandFee}</span>
+                        </div>
+                      )}
+                      {totalGenreFee > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-[var(--text-secondary)]">{event.category} Fee</span>
+                          <span className="text-white">₹{totalGenreFee}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between text-xl font-bold pt-4 text-white">
                         <span>Total Payable</span>
                         <span className="text-gradient">₹{totalAmount}</span>

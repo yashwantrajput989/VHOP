@@ -17,7 +17,8 @@ import {
   Send,
   RefreshCw,
   MessageSquare,
-  Pencil
+  Pencil,
+  Ticket
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -26,7 +27,7 @@ import { AdminLogin } from '../admin/AdminLogin';
 import { API_BASE_URL } from '../../config';
 import { useLocation, useNavigate } from 'react-router-dom';
 
-type TabType = 'dashboard' | 'events' | 'partners' | 'issues';
+type TabType = 'dashboard' | 'events' | 'partners' | 'issues' | 'coupons' | 'fees';
 
 export const SuperDashboard: React.FC = () => {
   const location = useLocation();
@@ -61,6 +62,190 @@ export const SuperDashboard: React.FC = () => {
     city: 'Visakhapatnam'
   });
   const [createdPartnerCreds, setCreatedPartnerCreds] = useState<any>(null);
+
+  // Coupons state
+  const [coupons, setCoupons] = useState<any[]>([]);
+  const [isLoadingCoupons, setIsLoadingCoupons] = useState(false);
+  const [newCoupon, setNewCoupon] = useState({
+    code: '',
+    discount_type: 'fixed',
+    discount_value: '',
+    min_purchase: '0',
+    active: true
+  });
+
+  const fetchCoupons = async () => {
+    setIsLoadingCoupons(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/coupons`);
+      if (response.ok) {
+        const data = await response.json();
+        setCoupons(data);
+      }
+    } catch (err) {
+      console.error('Error fetching coupons:', err);
+    } finally {
+      setIsLoadingCoupons(false);
+    }
+  };
+
+  const handleAddCouponSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/coupons`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: newCoupon.code,
+          discount_type: newCoupon.discount_type,
+          discount_value: Number(newCoupon.discount_value),
+          min_purchase: Number(newCoupon.min_purchase),
+          active: newCoupon.active
+        })
+      });
+      if (response.ok) {
+        setNewCoupon({
+          code: '',
+          discount_type: 'fixed',
+          discount_value: '',
+          min_purchase: '0',
+          active: true
+        });
+        fetchCoupons();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to add coupon');
+      }
+    } catch (err) {
+      console.error('Add coupon error:', err);
+      alert('Network error. Please try again.');
+    }
+  };
+
+  const handleDeleteCoupon = async (code: string) => {
+    if (!window.confirm(`Delete coupon code "${code}"?`)) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/coupons/${code}`, {
+        method: 'DELETE'
+      });
+      if (response.ok) {
+        fetchCoupons();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to delete coupon');
+      }
+    } catch (err) {
+      console.error('Delete coupon error:', err);
+      alert('Network error. Please try again.');
+    }
+  };
+
+  // Fee settings state
+  const [fees, setFees] = useState({
+    platform_fee: 0,
+    gst_rate: 0,
+    high_demand_fee: 0,
+    genre_fees: [] as { genre: string; price: number }[]
+  });
+  const [isSavingFees, setIsSavingFees] = useState(false);
+  const [isLoadingFees, setIsLoadingFees] = useState(false);
+
+  // New genre fee form state
+  const [newGenreFee, setNewGenreFee] = useState({
+    genre: '',
+    price: ''
+  });
+
+  const fetchFees = async () => {
+    setIsLoadingFees(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/settings/fees`);
+      if (response.ok) {
+        const data = await response.json();
+        setFees({
+          platform_fee: Number(data.platform_fee) || 0,
+          gst_rate: Number(data.gst_rate) || 0,
+          high_demand_fee: Number(data.high_demand_fee) || 0,
+          genre_fees: data.genre_fees || []
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching fees:', err);
+    } finally {
+      setIsLoadingFees(false);
+    }
+  };
+
+  const handleUpdateGlobalFees = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingFees(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/settings/fees`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          platform_fee: Number(fees.platform_fee),
+          gst_rate: Number(fees.gst_rate),
+          high_demand_fee: Number(fees.high_demand_fee)
+        })
+      });
+      if (response.ok) {
+        alert('Global fee settings updated successfully!');
+        fetchFees();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to update fees');
+      }
+    } catch (err) {
+      console.error('Update fees error:', err);
+      alert('Network error. Please try again.');
+    } finally {
+      setIsSavingFees(false);
+    }
+  };
+
+  const handleAddGenreFee = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newGenreFee.genre.trim() || newGenreFee.price === '') return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/settings/genre-fees`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          genre: newGenreFee.genre.trim(),
+          price: Number(newGenreFee.price)
+        })
+      });
+      if (response.ok) {
+        setNewGenreFee({ genre: '', price: '' });
+        fetchFees();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to save genre fee');
+      }
+    } catch (err) {
+      console.error('Add genre fee error:', err);
+      alert('Network error. Please try again.');
+    }
+  };
+
+  const handleDeleteGenreFee = async (genre: string) => {
+    if (!window.confirm(`Delete fee mapping for genre "${genre}"?`)) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/settings/genre-fees/${encodeURIComponent(genre)}`, {
+        method: 'DELETE'
+      });
+      if (response.ok) {
+        fetchFees();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to delete genre fee');
+      }
+    } catch (err) {
+      console.error('Delete genre fee error:', err);
+      alert('Network error. Please try again.');
+    }
+  };
 
   // Support chat state variables for Super Admin
   const [supportChats, setSupportChats] = useState<any[]>([]);
@@ -113,6 +298,12 @@ export const SuperDashboard: React.FC = () => {
     }
     if (activeTab === 'partners' && user && user.role === 'superadmin') {
       fetchPartnerApplications();
+    }
+    if (activeTab === 'coupons' && user && user.role === 'superadmin') {
+      fetchCoupons();
+    }
+    if (activeTab === 'fees' && user && user.role === 'superadmin') {
+      fetchFees();
     }
   }, [activeTab, user]);
 
@@ -260,6 +451,10 @@ export const SuperDashboard: React.FC = () => {
       setActiveTab('partners');
     } else if (location.pathname.endsWith('/issues')) {
       setActiveTab('issues');
+    } else if (location.pathname.endsWith('/coupons')) {
+      setActiveTab('coupons');
+    } else if (location.pathname.endsWith('/fees')) {
+      setActiveTab('fees');
     } else {
       setActiveTab('dashboard');
     }
@@ -419,6 +614,8 @@ export const SuperDashboard: React.FC = () => {
             { id: 'events', label: `Events (${pendingEvents.length} Pending)`, icon: Calendar },
             { id: 'partners', label: 'Partners', icon: Building },
             { id: 'issues', label: 'Issues & Status', icon: AlertCircle },
+            { id: 'coupons', label: 'Coupons', icon: Ticket },
+            { id: 'fees', label: 'Fees Configurator', icon: IndianRupee },
           ].map(tab => (
             <button
               key={tab.id}
@@ -974,6 +1171,285 @@ export const SuperDashboard: React.FC = () => {
                   </div>
                 )}
               </GlassCard>
+            </motion.div>
+          )}
+
+          {activeTab === 'coupons' && (
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              className="space-y-8"
+            >
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Left Column: Create Coupon Form */}
+                <GlassCard className="p-8 border-[var(--violet-primary)]/20 h-fit">
+                  <h3 className="text-xl font-bold font-display text-white mb-6">Create New Coupon</h3>
+                  <form onSubmit={handleAddCouponSubmit} className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">Coupon Code</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. RUPEE1"
+                        required
+                        value={newCoupon.code}
+                        onChange={(e) => setNewCoupon({ ...newCoupon, code: e.target.value.toUpperCase().replace(/\s/g, '') })}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-[var(--violet-bright)] outline-none transition-all text-white font-mono"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">Discount Type</label>
+                      <select
+                        value={newCoupon.discount_type}
+                        onChange={(e) => setNewCoupon({ ...newCoupon, discount_type: e.target.value })}
+                        className="w-full bg-[#141122] border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-[var(--violet-bright)] outline-none transition-all text-white font-medium"
+                      >
+                        <option value="fixed_price">Fixed Ticket Price (e.g. ₹1 Ticket)</option>
+                        <option value="fixed">Fixed Discount (Rupees off)</option>
+                        <option value="percentage">Percentage Discount (% off)</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">Discount Value (₹ / %)</label>
+                      <input
+                        type="number"
+                        placeholder="Value (e.g. 1 or 99)"
+                        required
+                        value={newCoupon.discount_value}
+                        onChange={(e) => setNewCoupon({ ...newCoupon, discount_value: e.target.value })}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-[var(--violet-bright)] outline-none transition-all text-white"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">Minimum Purchase (₹)</label>
+                      <input
+                        type="number"
+                        placeholder="Min Purchase (e.g. 0)"
+                        required
+                        value={newCoupon.min_purchase}
+                        onChange={(e) => setNewCoupon({ ...newCoupon, min_purchase: e.target.value })}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-[var(--violet-bright)] outline-none transition-all text-white"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2">
+                      <input
+                        type="checkbox"
+                        id="couponActive"
+                        checked={newCoupon.active}
+                        onChange={(e) => setNewCoupon({ ...newCoupon, active: e.target.checked })}
+                        className="w-4 h-4 rounded border-white/10 accent-[var(--violet-bright)]"
+                      />
+                      <label htmlFor="couponActive" className="text-xs text-white font-bold cursor-pointer">Active / Enabled</label>
+                    </div>
+
+                    <GlowButton type="submit" className="w-full py-3 mt-4">
+                      Create Coupon
+                    </GlowButton>
+                  </form>
+                </GlassCard>
+
+                {/* Right Column: Coupons List */}
+                <GlassCard className="p-8 lg:col-span-2">
+                  <h3 className="text-xl font-bold font-display text-white mb-6">Manage Coupons</h3>
+                  
+                  {isLoadingCoupons ? (
+                    <div className="py-12 flex justify-center">
+                      <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[var(--violet-bright)]" />
+                    </div>
+                  ) : coupons.length === 0 ? (
+                    <div className="py-12 text-center text-[var(--text-muted)] text-sm">
+                      No coupons found.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left">
+                        <thead>
+                          <tr className="text-[var(--text-muted)] text-xs uppercase tracking-wider border-b border-[var(--border-subtle)]">
+                            <th className="pb-4 font-bold">Code</th>
+                            <th className="pb-4 font-bold">Type</th>
+                            <th className="pb-4 font-bold">Value</th>
+                            <th className="pb-4 font-bold">Min Purchase</th>
+                            <th className="pb-4 font-bold">Status</th>
+                            <th className="pb-4 font-bold text-right">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="text-sm">
+                          {coupons.map((c) => (
+                            <tr key={c.code} className="border-b border-[var(--border-subtle)]/50 hover:bg-white/5 transition-colors">
+                              <td className="py-4 font-mono font-bold text-white">{c.code}</td>
+                              <td className="py-4 text-[var(--text-secondary)] font-medium">
+                                {c.discount_type === 'fixed_price' ? 'Fixed Ticket Price' : c.discount_type === 'fixed' ? 'Rupees Off' : 'Percent Off'}
+                              </td>
+                              <td className="py-4 font-bold text-[var(--violet-bright)]">
+                                {c.discount_type === 'percentage' ? `${c.discount_value}%` : `₹${c.discount_value}`}
+                              </td>
+                              <td className="py-4 text-white">₹{c.min_purchase}</td>
+                              <td className="py-4">
+                                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                                  c.active 
+                                    ? 'bg-green-500/10 text-green-400 border-green-500/20' 
+                                    : 'bg-red-500/10 text-red-400 border-red-500/20'
+                                }`}>
+                                  {c.active ? 'Active' : 'Disabled'}
+                                </span>
+                              </td>
+                              <td className="py-4 text-right">
+                                <button
+                                  onClick={() => handleDeleteCoupon(c.code)}
+                                  className="p-2 rounded-lg bg-white/5 border border-white/10 hover:bg-red-500/10 hover:border-red-500/30 text-red-500 transition-all cursor-pointer"
+                                  title="Delete Coupon"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </GlassCard>
+              </div>
+            </motion.div>
+          )}
+
+          {activeTab === 'fees' && (
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              className="space-y-8"
+            >
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Global Fees Card */}
+                <GlassCard className="p-8 border-[var(--violet-primary)]/20 h-fit">
+                  <h3 className="text-xl font-bold font-display text-white mb-6">Global Fees Settings</h3>
+                  <form onSubmit={handleUpdateGlobalFees} className="space-y-5">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">GST Rate (%)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        required
+                        value={fees.gst_rate}
+                        onChange={(e) => setFees({ ...fees, gst_rate: Number(e.target.value) })}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-[var(--violet-bright)] outline-none transition-all text-white font-medium"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">Platform Fee (₹)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        required
+                        value={fees.platform_fee}
+                        onChange={(e) => setFees({ ...fees, platform_fee: Number(e.target.value) })}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-[var(--violet-bright)] outline-none transition-all text-white font-medium"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">High Demand Fee (₹ per ticket)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        required
+                        value={fees.high_demand_fee}
+                        onChange={(e) => setFees({ ...fees, high_demand_fee: Number(e.target.value) })}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-[var(--violet-bright)] outline-none transition-all text-white font-medium"
+                      />
+                    </div>
+
+                    <GlowButton type="submit" disabled={isSavingFees} className="w-full py-3 mt-4">
+                      {isSavingFees ? 'Saving settings...' : 'Save Fees Settings'}
+                    </GlowButton>
+                  </form>
+                </GlassCard>
+
+                {/* Genre Fees Column */}
+                <div className="lg:col-span-2 space-y-8">
+                  {/* Add Genre Fee */}
+                  <GlassCard className="p-8 border-[var(--violet-primary)]/20">
+                    <h3 className="text-xl font-bold font-display text-white mb-6">Add Genre Specific Fee</h3>
+                    <form onSubmit={handleAddGenreFee} className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">Genre / Category Name</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Music, Comedy, Art"
+                          required
+                          value={newGenreFee.genre}
+                          onChange={(e) => setNewGenreFee({ ...newGenreFee, genre: e.target.value })}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-[var(--violet-bright)] outline-none transition-all text-white"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">Extra Fee (₹ per ticket)</label>
+                        <input
+                          type="number"
+                          placeholder="e.g. 50"
+                          required
+                          value={newGenreFee.price}
+                          onChange={(e) => setNewGenreFee({ ...newGenreFee, price: e.target.value })}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-[var(--violet-bright)] outline-none transition-all text-white"
+                        />
+                      </div>
+                      <GlowButton type="submit" className="py-3.5">
+                        Add Genre Fee
+                      </GlowButton>
+                    </form>
+                  </GlassCard>
+
+                  {/* List Genre Fees */}
+                  <GlassCard className="p-8">
+                    <h3 className="text-xl font-bold font-display text-white mb-6">Genre Specific Fee Mappings</h3>
+                    
+                    {isLoadingFees ? (
+                      <div className="py-12 flex justify-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[var(--violet-bright)]" />
+                      </div>
+                    ) : fees.genre_fees.length === 0 ? (
+                      <div className="py-12 text-center text-[var(--text-muted)] text-sm">
+                        No genre-specific fee mappings found.
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                          <thead>
+                            <tr className="text-[var(--text-muted)] text-xs uppercase tracking-wider border-b border-[var(--border-subtle)]">
+                              <th className="pb-4 font-bold">Genre / Category</th>
+                              <th className="pb-4 font-bold">Extra Price per Ticket</th>
+                              <th className="pb-4 font-bold text-right">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="text-sm">
+                            {fees.genre_fees.map((gf) => (
+                              <tr key={gf.genre} className="border-b border-[var(--border-subtle)]/50 hover:bg-white/5 transition-colors">
+                                <td className="py-4 font-bold text-white">{gf.genre}</td>
+                                <td className="py-4 font-bold text-[var(--violet-bright)]">₹{Number(gf.price).toFixed(2)}</td>
+                                <td className="py-4 text-right">
+                                  <button
+                                    onClick={() => handleDeleteGenreFee(gf.genre)}
+                                    className="p-2 rounded-lg bg-white/5 border border-white/10 hover:bg-red-500/10 hover:border-red-500/30 text-red-500 transition-all cursor-pointer"
+                                    title="Delete Mapping"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </GlassCard>
+                </div>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
