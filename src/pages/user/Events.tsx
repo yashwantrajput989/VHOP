@@ -208,7 +208,7 @@ export const Events: React.FC = () => {
               <section 
                 onMouseEnter={() => setIsHovered(true)}
                 onMouseLeave={() => setIsHovered(false)}
-                className="relative overflow-hidden rounded-[2.5rem] border border-white/10 bg-slate-900/35 shadow-[0_20px_50px_rgba(0,0,0,0.65)] hover:border-[var(--violet-bright)]/30 transition-all duration-500 h-[500px] md:h-[450px]"
+                className="relative overflow-hidden rounded-[2.5rem] border border-white/10 bg-slate-900/35 shadow-[0_20px_50px_rgba(0,0,0,0.65)] hover:border-[var(--violet-bright)]/30 transition-all duration-500 h-[320px] md:h-[450px]"
               >
                 <AnimatePresence mode="wait">
                   <motion.div
@@ -231,7 +231,7 @@ export const Events: React.FC = () => {
                     </div>
 
                     {/* Left: Premium Contained Vertical Flyer */}
-                    <div className="relative z-10 w-full md:w-auto h-3/5 md:h-full aspect-[4/5] rounded-[1.8rem] overflow-hidden border border-white/10 shrink-0 mx-auto md:mx-0 shadow-[0_12px_32px_rgba(0,0,0,0.5)]">
+                    <div className="relative z-10 w-auto h-full aspect-[4/5] rounded-[1.8rem] overflow-hidden border border-white/10 shrink-0 mx-auto md:mx-0 shadow-[0_12px_32px_rgba(0,0,0,0.5)]">
                       <img
                         src={getImageUrl(featuredEvents[currentSlide].cover_image)}
                         alt={featuredEvents[currentSlide].title}

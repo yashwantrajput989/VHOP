@@ -1378,7 +1378,7 @@ app.post('/api/bookings', async (req, res) => {
                     customer_name: userName
                 },
                 order_meta: {
-                    return_url: `${req.headers.origin || 'http://localhost:5173'}/profile?payment_status=completed&order_id={order_id}`
+                    return_url: `${(req.headers.origin && req.headers.origin.startsWith('https://')) ? req.headers.origin : 'https://vhop.in'}/profile?payment_status=completed&order_id={order_id}`
                 }
             };
 
