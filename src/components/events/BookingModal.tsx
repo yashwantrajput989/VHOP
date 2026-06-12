@@ -213,6 +213,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, eve
       try {
         await openCheckout({
           paymentSessionId: resultData.payment_session_id,
+          paymentEnv: resultData.payment_env,
           redirectTarget: '_modal'
         });
       } catch (sdkErr) {

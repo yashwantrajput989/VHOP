@@ -1398,6 +1398,7 @@ app.post('/api/bookings', async (req, res) => {
                 id, 
                 booking_id: booking.booking_id, 
                 payment_session_id: cfOrderData.payment_session_id,
+                payment_env: CASHFREE_ENV,
                 status: 'pending'
             });
         } catch (err) {

@@ -3,6 +3,7 @@ import { CASHFREE_ENV } from '../config';
 
 interface CashfreeOptions {
   paymentSessionId: string;
+  paymentEnv?: 'sandbox' | 'production';
   redirectTarget?: '_modal' | '_self' | '_blank' | '_top';
 }
 
@@ -20,7 +21,7 @@ export const useCashfree = () => {
     }
     
     const cashfree = window.Cashfree({
-      mode: CASHFREE_ENV
+      mode: options.paymentEnv || CASHFREE_ENV
     });
     
     return cashfree.checkout({
