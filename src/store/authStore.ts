@@ -249,7 +249,26 @@ export const useAuthStore = create<AuthState>()(
         try {
           const { user } = useAuthStore.getState();
           if (user) {
-            set({ user: sanitizeUser(user), session: { uid: user.id } });
+            if (user.id === 'super-admin-root') {
+              set({ user: sanitizeUser(user), session: { uid: user.id } });
+            } else {
+              try {
+                const response = await fetch(`${API_BASE_URL}/api/auth/profile/${user.id}`);
+                if (response.ok) {
+                  const profile = await response.json();
+                  set({ user: sanitizeUser(profile), session: { uid: profile.id } });
+                } else if (response.status === 404) {
+                  console.warn('Session invalid or user profile not found. Clearing session.');
+                  set({ user: null, session: null });
+                } else {
+                  // Keep stored session on general server errors to avoid lock-outs
+                  set({ user: sanitizeUser(user), session: { uid: user.id } });
+                }
+              } catch (fetchError) {
+                console.error('Session validation query failed. Reverting to offline session:', fetchError);
+                set({ user: sanitizeUser(user), session: { uid: user.id } });
+              }
+            }
           }
         } finally {
           set({ isInitializing: false, isLoading: false });

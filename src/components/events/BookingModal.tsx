@@ -204,6 +204,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, eve
       }
       
       const resultData = await response.json();
+
+      if (!resultData.payment_session_id) {
+        throw new Error('Payment session was not created. Please ensure the backend server is updated and configured with valid Cashfree credentials.');
+      }
       
       // Trigger Cashfree Modal Checkout
       try {

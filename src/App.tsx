@@ -24,12 +24,15 @@ import { TermsConditions } from './pages/user/TermsConditions';
 import { RefundsCancellations } from './pages/user/RefundsCancellations';
 
 import { useAuthStore } from './store/authStore';
+import { useUIStore } from './store/uiStore';
 import { useEffect } from 'react';
 import ScrollToTop from './components/utils/ScrollToTop';
+import { ProtectedRoute } from './components/auth/ProtectedRoute';
 
 function App() {
   const location = useLocation();
   const { initialize, user } = useAuthStore();
+  const { openModal } = useUIStore();
   const navigate = useNavigate();
   
   useEffect(() => {
@@ -39,6 +42,15 @@ function App() {
       window.history.scrollRestoration = 'manual';
     }
   }, [initialize]);
+
+  // Handle triggerAuth navigation state to open sign-in modal
+  useEffect(() => {
+    if (location.state && (location.state as any).triggerAuth) {
+      openModal('auth');
+      // Clear location state to prevent repeating on reload
+      window.history.replaceState({}, document.title);
+    }
+  }, [location, openModal]);
 
   // Capture referral code from URL query parameters
   useEffect(() => {
@@ -100,12 +112,20 @@ function App() {
                 <Navigate to="/events" replace />
               )
             } />
-            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/dashboard" element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            } />
             <Route path="/events" element={<Events />} />
             <Route path="/events/:id" element={<EventDetails />} />
             <Route path="/social" element={<Social />} />
             <Route path="/community" element={<Community />} />
-            <Route path="/profile" element={<Profile />} />
+            <Route path="/profile" element={
+              <ProtectedRoute>
+                <Profile />
+              </ProtectedRoute>
+            } />
             <Route path="/contact-us" element={<ContactUs />} />
             <Route path="/terms-conditions" element={<TermsConditions />} />
             <Route path="/refunds-cancellations" element={<RefundsCancellations />} />
@@ -113,13 +133,41 @@ function App() {
             {/* Admin Routes */}
             {(isTargetAdmin || !isNative) && (
               <>
-                <Route path="/admin" element={<AdminDashboard />} />
-                <Route path="/admin/create-event" element={<CreateEvent />} />
-                <Route path="/admin/edit-event/:id" element={<CreateEvent />} />
-                <Route path="/admin/settings" element={<AdminSettings />} />
-                <Route path="/admin/guests" element={<GuestList />} />
-                <Route path="/admin/teams" element={<AdminTeams />} />
-                <Route path="/admin/support" element={<AdminSupport />} />
+                <Route path="/admin" element={
+                  <ProtectedRoute allowedRoles={['admin', 'subadmin', 'superadmin']}>
+                    <AdminDashboard />
+                  </ProtectedRoute>
+                } />
+                <Route path="/admin/create-event" element={
+                  <ProtectedRoute allowedRoles={['admin', 'subadmin', 'superadmin']}>
+                    <CreateEvent />
+                  </ProtectedRoute>
+                } />
+                <Route path="/admin/edit-event/:id" element={
+                  <ProtectedRoute allowedRoles={['admin', 'subadmin', 'superadmin']}>
+                    <CreateEvent />
+                  </ProtectedRoute>
+                } />
+                <Route path="/admin/settings" element={
+                  <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
+                    <AdminSettings />
+                  </ProtectedRoute>
+                } />
+                <Route path="/admin/guests" element={
+                  <ProtectedRoute allowedRoles={['admin', 'subadmin', 'superadmin']}>
+                    <GuestList />
+                  </ProtectedRoute>
+                } />
+                <Route path="/admin/teams" element={
+                  <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
+                    <AdminTeams />
+                  </ProtectedRoute>
+                } />
+                <Route path="/admin/support" element={
+                  <ProtectedRoute allowedRoles={['admin', 'subadmin', 'superadmin']}>
+                    <AdminSupport />
+                  </ProtectedRoute>
+                } />
                 <Route path="/admin/login" element={<AdminLogin />} />
               </>
             )}
@@ -127,10 +175,26 @@ function App() {
             {/* Super Admin Routes */}
             {(isTargetAdmin || !isNative) && (
               <>
-                <Route path="/superadmin" element={<SuperDashboard />} />
-                <Route path="/superadmin/events" element={<SuperDashboard />} />
-                <Route path="/superadmin/partners" element={<SuperDashboard />} />
-                <Route path="/superadmin/issues" element={<SuperDashboard />} />
+                <Route path="/superadmin" element={
+                  <ProtectedRoute allowedRoles={['superadmin']}>
+                    <SuperDashboard />
+                  </ProtectedRoute>
+                } />
+                <Route path="/superadmin/events" element={
+                  <ProtectedRoute allowedRoles={['superadmin']}>
+                    <SuperDashboard />
+                  </ProtectedRoute>
+                } />
+                <Route path="/superadmin/partners" element={
+                  <ProtectedRoute allowedRoles={['superadmin']}>
+                    <SuperDashboard />
+                  </ProtectedRoute>
+                } />
+                <Route path="/superadmin/issues" element={
+                  <ProtectedRoute allowedRoles={['superadmin']}>
+                    <SuperDashboard />
+                  </ProtectedRoute>
+                } />
               </>
             )}
 

@@ -752,6 +752,20 @@ app.post('/api/auth/sync', async (req, res) => {
     }
 });
 
+// Get user profile by ID to verify active session
+app.get('/api/auth/profile/:id', async (req, res) => {
+    try {
+        const [rows] = await pool.execute('SELECT * FROM profiles WHERE id = ?', [req.params.id]);
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'User profile not found' });
+        }
+        res.status(200).json(formatProfile(rows[0]));
+    } catch (error) {
+        console.error('Error fetching profile:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Register standard user
 app.post('/api/auth/register', async (req, res) => {
     const { email, password, full_name, referred_by_code } = req.body;
