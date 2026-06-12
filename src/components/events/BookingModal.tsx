@@ -8,6 +8,8 @@ import { useAuthStore } from '../../store/authStore';
 import { useTicketStore } from '../../store/ticketStore';
 import { useUIStore } from '../../store/uiStore';
 import { API_BASE_URL, getImageUrl } from '../../config';
+import { useCashfree } from '../../hooks/useCashfree';
+
 
 interface BookingModalProps {
   isOpen: boolean;
@@ -29,6 +31,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, eve
   const { user } = useAuthStore();
   const { addTicket } = useTicketStore();
   const { openModal } = useUIStore();
+  const { openCheckout } = useCashfree();
   
   const ticket = event.ticket_types?.find((t: any) => t.id === selectedTicketId) || event.ticket_types?.[0];
   
@@ -91,27 +94,56 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, eve
         total_amount: totalAmount,
         ticket_name: ticket.name,
         price: ticket.price,
-        payment_id: `pay_simulated_${Math.random().toString(36).substring(7)}`,
-        payment_status: 'paid',
-        booking_status: 'confirmed',
+        payment_id: '',
+        payment_status: 'pending',
+        booking_status: 'pending',
         booking_id: bookingId,
         qr_code: qrCode,
         booked_at: new Date().toISOString(),
         guests: guests
       };
 
-      // Save to MySQL Backend
+      // Save to MySQL Backend as pending and obtain Cashfree order session ID
       const response = await fetch(`${API_BASE_URL}/api/bookings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(bookingData)
       });
 
-      if (!response.ok) throw new Error('Failed to save booking');
-      const result = await response.json();
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to initialize booking session.');
+      }
+      
+      const resultData = await response.json();
+      
+      // Trigger Cashfree Modal Checkout
+      try {
+        await openCheckout({
+          paymentSessionId: resultData.payment_session_id,
+          redirectTarget: '_modal'
+        });
+      } catch (sdkErr) {
+        console.error('Cashfree SDK Error:', sdkErr);
+        throw new Error('Checkout cancelled or failed to initialize.');
+      }
+      
+      // Verify payment status on backend
+      const verifyResponse = await fetch(`${API_BASE_URL}/api/payments/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_id: bookingId })
+      });
+
+      if (!verifyResponse.ok) {
+        const verifyErr = await verifyResponse.json().catch(() => ({}));
+        throw new Error(verifyErr.message || 'Payment verification failed.');
+      }
+
+      const verifyData = await verifyResponse.json();
       
       addTicket({
-        id: result.id,
+        id: verifyData.booking?.id || resultData.id,
         eventId: event.id,
         eventTitle: event.title,
         venueName: event.venue_name,
@@ -128,9 +160,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, eve
       });
 
       setStep('success');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error during booking payment:', error);
-      alert('Failed to complete booking. Please try again.');
+      alert(error.message || 'Failed to complete booking. Please try again.');
       setStep('details');
     }
   };

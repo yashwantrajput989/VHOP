@@ -14,7 +14,7 @@ const {
     sendPartnerApprovalCredentialsEmail,
     sendContactFormDetailsToSuperEmail
 } = require('./utils/email');
-const Razorpay = require('razorpay');
+// Razorpay import removed - using Cashfree now
 const crypto = require('crypto');
 
 dotenv.config();
@@ -410,7 +410,12 @@ app.use(cors({
     ], // Production, local dev, and native mobile apps (Capacitor)
     credentials: true
 }));
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ 
+    limit: '50mb',
+    verify: (req, res, buf) => {
+        req.rawBody = buf.toString();
+    }
+}));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(morgan('dev'));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -1217,52 +1222,95 @@ app.post('/api/bookings', async (req, res) => {
     const booking = req.body;
     const id = `bk_${Math.random().toString(36).substring(2, 11)}`;
     try {
+        // Fetch user info for Cashfree customer_details
+        const [userRows] = await pool.execute('SELECT email, full_name, phone FROM profiles WHERE id = ?', [booking.user_id]);
+        if (userRows.length === 0) {
+            return res.status(404).json({ error: 'User profile not found' });
+        }
+        
+        const userEmail = userRows[0].email || 'guest@vhop.in';
+        const userName = userRows[0].full_name || 'Guest User';
+        let userPhone = userRows[0].phone || '9999999999';
+        
+        // Clean phone number: Cashfree requires valid phone
+        userPhone = userPhone.replace(/\D/g, '');
+        if (userPhone.length < 10) {
+            userPhone = '9999999999';
+        }
+
         // Start Transaction
         const connection = await pool.getConnection();
         await connection.beginTransaction();
 
         try {
-            // 1. Insert Booking
+            // 1. Insert Booking with pending status
             await connection.execute(
-                'INSERT INTO bookings (id, event_id, user_id, quantity, total_amount, ticket_name, price, payment_id, payment_status, booking_id, qr_code, guests) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                [id, booking.event_id, booking.user_id, booking.quantity, booking.total_amount, booking.ticket_name, booking.price, booking.payment_id, 'paid', booking.booking_id, booking.qr_code, JSON.stringify(booking.guests || [])]
+                'INSERT INTO bookings (id, event_id, user_id, quantity, total_amount, ticket_name, price, payment_id, payment_status, booking_status, booking_id, qr_code, guests) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [
+                    id, 
+                    booking.event_id, 
+                    booking.user_id, 
+                    booking.quantity, 
+                    booking.total_amount, 
+                    booking.ticket_name, 
+                    booking.price, 
+                    '', // No payment_id yet
+                    'pending', 
+                    'pending', 
+                    booking.booking_id, 
+                    booking.qr_code, 
+                    JSON.stringify(booking.guests || [])
+                ]
             );
 
-            // 2. Update Event ticket count
-            await connection.execute(
-                'UPDATE events SET tickets_sold = tickets_sold + ? WHERE id = ?',
-                [booking.quantity, booking.event_id]
-            );
+            // 2. Call Cashfree to Create Order
+            if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
+                throw new Error('Cashfree is not configured on this server. Please set CASHFREE_APP_ID in environment variables.');
+            }
 
-            // 3. Update nights_out for user and maintain weekly action streak
-            await connection.execute(
-                'UPDATE profiles SET nights_out = nights_out + 1 WHERE id = ?',
-                [booking.user_id]
-            );
-            await maintainWeeklyStreak(connection, booking.user_id);
- 
+            const cfOrderOptions = {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-client-id': CASHFREE_APP_ID,
+                    'x-client-secret': CASHFREE_SECRET_KEY,
+                    'x-api-version': '2023-08-01'
+                }
+            };
+
+            const cfOrderBody = {
+                order_id: booking.booking_id,
+                order_amount: Number(booking.total_amount),
+                order_currency: 'INR',
+                customer_details: {
+                    customer_id: booking.user_id,
+                    customer_phone: userPhone,
+                    customer_email: userEmail,
+                    customer_name: userName
+                },
+                order_meta: {
+                    return_url: `${req.headers.origin || 'http://localhost:5173'}/profile?payment_status=completed&order_id={order_id}`
+                }
+            };
+
+            const cfResponse = await makeHttpsRequest(`${CASHFREE_BASE_URL}/orders`, cfOrderOptions, cfOrderBody);
+            
+            if (!cfResponse.ok) {
+                const cfErr = await cfResponse.text();
+                console.error('Cashfree order creation error:', cfErr);
+                throw new Error(`Failed to create payment session with Cashfree: ${cfErr}`);
+            }
+
+            const cfOrderData = await cfResponse.json();
+            
             await connection.commit();
             
-            // Send Email Notification in background (don't block the response)
-            // Fetch necessary details for the email
-            (async () => {
-                try {
-                    const [userRows] = await pool.execute('SELECT email, full_name FROM profiles WHERE id = ?', [booking.user_id]);
-                    const [eventRows] = await pool.execute('SELECT * FROM events WHERE id = ?', [booking.event_id]);
-                    
-                    if (userRows.length > 0 && eventRows.length > 0) {
-                        await sendBookingEmail(
-                            { ...booking, id, user_name: userRows[0].full_name },
-                            eventRows[0],
-                            userRows[0].email
-                        );
-                    }
-                } catch (emailErr) {
-                    console.error('Background Email Error:', emailErr);
-                }
-            })();
-
-            res.status(201).json({ id, message: 'Booking confirmed' });
+            res.status(201).json({ 
+                id, 
+                booking_id: booking.booking_id, 
+                payment_session_id: cfOrderData.payment_session_id,
+                status: 'pending'
+            });
         } catch (err) {
             await connection.rollback();
             throw err;
@@ -1270,6 +1318,7 @@ app.post('/api/bookings', async (req, res) => {
             connection.release();
         }
     } catch (error) {
+        console.error('Error in POST /api/bookings:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -1278,7 +1327,7 @@ app.post('/api/bookings', async (req, res) => {
 app.get('/api/bookings/user/:userId', async (req, res) => {
     try {
         const [rows] = await pool.execute(
-            'SELECT b.*, e.title as event_title, e.cover_image, e.venue_name, e.city, e.start_date, e.google_maps_url FROM bookings b JOIN events e ON b.event_id = e.id WHERE b.user_id = ?',
+            'SELECT b.*, e.title as event_title, e.cover_image, e.venue_name, e.city, e.start_date, e.google_maps_url FROM bookings b JOIN events e ON b.event_id = e.id WHERE b.user_id = ? AND b.booking_status IN (\'confirmed\', \'checked_in\')',
             [req.params.userId]
         );
         res.json(rows);
@@ -1313,7 +1362,7 @@ app.get('/api/admin/bookings/lookup/:code', async (req, res) => {
              FROM bookings b
              JOIN events e ON b.event_id = e.id
              LEFT JOIN profiles p ON b.user_id = p.id
-             WHERE b.booking_id = ? OR b.id = ?`,
+             WHERE (b.booking_id = ? OR b.id = ?) AND b.booking_status IN ('confirmed', 'checked_in')`,
             [code, code]
         );
         
@@ -1380,7 +1429,7 @@ app.post('/api/admin/bookings/checkin', async (req, res) => {
             `SELECT b.*, p.full_name as buyer_name, p.email as buyer_email, p.phone as buyer_phone
              FROM bookings b
              LEFT JOIN profiles p ON b.user_id = p.id
-             WHERE b.booking_id = ? OR b.id = ?`,
+             WHERE (b.booking_id = ? OR b.id = ?) AND b.booking_status = 'confirmed'`,
             [bookingId, bookingId]
         );
         
@@ -1513,7 +1562,7 @@ app.get('/api/admin/stats/:userId', async (req, res) => {
 
         // 2. Fetch events belonging to this company with ticket sales populated
         const [events] = await pool.execute(
-            'SELECT e.*, (SELECT COALESCE(SUM(quantity), 0) FROM bookings WHERE event_id = e.id) as tickets_sold FROM events e WHERE e.company_id = ? ORDER BY e.created_at DESC',
+            'SELECT e.*, (SELECT COALESCE(SUM(quantity), 0) FROM bookings WHERE event_id = e.id AND booking_status IN (\'confirmed\', \'checked_in\')) as tickets_sold FROM events e WHERE e.company_id = ? ORDER BY e.created_at DESC',
             [company.id]
         );
 
@@ -1524,7 +1573,7 @@ app.get('/api/admin/stats/:userId', async (req, res) => {
                 COALESCE(SUM(b.quantity), 0) as totalBookings
             FROM bookings b
             JOIN events e ON b.event_id = e.id
-            WHERE e.company_id = ?
+            WHERE e.company_id = ? AND b.booking_status IN ('confirmed', 'checked_in')
         `, [company.id]);
 
         const [activeEventsRows] = await pool.execute(
@@ -1537,7 +1586,7 @@ app.get('/api/admin/stats/:userId', async (req, res) => {
             SELECT COALESCE(SUM(b.quantity), 0) as groupCount 
             FROM bookings b
             JOIN events e ON b.event_id = e.id
-            WHERE e.company_id = ? AND b.quantity >= 3
+            WHERE e.company_id = ? AND b.quantity >= 3 AND b.booking_status IN ('confirmed', 'checked_in')
         `, [company.id]);
 
         const totalBookings = Number(statsRows[0].totalBookings) || 0;
@@ -1566,7 +1615,7 @@ app.get('/api/admin/bookings/event/:eventId', async (req, res) => {
             SELECT b.*, p.full_name as user_name, p.email as user_email 
             FROM bookings b 
             LEFT JOIN profiles p ON b.user_id = p.id 
-            WHERE b.event_id = ?
+            WHERE b.event_id = ? AND b.booking_status IN ('confirmed', 'checked_in')
             ORDER BY b.booked_at DESC
         `, [req.params.eventId]);
         res.json(rows);
@@ -1582,12 +1631,12 @@ app.get('/api/superadmin/stats', async (req, res) => {
         const [userCount] = await pool.execute('SELECT COUNT(*) as count FROM profiles WHERE role = \'user\'');
         const [companyCount] = await pool.execute('SELECT COUNT(*) as count FROM companies WHERE verified = 1');
         const [eventCount] = await pool.execute('SELECT COUNT(*) as count FROM events');
-        const [revenueRows] = await pool.execute('SELECT COALESCE(SUM(total_amount), 0) as totalRevenue FROM bookings');
+        const [revenueRows] = await pool.execute('SELECT COALESCE(SUM(total_amount), 0) as totalRevenue FROM bookings WHERE booking_status IN (\'confirmed\', \'checked_in\')');
         
         // Fetch all events with company details and ticket sales
         const [events] = await pool.execute(`
             SELECT e.*, c.name as company_name, 
-                   COALESCE((SELECT SUM(quantity) FROM bookings WHERE event_id = e.id), 0) as tickets_sold
+                   COALESCE((SELECT SUM(quantity) FROM bookings WHERE event_id = e.id AND booking_status IN ('confirmed', 'checked_in')), 0) as tickets_sold
             FROM events e
             LEFT JOIN companies c ON e.company_id = c.id
             ORDER BY e.created_at DESC
@@ -1846,90 +1895,290 @@ app.get('/api/superadmin/support/chats', async (req, res) => {
     }
 });
 
-// --- RAZORPAY INTEGRATION ---
-let razorpay = null;
-try {
-    if (process.env.RAZORPAY_KEY_ID) {
-        razorpay = new Razorpay({
-            key_id: process.env.RAZORPAY_KEY_ID,
-            key_secret: process.env.RAZORPAY_KEY_SECRET || ''
-        });
-        console.log('🟢 Razorpay initialized successfully.');
-    } else {
-        console.warn('⚠️ Razorpay initialization skipped: RAZORPAY_KEY_ID is missing in environment variables.');
-    }
-} catch (error) {
-    console.error('🔴 Razorpay initialization failed:', error.message);
+// --- CASHFREE INTEGRATION ---
+const https = require('https');
+
+const CASHFREE_APP_ID = process.env.CASHFREE_APP_ID || '';
+const CASHFREE_SECRET_KEY = process.env.CASHFREE_SECRET_KEY || '';
+const CASHFREE_ENV = process.env.CASHFREE_ENV || 'sandbox'; // sandbox or production
+const CASHFREE_BASE_URL = CASHFREE_ENV === 'production' 
+    ? 'https://api.cashfree.com/pg' 
+    : 'https://sandbox.cashfree.com/pg';
+
+if (CASHFREE_APP_ID && CASHFREE_SECRET_KEY) {
+    console.log(`🟢 Cashfree integration initialized (${CASHFREE_ENV} environment).`);
+} else {
+    console.warn('⚠️ Cashfree configuration is missing CASHFREE_APP_ID or CASHFREE_SECRET_KEY.');
 }
 
-// Create Razorpay Order
-app.post('/api/payments/order', async (req, res) => {
-    const { amount, currency } = req.body;
-    try {
-        if (!razorpay) {
-            return res.status(500).json({ error: 'Razorpay is not configured on this server. Please set RAZORPAY_KEY_ID in environment variables.' });
-        }
-        const options = {
-            amount: Math.round(amount * 100), // Amount in paise
-            currency: currency || 'INR',
-            receipt: `rcpt_${Math.random().toString(36).substring(2, 15)}`
+// HTTPS helper to communicate with Cashfree PG APIs without external libraries
+function makeHttpsRequest(url, options, body = null) {
+    return new Promise((resolve, reject) => {
+        const parsedUrl = new URL(url);
+        const requestOptions = {
+            hostname: parsedUrl.hostname,
+            path: parsedUrl.pathname + parsedUrl.search,
+            method: options.method || 'GET',
+            headers: options.headers || {}
         };
-        const order = await razorpay.orders.create(options);
-        res.status(200).json(order);
+        
+        const req = https.request(requestOptions, (res) => {
+            let data = '';
+            res.on('data', (chunk) => {
+                data += chunk;
+            });
+            res.on('end', () => {
+                resolve({
+                    ok: res.statusCode >= 200 && res.statusCode < 300,
+                    statusCode: res.statusCode,
+                    headers: res.headers,
+                    json: () => Promise.resolve(JSON.parse(data)),
+                    text: () => Promise.resolve(data)
+                });
+            });
+        });
+        
+        req.on('error', (err) => {
+            reject(err);
+        });
+        
+        if (body) {
+            req.write(typeof body === 'string' ? body : JSON.stringify(body));
+        }
+        
+        req.end();
+    });
+}
+
+// Helper function to confirm a booking after payment is verified (used by verify & webhooks)
+async function confirmBooking(bookingId, paymentId) {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+        
+        // Fetch the pending booking using the user-facing booking ID (e.g., VH-XXXXXX)
+        const [bookings] = await connection.execute(
+            'SELECT * FROM bookings WHERE booking_id = ? FOR UPDATE',
+            [bookingId]
+        );
+        
+        if (bookings.length === 0) {
+            await connection.rollback();
+            return { success: false, error: 'Booking not found' };
+        }
+        
+        const booking = bookings[0];
+        
+        // If already paid, return success (idempotent helper)
+        if (booking.payment_status === 'paid' || booking.booking_status === 'confirmed') {
+            await connection.rollback();
+            return { success: true, alreadyConfirmed: true, booking };
+        }
+        
+        // Update booking to confirmed / paid
+        await connection.execute(
+            'UPDATE bookings SET payment_status = ?, booking_status = ?, payment_id = ? WHERE booking_id = ?',
+            ['paid', 'confirmed', paymentId || 'pay_cashfree', bookingId]
+        );
+        
+        // Update event tickets sold count
+        await connection.execute(
+            'UPDATE events SET tickets_sold = tickets_sold + ? WHERE id = ?',
+            [booking.quantity, booking.event_id]
+        );
+        
+        // Update user profile nights_out count
+        await connection.execute(
+            'UPDATE profiles SET nights_out = nights_out + 1 WHERE id = ?',
+            [booking.user_id]
+        );
+        
+        await maintainWeeklyStreak(connection, booking.user_id);
+        
+        await connection.commit();
+        
+        // Send email in the background (non-blocking)
+        (async () => {
+            try {
+                const [userRows] = await pool.execute('SELECT email, full_name FROM profiles WHERE id = ?', [booking.user_id]);
+                const [eventRows] = await pool.execute('SELECT * FROM events WHERE id = ?', [booking.event_id]);
+                
+                if (userRows.length > 0 && eventRows.length > 0) {
+                    await sendBookingEmail(
+                        { 
+                            event_id: booking.event_id,
+                            event_title: eventRows[0].title,
+                            venue_name: eventRows[0].venue_name,
+                            city: eventRows[0].city,
+                            start_date: eventRows[0].start_date,
+                            cover_image: eventRows[0].cover_image,
+                            user_id: booking.user_id,
+                            quantity: booking.quantity,
+                            total_amount: booking.total_amount,
+                            ticket_name: booking.ticket_name,
+                            price: booking.price,
+                            payment_id: paymentId || 'pay_cashfree',
+                            payment_status: 'paid',
+                            booking_status: 'confirmed',
+                            booking_id: booking.booking_id,
+                            qr_code: booking.qr_code,
+                            booked_at: booking.booked_at,
+                            guests: typeof booking.guests === 'string' ? JSON.parse(booking.guests) : (booking.guests || []),
+                            id: booking.id, 
+                            user_name: userRows[0].full_name 
+                        },
+                        eventRows[0],
+                        userRows[0].email
+                    );
+                }
+            } catch (emailErr) {
+                console.error('Background Email Error in confirmBooking:', emailErr);
+            }
+        })();
+        
+        return { success: true, alreadyConfirmed: false, booking };
+    } catch (err) {
+        await connection.rollback();
+        console.error('Error in confirmBooking:', err);
+        return { success: false, error: err.message };
+    } finally {
+        connection.release();
+    }
+}
+
+// Create Order (kept for backwards-compatibility or direct integration if needed)
+app.post('/api/payments/order', async (req, res) => {
+    const { amount, currency, customer_id, customer_phone, customer_email, customer_name, order_id } = req.body;
+    try {
+        if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
+            return res.status(500).json({ error: 'Cashfree is not configured on this server.' });
+        }
+        
+        const cleanPhone = (customer_phone || '9999999999').replace(/\D/g, '');
+        const options = {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-client-id': CASHFREE_APP_ID,
+                'x-client-secret': CASHFREE_SECRET_KEY,
+                'x-api-version': '2023-08-01'
+            }
+        };
+        
+        const response = await makeHttpsRequest(`${CASHFREE_BASE_URL}/orders`, options, {
+            order_id: order_id || `order_${Math.random().toString(36).substring(2, 15)}`,
+            order_amount: Number(amount),
+            order_currency: currency || 'INR',
+            customer_details: {
+                customer_id: customer_id || `cust_${Math.random().toString(36).substring(2, 10)}`,
+                customer_phone: cleanPhone.length >= 10 ? cleanPhone : '9999999999',
+                customer_email: customer_email || 'guest@vhop.in',
+                customer_name: customer_name || 'Guest User'
+            }
+        });
+        
+        if (!response.ok) {
+            const err = await response.text();
+            throw new Error(err);
+        }
+        
+        const data = await response.json();
+        res.status(200).json(data);
     } catch (error) {
-        console.error('Error creating Razorpay order:', error);
+        console.error('Error creating Cashfree order:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
-// Verify Payment Signature
+// Verify Payment Status on Backend (resolves the frontend modal)
 app.post('/api/payments/verify', async (req, res) => {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
-    
-    const generated_signature = crypto
-        .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || '')
-        .update(razorpay_order_id + '|' + razorpay_payment_id)
-        .digest('hex');
+    const { order_id } = req.body;
+    try {
+        if (!order_id) {
+            return res.status(400).json({ error: 'order_id is required' });
+        }
+        
+        if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
+            return res.status(500).json({ error: 'Cashfree is not configured on this server.' });
+        }
 
-    if (generated_signature === razorpay_signature) {
-        res.status(200).json({ status: 'success', message: 'Payment verified successfully' });
-    } else {
-        res.status(400).json({ status: 'failure', message: 'Signature verification failed' });
+        const options = {
+            method: 'GET',
+            headers: {
+                'x-client-id': CASHFREE_APP_ID,
+                'x-client-secret': CASHFREE_SECRET_KEY,
+                'x-api-version': '2023-08-01'
+            }
+        };
+
+        const response = await makeHttpsRequest(`${CASHFREE_BASE_URL}/orders/${order_id}`, options);
+        
+        if (!response.ok) {
+            const err = await response.text();
+            console.error(`Error fetching order status from Cashfree for ${order_id}:`, err);
+            return res.status(400).json({ error: 'Failed to fetch order status from Cashfree.' });
+        }
+
+        const order = await response.json();
+        
+        if (order.order_status === 'PAID') {
+            const result = await confirmBooking(order_id, order.order_id);
+            if (result.success) {
+                res.status(200).json({ status: 'success', message: 'Payment verified successfully.', booking: result.booking });
+            } else {
+                res.status(500).json({ error: result.error });
+            }
+        } else {
+            res.status(400).json({ status: 'failure', message: `Order status is ${order.order_status}` });
+        }
+    } catch (error) {
+        console.error('Error verifying payment:', error);
+        res.status(500).json({ error: error.message });
     }
 });
 
-// Razorpay Webhook Endpoint
+// Cashfree Webhook Endpoint
 app.post('/api/payments/webhook', async (req, res) => {
-    const signature = req.headers['x-razorpay-signature'];
-    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || '';
+    const signature = req.headers['x-webhook-signature'];
+    const timestamp = req.headers['x-webhook-timestamp'];
 
-    if (!signature) {
-        return res.status(400).json({ error: 'Missing x-razorpay-signature header' });
+    if (!signature || !timestamp) {
+        return res.status(400).json({ error: 'Missing x-webhook-signature or x-webhook-timestamp header' });
     }
 
-    // Verify signature
-    const shasum = crypto.createHmac('sha256', webhookSecret);
-    shasum.update(JSON.stringify(req.body));
-    const digest = shasum.digest('hex');
+    // Verify webhook signature using the Client Secret
+    const signStr = timestamp + (req.rawBody || '');
+    const generatedSignature = crypto
+        .createHmac('sha256', CASHFREE_SECRET_KEY)
+        .update(signStr)
+        .digest('base64');
 
-    if (digest !== signature) {
-        console.error('⚠️ Webhook Signature Verification Failed!');
+    if (generatedSignature !== signature) {
+        console.error('⚠️ Cashfree Webhook Signature Verification Failed!');
         return res.status(400).json({ error: 'Signature mismatch' });
     }
 
-    const event = req.body.event;
-    console.log(`🔔 Razorpay Webhook Event: ${event}`);
+    try {
+        const payload = req.body;
+        console.log('🔔 Cashfree Webhook Received event_type:', payload.event_type);
 
-    if (event === 'order.paid' || event === 'payment.captured') {
-        const paymentEntity = req.body.payload.payment.entity;
-        const orderId = paymentEntity.order_id;
-        const paymentId = paymentEntity.id;
-        const amount = paymentEntity.amount / 100;
-        
-        logActivity({ type: 'webhook_payment_received', orderId, paymentId, amount });
+        if (payload.event_type === 'ORDER_PAID' && payload.data && payload.data.order) {
+            const orderId = payload.data.order.order_id;
+            const paymentId = payload.data.payment ? payload.data.payment.cf_payment_id : orderId;
+            
+            const result = await confirmBooking(orderId, paymentId.toString());
+            if (result.success) {
+                console.log(`✅ Webhook successfully confirmed booking ${orderId}`);
+            } else {
+                console.error(`❌ Webhook failed to confirm booking ${orderId}:`, result.error);
+            }
+        }
+
+        res.status(200).send('OK');
+    } catch (error) {
+        console.error('Error handling Cashfree Webhook:', error);
+        res.status(500).json({ error: error.message });
     }
-
-    res.status(200).json({ status: 'ok' });
 });
 
 // --- STATUS & LOGS CONSOLE ---
