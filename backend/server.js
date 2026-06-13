@@ -1217,7 +1217,7 @@ app.post('/api/admin/visitors', async (req, res) => {
 app.get('/api/events', async (req, res) => {
     const { city } = req.query;
     try {
-        let sql = 'SELECT * FROM events WHERE status = "published"';
+        let sql = 'SELECT * FROM events WHERE status = "published" AND COALESCE(end_date, start_date) >= NOW()';
         let params = [];
 
         if (city && city !== 'All') {

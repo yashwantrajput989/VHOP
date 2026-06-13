@@ -195,6 +195,16 @@ function App() {
                     <SuperDashboard />
                   </ProtectedRoute>
                 } />
+                <Route path="/superadmin/coupons" element={
+                  <ProtectedRoute allowedRoles={['superadmin']}>
+                    <SuperDashboard />
+                  </ProtectedRoute>
+                } />
+                <Route path="/superadmin/fees" element={
+                  <ProtectedRoute allowedRoles={['superadmin']}>
+                    <SuperDashboard />
+                  </ProtectedRoute>
+                } />
               </>
             )}
 

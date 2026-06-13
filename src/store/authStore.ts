@@ -3,7 +3,8 @@ import { persist } from 'zustand/middleware';
 import { logToBackend } from '../lib/logger';
 import { API_BASE_URL } from '../config';
 import { auth, googleProvider } from '../lib/firebase';
-import { signInWithPopup } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect, getRedirectResult } from 'firebase/auth';
+import { Capacitor } from '@capacitor/core';
 
 interface UserProfile {
   id: string;
@@ -198,6 +199,12 @@ export const useAuthStore = create<AuthState>()(
       loginWithGoogle: async () => {
         set({ isLoading: true });
         try {
+          const isNative = Capacitor.isNativePlatform();
+          if (isNative) {
+            await signInWithRedirect(auth, googleProvider);
+            return null as any;
+          }
+
           const result = await signInWithPopup(auth, googleProvider);
           const firebaseUser = result.user;
 
@@ -247,6 +254,39 @@ export const useAuthStore = create<AuthState>()(
       initialize: async () => {
         set({ isInitializing: true });
         try {
+          try {
+            const redirectResult = await getRedirectResult(auth);
+            if (redirectResult?.user) {
+              const firebaseUser = redirectResult.user;
+              if (firebaseUser.email) {
+                const referredBy = localStorage.getItem('referred_by_code');
+                const profileData = {
+                  email: firebaseUser.email,
+                  full_name: firebaseUser.displayName || 'Google User',
+                  avatar_url: firebaseUser.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${firebaseUser.email}`,
+                  id: firebaseUser.uid,
+                  referred_by_code: referredBy || undefined
+                };
+
+                const response = await fetch(`${API_BASE_URL}/api/auth/google-login`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(profileData)
+                });
+
+                if (response.ok) {
+                  const profile = await response.json();
+                  localStorage.removeItem('referred_by_code');
+                  set({ user: sanitizeUser(profile), session: { uid: profile.id } });
+                  logToBackend('google_login_success', profile);
+                }
+              }
+            }
+          } catch (redirectErr: any) {
+            console.error('Firebase redirect auth error on initialize:', redirectErr);
+            logToBackend('google_login_error', null, { error: redirectErr.message });
+          }
+
           const { user } = useAuthStore.getState();
           if (user) {
             if (user.id === 'super-admin-root') {

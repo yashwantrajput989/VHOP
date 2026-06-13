@@ -9,6 +9,10 @@ const config: CapacitorConfig = {
   android: {
     path: isAdmin ? 'android-admin' : 'android'
   },
+  server: {
+    androidScheme: 'https',
+    hostname: isAdmin ? 'admin.vhop.in' : 'vhop.in'
+  },
   plugins: {
     CapacitorHttp: {
       enabled: true

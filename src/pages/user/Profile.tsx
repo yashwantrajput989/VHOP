@@ -252,7 +252,7 @@ export const Profile: React.FC = () => {
 
   if (!user) {
     return (
-      <PageWrapper className="relative flex items-center justify-center min-h-[80vh] overflow-hidden px-4">
+      <div className="relative flex flex-col items-center justify-center h-[calc(100vh-10rem)] md:h-[calc(100vh-12rem)] overflow-hidden px-4 md:pl-64 w-full">
         <FloatingOrb className="-top-20 -left-20 pointer-events-none" color="violet" size={350} />
         <FloatingOrb className="bottom-10 right-0 pointer-events-none" color="pink" size={300} delay={2} />
 
@@ -308,7 +308,7 @@ export const Profile: React.FC = () => {
             </GlowButton>
           </GlassCard>
         </motion.div>
-      </PageWrapper>
+      </div>
     );
   }
 
@@ -323,7 +323,7 @@ export const Profile: React.FC = () => {
   const referralCode = `VHOP-${(user.username || 'user').toUpperCase()}-2026`;
 
   return (
-    <PageWrapper className="relative px-4 pb-24 overflow-x-hidden">
+    <PageWrapper className="relative px-4 pb-24 overflow-hidden">
       {/* Visual Ambient Orbs */}
       <FloatingOrb className="-top-40 -right-40 pointer-events-none" color="violet" size={400} />
       <FloatingOrb className="top-1/2 -left-60 pointer-events-none" color="cyan" size={350} delay={1} />

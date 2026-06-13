@@ -208,7 +208,7 @@ export const Events: React.FC = () => {
               <section 
                 onMouseEnter={() => setIsHovered(true)}
                 onMouseLeave={() => setIsHovered(false)}
-                className="relative overflow-hidden rounded-[2.5rem] border border-white/10 bg-slate-900/35 shadow-[0_20px_50px_rgba(0,0,0,0.65)] hover:border-[var(--violet-bright)]/30 transition-all duration-500 h-[320px] md:h-[450px]"
+                className="relative overflow-hidden rounded-[2rem] md:rounded-[2.5rem] border border-white/10 bg-slate-900/35 shadow-[0_20px_50px_rgba(0,0,0,0.65)] hover:border-[var(--violet-bright)]/30 transition-all duration-500 h-[280px] sm:h-[320px] md:h-[450px]"
               >
                 <AnimatePresence mode="wait">
                   <motion.div
@@ -218,50 +218,48 @@ export const Events: React.FC = () => {
                     exit={{ opacity: 0, x: -20 }}
                     transition={{ duration: 0.5, ease: "easeInOut" }}
                     onClick={() => navigate(`/events/${featuredEvents[currentSlide].id}`)}
-                    className="relative w-full h-full flex flex-col md:flex-row items-stretch cursor-pointer p-4 md:p-6 select-none"
+                    className="relative w-full h-full flex flex-col md:flex-row items-stretch cursor-pointer select-none"
                   >
-                    {/* Blurred Cover Image Background Bleed */}
-                    <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden rounded-[2.5rem]">
+                    {/* Blurred Cover Image Background Bleed (Mobile: Full-bleed image, Desktop: underlay blur) */}
+                    <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
                       <img
                         src={getImageUrl(featuredEvents[currentSlide].cover_image)}
                         alt=""
-                        className="w-full h-full object-cover blur-3xl opacity-35 scale-110"
+                        className="w-full h-full object-cover md:blur-3xl md:opacity-35 md:scale-110"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-[var(--bg-primary)]/90 via-[var(--bg-primary)]/40 to-transparent" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-black/10 md:bg-gradient-to-t md:from-[var(--bg-primary)]/90 md:via-[var(--bg-primary)]/40 md:to-transparent" />
                     </div>
 
-                    {/* Left: Premium Contained Vertical Flyer */}
-                    <div className="relative z-10 w-auto h-full aspect-[4/5] rounded-[1.8rem] overflow-hidden border border-white/10 shrink-0 mx-auto md:mx-0 shadow-[0_12px_32px_rgba(0,0,0,0.5)]">
+                    {/* Left: Premium Contained Vertical Flyer (Desktop only) */}
+                    <div className="hidden md:block relative z-10 w-auto h-full aspect-[4/5] rounded-[1.8rem] overflow-hidden border border-white/10 shrink-0 shadow-[0_12px_32px_rgba(0,0,0,0.5)] m-4 md:m-6">
                       <img
                         src={getImageUrl(featuredEvents[currentSlide].cover_image)}
                         alt={featuredEvents[currentSlide].title}
                         className="w-full h-full object-cover"
                       />
-                      {/* Mobile gradient vignette */}
-                      <div className="md:hidden absolute inset-0 z-20 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
-                      
-                      {/* Mobile Only overlay info directly inside the flyer frame */}
-                      <div className="md:hidden absolute bottom-0 inset-x-0 z-30 p-4 space-y-2 text-left">
-                        <span className="inline-flex items-center gap-1 bg-[var(--violet-primary)] text-white text-[8px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider shadow-md">
-                          <Sparkles className="w-2.5 h-2.5 text-amber-300 animate-pulse" /> {featuredEvents[currentSlide].category}
-                        </span>
-                        <h3 className="text-sm font-display font-extrabold text-white leading-snug line-clamp-1">
-                          {featuredEvents[currentSlide].title}
-                        </h3>
-                        <div className="flex items-center gap-2">
-                          <div className="flex items-center gap-1 text-white/90 text-[9px] bg-white/10 backdrop-blur-md px-2 py-0.5 rounded-lg">
-                            <MapPin className="w-3 h-3 text-[var(--violet-bright)] shrink-0" />
-                            <span className="font-bold truncate max-w-[120px]">{featuredEvents[currentSlide].venue_name}</span>
-                          </div>
-                          <span className="text-[9px] font-extrabold bg-[var(--accent-green)]/20 text-[var(--accent-green)] border border-[var(--accent-green)]/35 px-2 py-0.5 rounded-lg">
-                            ₹{featuredEvents[currentSlide].price === 0 ? 'FREE' : `${featuredEvents[currentSlide].price}+`}
-                          </span>
+                    </div>
+                    
+                    {/* Mobile Only Details (Overlayed directly on the full-bleed cover image) */}
+                    <div className="md:hidden relative z-10 flex-1 flex flex-col justify-end p-6 space-y-3 text-left h-full">
+                      <span className="w-fit inline-flex items-center gap-1 bg-[var(--violet-primary)] text-white text-[8px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider shadow-md">
+                        <Sparkles className="w-2.5 h-2.5 text-amber-300 animate-pulse" /> FEATURED
+                      </span>
+                      <h3 className="text-base font-display font-extrabold text-white leading-snug line-clamp-2">
+                        {featuredEvents[currentSlide].title}
+                      </h3>
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <div className="flex items-center gap-1 text-white/90 text-[10px] bg-white/10 backdrop-blur-md px-2.5 py-1 rounded-xl">
+                          <MapPin className="w-3.5 h-3.5 text-[var(--violet-bright)] shrink-0" />
+                          <span className="font-bold truncate max-w-[150px]">{featuredEvents[currentSlide].venue_name}</span>
                         </div>
+                        <span className="text-[10px] font-extrabold bg-[var(--accent-green)]/20 text-[var(--accent-green)] border border-[var(--accent-green)]/35 px-2.5 py-1 rounded-xl">
+                          ₹{featuredEvents[currentSlide].price === 0 ? 'FREE' : `${featuredEvents[currentSlide].price}+`}
+                        </span>
                       </div>
                     </div>
 
                     {/* Right/Desktop details: Beautiful split pane screen */}
-                    <div className="hidden md:flex relative z-10 flex-1 flex-col justify-between items-start pl-8 pr-6 py-4 space-y-6 text-left">
+                    <div className="hidden md:flex relative z-10 flex-1 flex-col justify-between items-start pl-4 pr-6 py-8 space-y-6 text-left">
                       <div className="space-y-4">
                         <span className="inline-flex items-center gap-1 bg-[var(--violet-primary)] text-white text-[9px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider shadow-[0_0_15px_rgba(124,58,237,0.4)]">
                           <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" /> FEATURED EXPERIENCE
