@@ -15,50 +15,61 @@ import { isProfileComplete } from '../profile/ProfileCompletionBanner';
 export const Navbar: React.FC = () => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showCityDropdown, setShowCityDropdown] = useState(false);
-  const { city, setCity } = useLocationStore();
+  const { city, setCity, detectLocation } = useLocationStore();
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const { tickets } = useTicketStore();
   const { openModal } = useUIStore();
 
+  const [dismissedNotifications, setDismissedNotifications] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('vhop_dismissed_notifications');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const showProfileCompletionNotification = user && !isProfileComplete(user) && !dismissedNotifications.includes('profile-completion');
+  const visibleTickets = tickets.filter(ticket => !dismissedNotifications.includes(ticket.id));
+
   const [hasUnread, setHasUnread] = useState(true);
-  const [prevTicketCount, setPrevTicketCount] = useState(tickets.length);
+  const [prevTicketCount, setPrevTicketCount] = useState(visibleTickets.length);
 
   useEffect(() => {
-    if (tickets.length > prevTicketCount) {
+    if (visibleTickets.length > prevTicketCount) {
       setHasUnread(true);
-      setPrevTicketCount(tickets.length);
+      setPrevTicketCount(visibleTickets.length);
     }
-  }, [tickets.length, prevTicketCount]);
+  }, [visibleTickets.length, prevTicketCount]);
+
+  const dismissNotification = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const updated = [...dismissedNotifications, id];
+    setDismissedNotifications(updated);
+    localStorage.setItem('vhop_dismissed_notifications', JSON.stringify(updated));
+  };
+
+  const clearAllNotifications = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const idsToDismiss = [...visibleTickets.map(t => t.id)];
+    if (user && !isProfileComplete(user)) {
+      idsToDismiss.push('profile-completion');
+    }
+    const updated = [...dismissedNotifications, ...idsToDismiss];
+    setDismissedNotifications(updated);
+    localStorage.setItem('vhop_dismissed_notifications', JSON.stringify(updated));
+  };
 
   const activeCity = city || 'Visakhapatnam';
 
-  const handleGeolocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          try {
-            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}`);
-            const data = await res.json();
-            const foundCity = data.address?.city || data.address?.town || data.address?.village || data.address?.state_district;
-            if (foundCity) {
-              setCity(foundCity);
-              setShowCityDropdown(false);
-            } else {
-              alert("Could not determine your city.");
-            }
-          } catch (error) {
-            console.error("Geocoding error", error);
-            alert("Error fetching city from location.");
-          }
-        },
-        (error) => {
-          console.error("Geolocation error", error);
-          alert("Location access denied or unavailable.");
-        }
-      );
-    } else {
-      alert("Geolocation is not supported by this browser.");
+  const handleGeolocation = async () => {
+    try {
+      await detectLocation();
+      setShowCityDropdown(false);
+    } catch (error) {
+      console.error("Geolocation error", error);
+      alert("Location access denied or unavailable.");
     }
   };
 
@@ -145,7 +156,7 @@ export const Navbar: React.FC = () => {
               className="relative w-8.5 h-8.5 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white active:scale-95 transition-all hover:bg-white/10"
             >
               <Bell className="w-4 h-4" />
-              {hasUnread && (tickets.length > 0 || (user && !isProfileComplete(user))) && (
+              {hasUnread && (visibleTickets.length > 0 || showProfileCompletionNotification) && (
                 <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[var(--accent-pink)] border border-[var(--bg-primary)] animate-pulse" />
               )}
             </button>
@@ -161,12 +172,22 @@ export const Navbar: React.FC = () => {
                 >
                   <h4 className="font-display font-bold text-xs mb-3 text-white flex items-center justify-between border-b border-white/5 pb-2">
                     <span>Notifications</span>
-                    <span className="text-[9px] bg-[var(--violet-primary)] px-2 py-0.5 rounded-full font-medium">New</span>
+                    <div className="flex items-center gap-2">
+                      {(visibleTickets.length > 0 || showProfileCompletionNotification) && (
+                        <button 
+                          onClick={clearAllNotifications}
+                          className="text-[9px] text-[var(--violet-bright)] hover:underline font-bold bg-transparent border-none p-0 cursor-pointer"
+                        >
+                          Clear All
+                        </button>
+                      )}
+                      <span className="text-[9px] bg-[var(--violet-primary)] px-2 py-0.5 rounded-full font-medium">New</span>
+                    </div>
                   </h4>
                   <div className="space-y-2.5 max-h-72 overflow-y-auto scrollbar-none">
-                    {user && !isProfileComplete(user) && (
+                    {showProfileCompletionNotification && (
                       <div 
-                        className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 flex gap-2.5 cursor-pointer hover:bg-amber-500/20 transition-colors"
+                        className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 flex gap-2.5 cursor-pointer hover:bg-amber-500/20 transition-colors relative group"
                         onClick={() => {
                           setShowNotifications(false);
                           navigate('/profile?complete=true');
@@ -179,13 +200,19 @@ export const Navbar: React.FC = () => {
                           <p className="text-[10px] font-bold text-amber-500 leading-tight">Complete Profile</p>
                           <p className="text-[8px] text-amber-200/80 leading-normal mt-0.5">Claim 100 V-Coins reward & unlock V-Card.</p>
                         </div>
+                        <button 
+                          onClick={(e) => dismissNotification('profile-completion', e)}
+                          className="absolute top-1 right-1.5 text-amber-500/50 hover:text-white text-[10px] font-bold z-20 cursor-pointer"
+                        >
+                          ✕
+                        </button>
                       </div>
                     )}
-                    {tickets.length === 0 && (!user || isProfileComplete(user)) ? (
+                    {visibleTickets.length === 0 && !showProfileCompletionNotification ? (
                       <p className="text-xs text-[var(--text-muted)] text-center py-4">No new notifications</p>
                     ) : (
-                      tickets.map(ticket => (
-                        <div key={ticket.id} className="p-2.5 rounded-xl bg-white/5 border border-white/5 flex gap-2.5">
+                      visibleTickets.map(ticket => (
+                        <div key={ticket.id} className="p-2.5 rounded-xl bg-white/5 border border-white/5 flex gap-2.5 relative group">
                           <div className="w-8 h-8 rounded-lg bg-[var(--violet-primary)]/20 flex items-center justify-center shrink-0">
                             <Sparkles className="w-4 h-4 text-[var(--violet-bright)]" />
                           </div>
@@ -193,6 +220,12 @@ export const Navbar: React.FC = () => {
                             <p className="text-[10px] font-bold text-white leading-tight">Booking Confirmed!</p>
                             <p className="text-[8px] text-[var(--text-secondary)] leading-normal mt-0.5">Tickets for {ticket.eventTitle} are ready.</p>
                           </div>
+                          <button 
+                            onClick={(e) => dismissNotification(ticket.id, e)}
+                            className="absolute top-1 right-1.5 text-white/40 hover:text-white text-[10px] font-bold z-20 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            ✕
+                          </button>
                         </div>
                       ))
                     )}
@@ -326,7 +359,7 @@ export const Navbar: React.FC = () => {
               className="relative p-2 rounded-full hover:bg-white/10 transition-colors text-[var(--text-muted)] hover:text-white"
             >
               <Bell className="w-5 h-5" />
-              {hasUnread && (tickets.length > 0 || (user && !isProfileComplete(user))) && (
+              {hasUnread && (visibleTickets.length > 0 || showProfileCompletionNotification) && (
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[var(--accent-pink)] border border-[var(--bg-primary)]" />
               )}
             </button>
@@ -339,11 +372,24 @@ export const Navbar: React.FC = () => {
                   exit={{ opacity: 0, y: 10, scale: 0.95 }}
                   className="absolute top-full right-0 mt-4 w-80 z-[60] notification-popover"
                 >
-                  <h4 className="font-display font-bold mb-4 text-white border-b border-white/5 pb-2">Notifications</h4>
+                  <h4 className="font-display font-bold text-xs mb-3 text-white flex items-center justify-between border-b border-white/5 pb-2">
+                    <span>Notifications</span>
+                    <div className="flex items-center gap-2">
+                      {(visibleTickets.length > 0 || showProfileCompletionNotification) && (
+                        <button 
+                          onClick={clearAllNotifications}
+                          className="text-[10px] text-[var(--violet-bright)] hover:underline font-bold bg-transparent border-none p-0 cursor-pointer"
+                        >
+                          Clear All
+                        </button>
+                      )}
+                      <span className="text-[10px] bg-[var(--violet-primary)] px-2 py-0.5 rounded-full font-medium">New</span>
+                    </div>
+                  </h4>
                   <div className="space-y-3 max-h-96 overflow-y-auto">
-                    {user && !isProfileComplete(user) && (
+                    {showProfileCompletionNotification && (
                       <div 
-                        className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 flex gap-3 cursor-pointer hover:bg-amber-500/20 transition-colors"
+                        className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 flex gap-3 cursor-pointer hover:bg-amber-500/20 transition-colors relative group"
                         onClick={() => {
                           setShowNotifications(false);
                           navigate('/profile?complete=true');
@@ -356,20 +402,32 @@ export const Navbar: React.FC = () => {
                           <p className="text-xs font-bold text-amber-500">Complete Your Profile</p>
                           <p className="text-[10px] text-amber-200/80 mt-1">Add your interests to personalize your experience.</p>
                         </div>
+                        <button 
+                          onClick={(e) => dismissNotification('profile-completion', e)}
+                          className="absolute top-2 right-2.5 text-amber-500/50 hover:text-white text-xs font-bold z-20 cursor-pointer"
+                        >
+                          ✕
+                        </button>
                       </div>
                     )}
-                    {tickets.length === 0 && (!user || isProfileComplete(user)) ? (
+                    {visibleTickets.length === 0 && !showProfileCompletionNotification ? (
                       <p className="text-sm text-[var(--text-muted)] text-center py-4">No new notifications</p>
                     ) : (
-                      tickets.map(ticket => (
-                        <div key={ticket.id} className="p-3 rounded-lg bg-white/5 border border-white/5 flex gap-3">
+                      visibleTickets.map(ticket => (
+                        <div key={ticket.id} className="p-3 rounded-lg bg-white/5 border border-white/5 flex gap-3 relative group">
                           <div className="w-10 h-10 rounded-lg bg-[var(--violet-primary)]/20 flex items-center justify-center flex-shrink-0">
-                            <LogIn className="w-5 h-5 text-[var(--violet-bright)]" />
+                            <Sparkles className="w-5 h-5 text-[var(--violet-bright)]" />
                           </div>
                           <div className="flex-1">
                             <p className="text-xs font-bold text-white">Booking Confirmed!</p>
                             <p className="text-[10px] text-[var(--text-secondary)] mt-1">Your tickets for {ticket.eventTitle} are ready.</p>
                           </div>
+                          <button 
+                            onClick={(e) => dismissNotification(ticket.id, e)}
+                            className="absolute top-2 right-2.5 text-white/40 hover:text-white text-xs font-bold z-20 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            ✕
+                          </button>
                         </div>
                       ))
                     )}

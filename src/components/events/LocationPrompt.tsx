@@ -10,7 +10,10 @@ export const LocationPrompt: React.FC = () => {
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
-    // Show prompt after a short delay if no city is set
+    // Show prompt after a short delay if no city is set and they haven't dismissed it
+    const hasSeen = localStorage.getItem('vhop_location_prompt_seen') === 'true';
+    if (hasSeen) return;
+
     const timer = setTimeout(() => {
       if (!city) {
         setIsVisible(true);
@@ -18,6 +21,11 @@ export const LocationPrompt: React.FC = () => {
     }, 2000);
     return () => clearTimeout(timer);
   }, [city]);
+
+  const dismissPrompt = () => {
+    localStorage.setItem('vhop_location_prompt_seen', 'true');
+    setIsVisible(false);
+  };
 
   if (city || !isVisible) return null;
 
@@ -33,7 +41,7 @@ export const LocationPrompt: React.FC = () => {
           <div className="absolute top-0 left-0 w-1 h-full bg-[var(--violet-bright)]" />
           
           <button 
-            onClick={() => setIsVisible(false)}
+            onClick={dismissPrompt}
             className="absolute top-2 right-2 p-1 text-[var(--text-muted)] hover:text-white"
           >
             <X className="w-4 h-4" />
@@ -54,6 +62,7 @@ export const LocationPrompt: React.FC = () => {
                 size="sm" 
                 className="w-full"
                 onClick={async () => {
+                  localStorage.setItem('vhop_location_prompt_seen', 'true');
                   await detectLocation();
                   setIsVisible(false);
                 }}

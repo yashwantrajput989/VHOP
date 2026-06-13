@@ -159,6 +159,7 @@ export const useAuthStore = create<AuthState>()(
 
           const profile = await response.json();
           localStorage.removeItem('referred_by_code');
+          localStorage.removeItem('vhop_location_prompt_seen');
           set({ user: sanitizeUser(profile), session: { uid: profile.id }, isLoading: false });
           logToBackend('login_email_success', profile);
           return profile;
@@ -186,6 +187,7 @@ export const useAuthStore = create<AuthState>()(
 
           const profile = await response.json();
           localStorage.removeItem('referred_by_code');
+          localStorage.removeItem('vhop_location_prompt_seen');
           set({ user: sanitizeUser(profile), session: { uid: profile.id }, isLoading: false });
           logToBackend('signup_email_success', profile);
           return profile;
@@ -235,6 +237,7 @@ export const useAuthStore = create<AuthState>()(
 
           const profile = await response.json();
           localStorage.removeItem('referred_by_code');
+          localStorage.removeItem('vhop_location_prompt_seen');
           set({ user: sanitizeUser(profile), session: { uid: profile.id }, isLoading: false });
           logToBackend('google_login_success', profile);
           return profile;
@@ -277,6 +280,7 @@ export const useAuthStore = create<AuthState>()(
                 if (response.ok) {
                   const profile = await response.json();
                   localStorage.removeItem('referred_by_code');
+                  localStorage.removeItem('vhop_location_prompt_seen');
                   set({ user: sanitizeUser(profile), session: { uid: profile.id } });
                   logToBackend('google_login_success', profile);
                 }
