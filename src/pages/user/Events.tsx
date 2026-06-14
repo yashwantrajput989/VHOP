@@ -194,9 +194,9 @@ export const Events: React.FC = () => {
         ) : isLoading ? (
           <div className="space-y-8 pb-24 animate-pulse">
             <div className="h-48 sm:h-64 md:h-[300px] rounded-3xl bg-white/5" />
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-5">
-              {[...Array(6)].map((_, i) => (
-                <div key={i} className="aspect-[4/3] rounded-2xl bg-white/5" />
+            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-6">
+              {[...Array(8)].map((_, i) => (
+                <div key={i} className="aspect-[4/5] rounded-[1.8rem] bg-white/5 animate-pulse" />
               ))}
             </div>
           </div>
@@ -355,7 +355,7 @@ export const Events: React.FC = () => {
                   <p className="text-xs text-[var(--text-muted)]">Try a different category or search term.</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 [&>*]:min-w-0">
+                <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-6 [&>*]:min-w-0">
                   {filteredEvents.map((event) => (
                     <EventCard key={event.id} event={event} />
                   ))}

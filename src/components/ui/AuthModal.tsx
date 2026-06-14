@@ -18,7 +18,8 @@ import {
   Wine,
   Utensils,
   PartyPopper,
-  ArrowRight
+  ArrowRight,
+  Smartphone
 } from 'lucide-react';
 import { useUIStore } from '../../store/uiStore';
 import { useAuthStore } from '../../store/authStore';
@@ -37,8 +38,18 @@ const INTERESTS = [
 export const AuthModal: React.FC = () => {
   const navigate = useNavigate();
   const { activeModal, closeModal } = useUIStore();
-  const { loginWithGoogle, loginWithEmail, registerWithEmail, isLoading, user, setUser } = useAuthStore();
+  const { 
+    loginWithGoogle, 
+    loginWithEmail, 
+    registerWithEmail, 
+    sendOtp, 
+    verifyOtp, 
+    isLoading, 
+    user, 
+    setUser 
+  } = useAuthStore();
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot' | 'reset'>('login');
+  const [loginMethod, setLoginMethod] = useState<'email' | 'phone'>('email');
   
   // Onboarding State
   const [onboardingStep, setOnboardingStep] = useState<'none' | 'policy' | 'interests'>('none');
@@ -52,6 +63,22 @@ export const AuthModal: React.FC = () => {
   const [referralCode, setReferralCode] = useState('');
   const [otp, setOtp] = useState('');
   const [localLoading, setLocalLoading] = useState(false);
+
+  // Phone OTP States
+  const [phone, setPhone] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [isOtpSent, setIsOtpSent] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const [devOtpHelp, setDevOtpHelp] = useState('');
+
+  // Countdown timer for OTP resend
+  useEffect(() => {
+    if (countdown <= 0) return;
+    const timer = setInterval(() => {
+      setCountdown((prev) => prev - 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [countdown]);
 
   // Prefill referral code if present in localStorage
   useEffect(() => {
@@ -143,6 +170,51 @@ export const AuthModal: React.FC = () => {
     } catch (error: any) {
       console.error('Auth error:', error);
       alert(error.message || 'Authentication failed. Please check your credentials.');
+    }
+  };
+
+  const handlePhoneSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!phone) return;
+    
+    setLocalLoading(true);
+    try {
+      const res = await sendOtp(phone);
+      setIsOtpSent(true);
+      setCountdown(60);
+      
+      if (res.devOtp) {
+        setDevOtpHelp(res.devOtp);
+      } else {
+        setDevOtpHelp('');
+      }
+      
+      alert('Verification code sent successfully to your phone!');
+    } catch (error: any) {
+      console.error(error);
+      alert(error.message || 'Failed to send OTP. Please check your phone number.');
+    } finally {
+      setLocalLoading(false);
+    }
+  };
+
+  const handleOtpVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!phone || !otpCode) return;
+    
+    setLocalLoading(true);
+    try {
+      const profile = await verifyOtp(phone, otpCode, referralCode || undefined);
+      if (profile && profile.onboarded) {
+        closeModal();
+      } else {
+        setOnboardingStep('policy');
+      }
+    } catch (error: any) {
+      console.error(error);
+      alert(error.message || 'OTP verification failed. Please try again.');
+    } finally {
+      setLocalLoading(false);
     }
   };
 
@@ -242,102 +314,217 @@ export const AuthModal: React.FC = () => {
                       </p>
                     </div>
 
-                    <form onSubmit={handleEmailSubmit} className="space-y-4">
-                      <AnimatePresence mode="wait">
-                        {mode === 'signup' && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                            className="space-y-2 overflow-hidden"
-                          >
-                            <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Full Name</label>
-                            <div className="relative">
-                              <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
-                              <input 
-                                type="text" 
-                                required
-                                value={fullName}
-                                onChange={(e) => setFullName(e.target.value)}
-                                className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all"
-                                placeholder="Alex Rivera"
-                              />
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-
-                      <div className="space-y-2">
-                        <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Email Address</label>
-                        <div className="relative">
-                          <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
-                          <input 
-                            type="email" 
-                            required
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all"
-                            placeholder="name@example.com"
-                          />
-                        </div>
+                    {mode === 'login' && (
+                      <div className="flex bg-white/5 p-1 rounded-xl gap-1 mb-6 border border-white/5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLoginMethod('email');
+                            setIsOtpSent(false);
+                          }}
+                          className={`flex-1 py-2.5 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                            loginMethod === 'email'
+                              ? 'bg-[var(--violet-primary)] text-white shadow-md'
+                              : 'text-[var(--text-secondary)] hover:text-white'
+                          }`}
+                        >
+                          <Mail className="w-3.5 h-3.5" /> Email
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setLoginMethod('phone')}
+                          className={`flex-1 py-2.5 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                            loginMethod === 'phone'
+                              ? 'bg-[var(--violet-primary)] text-white shadow-md'
+                              : 'text-[var(--text-secondary)] hover:text-white'
+                          }`}
+                        >
+                          <Smartphone className="w-3.5 h-3.5" /> Phone OTP
+                        </button>
                       </div>
+                    )}
 
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Password</label>
-                          {mode === 'login' && (
-                            <button 
-                              type="button" 
-                              onClick={() => {
-                                setMode('forgot');
-                                setPassword('');
-                              }}
-                              className="text-xs text-[var(--violet-bright)] font-semibold hover:underline"
+                    {mode === 'signup' || loginMethod === 'email' ? (
+                      <form onSubmit={handleEmailSubmit} className="space-y-4">
+                        <AnimatePresence mode="wait">
+                          {mode === 'signup' && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: 'auto' }}
+                              exit={{ opacity: 0, height: 0 }}
+                              className="space-y-2 overflow-hidden"
                             >
-                              Forgot password?
-                            </button>
+                              <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Full Name</label>
+                              <div className="relative">
+                                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
+                                <input 
+                                  type="text" 
+                                  required
+                                  value={fullName}
+                                  onChange={(e) => setFullName(e.target.value)}
+                                  className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all"
+                                  placeholder="Alex Rivera"
+                                />
+                              </div>
+                            </motion.div>
                           )}
-                        </div>
-                        <div className="relative">
-                          <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
-                          <input 
-                            type="password" 
-                            required
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all"
-                            placeholder="••••••••"
-                          />
-                        </div>
-                      </div>
+                        </AnimatePresence>
 
-                      <AnimatePresence mode="wait">
-                        {mode === 'signup' && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                            className="space-y-2 overflow-hidden"
-                          >
-                            <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Referral Code (Optional)</label>
-                            <div className="relative">
-                              <Zap className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
-                              <input 
-                                type="text" 
-                                value={referralCode}
-                                onChange={(e) => setReferralCode(e.target.value)}
-                                className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all"
-                                placeholder="e.g. VHOP-USER-2026"
-                              />
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Email Address</label>
+                          <div className="relative">
+                            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
+                            <input 
+                              type="email" 
+                              required
+                              value={email}
+                              onChange={(e) => setEmail(e.target.value)}
+                              className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all"
+                              placeholder="name@example.com"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Password</label>
+                            {mode === 'login' && (
+                              <button 
+                                type="button" 
+                                onClick={() => {
+                                  setMode('forgot');
+                                  setPassword('');
+                                }}
+                                className="text-xs text-[var(--violet-bright)] font-semibold hover:underline"
+                              >
+                                Forgot password?
+                              </button>
+                            )}
+                          </div>
+                          <div className="relative">
+                            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
+                            <input 
+                              type="password" 
+                              required
+                              value={password}
+                              onChange={(e) => setPassword(e.target.value)}
+                              className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all"
+                              placeholder="••••••••"
+                            />
+                          </div>
+                        </div>
+
+                        <AnimatePresence mode="wait">
+                          {mode === 'signup' && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: 'auto' }}
+                              exit={{ opacity: 0, height: 0 }}
+                              className="space-y-2 overflow-hidden"
+                            >
+                              <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Referral Code (Optional)</label>
+                              <div className="relative">
+                                <Zap className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
+                                <input 
+                                  type="text" 
+                                  value={referralCode}
+                                  onChange={(e) => setReferralCode(e.target.value)}
+                                  className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all"
+                                  placeholder="e.g. VHOP-USER-2026"
+                                />
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+
+                        <GlowButton type="submit" className="w-full py-4 text-base mt-2">
+                          {mode === 'login' ? 'Sign In' : 'Create Account'}
+                        </GlowButton>
+                      </form>
+                    ) : (
+                      <div className="space-y-4">
+                        {!isOtpSent ? (
+                          <form onSubmit={handlePhoneSubmit} className="space-y-4">
+                            <div className="space-y-2">
+                              <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Phone Number</label>
+                              <div className="relative">
+                                <Smartphone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
+                                <div className="absolute left-12 top-1/2 -translate-y-1/2 text-sm text-slate-300 font-bold border-r border-white/10 pr-3">
+                                  +91
+                                </div>
+                                <input 
+                                  type="tel" 
+                                  required
+                                  maxLength={10}
+                                  value={phone}
+                                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
+                                  className="w-full bg-white/5 border border-white/10 rounded-xl pl-24 pr-4 py-3.5 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all font-mono font-bold text-white text-base"
+                                  placeholder="9999999999"
+                                />
+                              </div>
                             </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
 
-                      <GlowButton type="submit" className="w-full py-4 text-base mt-2">
-                        {mode === 'login' ? 'Sign In' : 'Create Account'}
-                      </GlowButton>
-                    </form>
+                            <GlowButton type="submit" isLoading={localLoading} className="w-full py-4 text-base mt-2">
+                              Send OTP
+                            </GlowButton>
+                          </form>
+                        ) : (
+                          <form onSubmit={handleOtpVerify} className="space-y-4">
+                            <div className="space-y-2">
+                              <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Enter 6-Digit OTP</label>
+                              <div className="relative">
+                                <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
+                                <input 
+                                  type="text" 
+                                  required
+                                  maxLength={6}
+                                  value={otpCode}
+                                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                                  className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3.5 tracking-[0.5em] text-center text-lg font-extrabold focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all text-white font-mono"
+                                  placeholder="123456"
+                                />
+                              </div>
+                              
+                              {devOtpHelp && (
+                                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-400 font-bold text-center mt-2.5 animate-pulse">
+                                  [SANDBOX OTP]: {devOtpHelp}
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex justify-between items-center text-xs mt-3">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsOtpSent(false);
+                                  setOtpCode('');
+                                }}
+                                className="text-[var(--text-secondary)] hover:text-white hover:underline transition-colors"
+                              >
+                                Change Phone Number
+                              </button>
+                              
+                              {countdown > 0 ? (
+                                <span className="text-[var(--text-muted)] font-mono">Resend in {countdown}s</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={handlePhoneSubmit}
+                                  className="text-[var(--violet-bright)] font-bold hover:underline"
+                                >
+                                  Resend OTP
+                                </button>
+                              )}
+                            </div>
+
+                            <GlowButton type="submit" isLoading={localLoading} className="w-full py-4 text-base mt-4">
+                              Verify & Sign In
+                            </GlowButton>
+                          </form>
+                        )}
+                      </div>
+                    )}
+
 
                     <div className="space-y-4">
                       <div className="relative py-4">

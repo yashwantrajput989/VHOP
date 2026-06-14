@@ -14,6 +14,7 @@ const {
     sendPartnerApprovalCredentialsEmail,
     sendContactFormDetailsToSuperEmail
 } = require('./utils/email');
+const { sendSMS, sendBulkSMS, buildBookingConfirmationSMS } = require('./utils/sms');
 // Razorpay import removed - using Cashfree now
 const crypto = require('crypto');
 
@@ -232,6 +233,28 @@ const pool = mysql.createPool({
         `);
         console.log('🟢 Genre fees table verified/created.');
 
+        // 5h. Verify/Create sms_templates table if not exists
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS sms_templates (
+                id VARCHAR(255) PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                body TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )
+        `);
+        console.log('🟢 SMS templates table verified/created.');
+
+        // Seed default SMS templates
+        await pool.execute(`
+            INSERT IGNORE INTO sms_templates (id, name, body)
+            VALUES
+            ('tpl_booking', 'Booking Confirmation', 'Hi {{name}}! Your VHOP ticket for {{event}} is confirmed. Booking ID: {{booking_id}}. Venue: {{venue}}. Date: {{date}}. See you there! 🎶'),
+            ('tpl_reminder', 'Event Reminder', 'Hi {{name}}! Just a reminder – {{event}} is happening tomorrow at {{venue}}. Get ready for an amazing night! 🎉'),
+            ('tpl_offer', 'Promo / Offer', 'Hey {{name}}! Exclusive offer from VHOP: Get 20% off on your next booking. Use code VHOP20 at checkout. Limited time only!')
+        `);
+        console.log('🟢 Default SMS templates seeded/verified.');
+
 
 
         // 6. Check existing columns in profiles table (database-agnostic method)
@@ -299,6 +322,16 @@ const pool = mysql.createPool({
         await addColumnIfNeeded('music_dna_live', 'INT DEFAULT 10');
         await addColumnIfNeeded('reset_token', 'VARCHAR(255) NULL');
         await addColumnIfNeeded('reset_token_expires', 'TIMESTAMP NULL DEFAULT NULL');
+
+        // Create phone_otps table
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS phone_otps (
+                phone VARCHAR(20) PRIMARY KEY,
+                otp_code VARCHAR(10) NOT NULL,
+                expires_at TIMESTAMP NOT NULL
+            )
+        `);
+        console.log('🟢 Phone OTPs table verified/created.');
 
         // Verify required columns in events
         const [eventColumns] = await pool.execute('DESCRIBE events');
@@ -962,6 +995,146 @@ app.post('/api/auth/reset-password', async (req, res) => {
         res.status(200).json({ message: 'Password reset successfully.' });
     } catch (error) {
         console.error('Reset password error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Send OTP via SMS (Message Central)
+app.post('/api/auth/otp/send', async (req, res) => {
+    const { phone } = req.body;
+    try {
+        if (!phone) {
+            return res.status(400).json({ error: 'Phone number is required' });
+        }
+
+        // Keep last 10 digits
+        const digits = phone.replace(/\D/g, '');
+        if (digits.length < 10) {
+            return res.status(400).json({ error: 'Please enter a valid 10-digit phone number' });
+        }
+        const mobileNo = digits.slice(-10);
+
+        // Generate a 6-digit random OTP
+        const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+        // Upsert into DB with 10 minutes validity
+        await pool.execute(
+            'INSERT INTO phone_otps (phone, otp_code, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE)) ON DUPLICATE KEY UPDATE otp_code = VALUES(otp_code), expires_at = VALUES(expires_at)',
+            [mobileNo, otpCode]
+        );
+
+        const message = `[VHOP] Your OTP for secure login is ${otpCode}. Valid for 10 minutes. Please do not share this code. 🎶`;
+
+        // Sandbox check
+        const isSandbox = !process.env.MSG_CENTRAL_AUTH_TOKEN || 
+                          process.env.MSG_CENTRAL_AUTH_TOKEN.includes('placeholder') || 
+                          process.env.MSG_CENTRAL_AUTH_TOKEN.includes('your_message');
+
+        if (isSandbox) {
+            console.log(`\n===============================================\n[OTP SANDBOX DEBUG]\nPhone: +91${mobileNo}\nOTP Code: ${otpCode}\nMessage: ${message}\n===============================================\n`);
+            return res.status(200).json({ 
+                success: true, 
+                message: 'OTP sent successfully (Sandbox Mode)', 
+                devOtp: otpCode 
+            });
+        }
+
+        const smsResult = await sendSMS(mobileNo, message);
+        if (smsResult.success) {
+            res.status(200).json({ success: true, message: 'OTP sent successfully' });
+        } else {
+            console.error('Failed to send OTP SMS:', smsResult.error);
+            // Fallback to debug in case of API failure during testing/demo
+            res.status(500).json({ error: 'Failed to send OTP SMS. Please try again later.' });
+        }
+    } catch (error) {
+        console.error('Send OTP error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Verify OTP & Login/Register (Message Central)
+app.post('/api/auth/otp/verify', async (req, res) => {
+    const { phone, code, referred_by_code } = req.body;
+    try {
+        if (!phone || !code) {
+            return res.status(400).json({ error: 'Phone number and OTP code are required' });
+        }
+
+        const digits = phone.replace(/\D/g, '');
+        const mobileNo = digits.slice(-10);
+
+        // Fetch OTP from database
+        const [otpRows] = await pool.execute(
+            'SELECT * FROM phone_otps WHERE phone = ? AND expires_at > NOW()',
+            [mobileNo]
+        );
+
+        if (otpRows.length === 0 || otpRows[0].otp_code !== code.toString().trim()) {
+            return res.status(400).json({ error: 'Invalid or expired OTP code' });
+        }
+
+        // Clean up OTP to prevent reuse
+        await pool.execute('DELETE FROM phone_otps WHERE phone = ?', [mobileNo]);
+
+        // Find existing user profile
+        const [userRows] = await pool.execute(
+            'SELECT * FROM profiles WHERE phone = ? OR phone = ?',
+            [mobileNo, `+91${mobileNo}`]
+        );
+
+        if (userRows.length > 0) {
+            // Existing user - Log them in
+            const userProfile = userRows[0];
+
+            // If phone doesn't match E.164 exactly, update it to clean 10 digits
+            if (userProfile.phone !== mobileNo) {
+                await pool.execute('UPDATE profiles SET phone = ? WHERE id = ?', [mobileNo, userProfile.id]);
+            }
+
+            // Streak check/update
+            if (!userProfile.streak_count || userProfile.streak_count === 0) {
+                await pool.execute(
+                    'UPDATE profiles SET streak_count = 1, streak_updated_at = NOW() WHERE id = ?',
+                    [userProfile.id]
+                );
+            }
+
+            // Process referral
+            if (referred_by_code && !userProfile.referral_rewarded) {
+                await processReferralReward(userProfile.id, referred_by_code);
+            }
+
+            const [updatedRows] = await pool.execute('SELECT * FROM profiles WHERE id = ?', [userProfile.id]);
+            console.log(`[OTP AUTH] User logged in: ${updatedRows[0].phone}`);
+            return res.status(200).json(formatProfile(updatedRows[0]));
+        }
+
+        // New User - Auto-Register
+        const id = `usr_p_${Math.random().toString(36).substring(2, 11)}`;
+        const username = `user_${mobileNo}`;
+        const full_name = `User ${mobileNo.slice(-4)}`;
+        const email = `${mobileNo}@vhop.in`; // Default placeholder
+        const avatar_url = `https://api.dicebear.com/7.x/avataaars/svg?seed=${mobileNo}`;
+
+        await pool.execute(
+            'INSERT INTO profiles (id, full_name, username, email, avatar_url, role, v_coins, city, phone, streak_count, streak_updated_at, onboarded) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), FALSE)',
+            [id, full_name, username, email, avatar_url, 'user', 500, 'Visakhapatnam', mobileNo]
+        );
+
+        logActivity({ type: 'profile_created', userId: id });
+
+        // Process referral reward for new user
+        if (referred_by_code) {
+            await processReferralReward(id, referred_by_code);
+        }
+
+        const [newUserRows] = await pool.execute('SELECT * FROM profiles WHERE id = ?', [id]);
+        console.log(`[OTP AUTH] New user created: +91${mobileNo}`);
+        res.status(201).json(formatProfile(newUserRows[0]));
+
+    } catch (error) {
+        console.error('Verify OTP error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -2087,21 +2260,25 @@ async function confirmBooking(bookingId, paymentId) {
         
         await connection.commit();
         
-        // Send email in the background (non-blocking)
+        // Send email + SMS in the background (non-blocking)
         (async () => {
             try {
-                const [userRows] = await pool.execute('SELECT email, full_name FROM profiles WHERE id = ?', [booking.user_id]);
+                const [userRows] = await pool.execute('SELECT email, full_name, phone FROM profiles WHERE id = ?', [booking.user_id]);
                 const [eventRows] = await pool.execute('SELECT * FROM events WHERE id = ?', [booking.event_id]);
                 
                 if (userRows.length > 0 && eventRows.length > 0) {
+                    const userInfo  = userRows[0];
+                    const eventInfo = eventRows[0];
+
+                    // 1. Send booking confirmation email
                     await sendBookingEmail(
                         { 
                             event_id: booking.event_id,
-                            event_title: eventRows[0].title,
-                            venue_name: eventRows[0].venue_name,
-                            city: eventRows[0].city,
-                            start_date: eventRows[0].start_date,
-                            cover_image: eventRows[0].cover_image,
+                            event_title: eventInfo.title,
+                            venue_name: eventInfo.venue_name,
+                            city: eventInfo.city,
+                            start_date: eventInfo.start_date,
+                            cover_image: eventInfo.cover_image,
                             user_id: booking.user_id,
                             quantity: booking.quantity,
                             total_amount: booking.total_amount,
@@ -2115,14 +2292,31 @@ async function confirmBooking(bookingId, paymentId) {
                             booked_at: booking.booked_at,
                             guests: typeof booking.guests === 'string' ? JSON.parse(booking.guests) : (booking.guests || []),
                             id: booking.id, 
-                            user_name: userRows[0].full_name 
+                            user_name: userInfo.full_name 
                         },
-                        eventRows[0],
-                        userRows[0].email
+                        eventInfo,
+                        userInfo.email
                     );
+
+                    // 2. Send booking confirmation SMS (non-blocking, best-effort)
+                    if (userInfo.phone) {
+                        const smsBody = buildBookingConfirmationSMS({
+                            userName:    userInfo.full_name,
+                            eventTitle:  eventInfo.title,
+                            bookingId:   booking.booking_id,
+                            venueName:   eventInfo.venue_name,
+                            city:        eventInfo.city,
+                            startDate:   eventInfo.start_date,
+                            quantity:    booking.quantity,
+                            totalAmount: booking.total_amount
+                        });
+                        sendSMS(userInfo.phone, smsBody).catch(err =>
+                            console.error('[SMS] Booking confirmation SMS failed:', err)
+                        );
+                    }
                 }
             } catch (emailErr) {
-                console.error('Background Email Error in confirmBooking:', emailErr);
+                console.error('Background Email/SMS Error in confirmBooking:', emailErr);
             }
         })();
         
@@ -2890,6 +3084,147 @@ app.post('/api/superadmin/partners/reject', async (req, res) => {
 });
 
 // ==================== END PARTNER / CONTACT ROUTES ====================
+
+// ==================== SMS BROADCAST (SUPER ADMIN) ====================
+
+// GET /api/superadmin/sms/templates - Fetch all SMS templates
+app.get('/api/superadmin/sms/templates', async (req, res) => {
+    try {
+        const [rows] = await pool.execute('SELECT * FROM sms_templates ORDER BY created_at ASC');
+        res.json(rows);
+    } catch (error) {
+        console.error('Error fetching SMS templates:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /api/superadmin/sms/templates - Save or update an SMS template
+app.post('/api/superadmin/sms/templates', async (req, res) => {
+    const { id, name, body } = req.body;
+    if (!name || !body) {
+        return res.status(400).json({ error: 'name and body are required' });
+    }
+    try {
+        const templateId = id || `tpl_${Math.random().toString(36).substring(2, 11)}`;
+        await pool.execute(
+            'INSERT INTO sms_templates (id, name, body) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE name = VALUES(name), body = VALUES(body)',
+            [templateId, name, body]
+        );
+        const [rows] = await pool.execute('SELECT * FROM sms_templates WHERE id = ?', [templateId]);
+        res.status(201).json(rows[0]);
+    } catch (error) {
+        console.error('Error saving SMS template:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// DELETE /api/superadmin/sms/templates/:id - Delete an SMS template
+app.delete('/api/superadmin/sms/templates/:id', async (req, res) => {
+    try {
+        await pool.execute('DELETE FROM sms_templates WHERE id = ?', [req.params.id]);
+        res.json({ message: 'Template deleted' });
+    } catch (error) {
+        console.error('Error deleting SMS template:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /api/superadmin/sms/event-guests - Send SMS to confirmed guests of an event
+app.post('/api/superadmin/sms/event-guests', async (req, res) => {
+    const { eventId, message } = req.body;
+    if (!eventId || !message) {
+        return res.status(400).json({ error: 'eventId and message are required' });
+    }
+    try {
+        // Fetch all confirmed bookings for this event with user phone numbers
+        const [rows] = await pool.execute(
+            `SELECT DISTINCT p.phone, p.full_name
+             FROM bookings b
+             JOIN profiles p ON b.user_id = p.id
+             WHERE b.event_id = ? AND b.booking_status IN ('confirmed', 'checked_in')
+             AND p.phone IS NOT NULL AND p.phone != ''`,
+            [eventId]
+        );
+
+        if (rows.length === 0) {
+            return res.json({ message: 'No guests with phone numbers found for this event.', sent: 0, failed: 0 });
+        }
+
+        const phones = rows.map(r => r.phone);
+        // Fire and respond immediately, send in background
+        res.json({ message: `Sending SMS to ${phones.length} guests...`, total: phones.length });
+
+        // Background send
+        sendBulkSMS(phones, message).then(result => {
+            logActivity({ type: 'sms_broadcast_event', eventId, sent: result.sent, failed: result.failed });
+            console.log(`[SMS Broadcast] Event ${eventId}: sent=${result.sent}, failed=${result.failed}`);
+        });
+    } catch (error) {
+        console.error('Error sending event SMS broadcast:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /api/superadmin/sms/all-users - Broadcast SMS to all registered users
+app.post('/api/superadmin/sms/all-users', async (req, res) => {
+    const { message } = req.body;
+    if (!message) {
+        return res.status(400).json({ error: 'message is required' });
+    }
+    try {
+        const [rows] = await pool.execute(
+            `SELECT DISTINCT phone, full_name FROM profiles
+             WHERE role = 'user' AND phone IS NOT NULL AND phone != ''`
+        );
+
+        if (rows.length === 0) {
+            return res.json({ message: 'No users with phone numbers found.', sent: 0, failed: 0 });
+        }
+
+        const phones = rows.map(r => r.phone);
+        res.json({ message: `Broadcasting SMS to ${phones.length} users...`, total: phones.length });
+
+        sendBulkSMS(phones, message).then(result => {
+            logActivity({ type: 'sms_broadcast_all_users', sent: result.sent, failed: result.failed });
+            console.log(`[SMS Broadcast] All users: sent=${result.sent}, failed=${result.failed}`);
+        });
+    } catch (error) {
+        console.error('Error sending all-users SMS broadcast:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// GET /api/superadmin/sms/event-guest-count/:eventId - Preview recipient count
+app.get('/api/superadmin/sms/event-guest-count/:eventId', async (req, res) => {
+    try {
+        const [rows] = await pool.execute(
+            `SELECT COUNT(DISTINCT p.id) as count
+             FROM bookings b
+             JOIN profiles p ON b.user_id = p.id
+             WHERE b.event_id = ? AND b.booking_status IN ('confirmed', 'checked_in')
+             AND p.phone IS NOT NULL AND p.phone != ''`,
+            [req.params.eventId]
+        );
+        res.json({ count: rows[0].count || 0 });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// GET /api/superadmin/sms/user-count - Preview all-users recipient count
+app.get('/api/superadmin/sms/user-count', async (req, res) => {
+    try {
+        const [rows] = await pool.execute(
+            `SELECT COUNT(*) as count FROM profiles
+             WHERE role = 'user' AND phone IS NOT NULL AND phone != ''`
+        );
+        res.json({ count: rows[0].count || 0 });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ==================== END SMS BROADCAST ====================
 
 // Logging endpoint
 app.post('/api/log', (req, res) => {

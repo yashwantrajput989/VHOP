@@ -18,7 +18,9 @@ import {
   RefreshCw,
   MessageSquare,
   Pencil,
-  Ticket
+  Ticket,
+  Smartphone,
+  Radio
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -27,7 +29,7 @@ import { AdminLogin } from '../admin/AdminLogin';
 import { API_BASE_URL } from '../../config';
 import { useLocation, useNavigate } from 'react-router-dom';
 
-type TabType = 'dashboard' | 'events' | 'partners' | 'issues' | 'coupons' | 'fees';
+type TabType = 'dashboard' | 'events' | 'partners' | 'issues' | 'coupons' | 'fees' | 'sms';
 
 export const SuperDashboard: React.FC = () => {
   const location = useLocation();
@@ -62,6 +64,112 @@ export const SuperDashboard: React.FC = () => {
     city: 'Visakhapatnam'
   });
   const [createdPartnerCreds, setCreatedPartnerCreds] = useState<any>(null);
+
+  // ── SMS Broadcast State ──────────────────────────────────────────────
+  const [smsTemplates, setSmsTemplates] = useState<any[]>([]);
+  const [smsMessage, setSmsMessage] = useState('');
+  const [smsTemplateName, setSmsTemplateName] = useState('');
+  const [selectedSmsTemplate, setSelectedSmsTemplate] = useState('');
+  const [smsSendingEvent, setSmsSendingEvent] = useState(false);
+  const [smsSendingAll, setSmsSendingAll] = useState(false);
+  const [smsSelectedEventId, setSmsSelectedEventId] = useState('');
+  const [smsGuestCount, setSmsGuestCount] = useState<number | null>(null);
+  const [smsUserCount, setSmsUserCount] = useState<number | null>(null);
+  const [smsFeedback, setSmsFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+
+  const fetchSmsTemplates = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/superadmin/sms/templates`);
+      if (res.ok) setSmsTemplates(await res.json());
+    } catch (e) { console.error('SMS templates fetch error:', e); }
+  };
+
+  const fetchSmsUserCount = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/superadmin/sms/user-count`);
+      if (res.ok) { const d = await res.json(); setSmsUserCount(d.count); }
+    } catch (e) { console.error('SMS user count error:', e); }
+  };
+
+  const fetchSmsGuestCount = async (eventId: string) => {
+    if (!eventId) { setSmsGuestCount(null); return; }
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/superadmin/sms/event-guest-count/${eventId}`);
+      if (res.ok) { const d = await res.json(); setSmsGuestCount(d.count); }
+    } catch (e) { console.error('SMS guest count error:', e); }
+  };
+
+  const handleLoadSmsTemplate = (tplId: string) => {
+    const tpl = smsTemplates.find(t => t.id === tplId);
+    if (tpl) { setSmsMessage(tpl.body); setSmsTemplateName(tpl.name); }
+    setSelectedSmsTemplate(tplId);
+  };
+
+  const handleSaveSmsTemplate = async () => {
+    if (!smsMessage.trim() || !smsTemplateName.trim()) {
+      setSmsFeedback({ type: 'error', msg: 'Enter both a name and message to save as template.' }); return;
+    }
+    setIsSavingTemplate(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/superadmin/sms/templates`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: selectedSmsTemplate || undefined, name: smsTemplateName, body: smsMessage })
+      });
+      if (res.ok) {
+        await fetchSmsTemplates();
+        setSmsFeedback({ type: 'success', msg: 'Template saved!' });
+        setTimeout(() => setSmsFeedback(null), 3000);
+      } else {
+        const d = await res.json();
+        setSmsFeedback({ type: 'error', msg: d.error || 'Save failed.' });
+      }
+    } catch (e) { setSmsFeedback({ type: 'error', msg: 'Network error.' }); }
+    finally { setIsSavingTemplate(false); }
+  };
+
+  const handleDeleteSmsTemplate = async (id: string) => {
+    if (!window.confirm('Delete this SMS template?')) return;
+    await fetch(`${API_BASE_URL}/api/superadmin/sms/templates/${id}`, { method: 'DELETE' });
+    await fetchSmsTemplates();
+    if (selectedSmsTemplate === id) { setSelectedSmsTemplate(''); setSmsTemplateName(''); }
+  };
+
+  const handleSendToEventGuests = async () => {
+    if (!smsSelectedEventId) { setSmsFeedback({ type: 'error', msg: 'Please select an event.' }); return; }
+    if (!smsMessage.trim()) { setSmsFeedback({ type: 'error', msg: 'Message cannot be empty.' }); return; }
+    if (!window.confirm(`Send this SMS to ${smsGuestCount ?? '?'} event guests?`)) return;
+    setSmsSendingEvent(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/superadmin/sms/event-guests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventId: smsSelectedEventId, message: smsMessage })
+      });
+      const d = await res.json();
+      setSmsFeedback({ type: 'success', msg: d.message || 'SMS sending initiated!' });
+      setTimeout(() => setSmsFeedback(null), 5000);
+    } catch (e) { setSmsFeedback({ type: 'error', msg: 'Network error.' }); }
+    finally { setSmsSendingEvent(false); }
+  };
+
+  const handleSendToAllUsers = async () => {
+    if (!smsMessage.trim()) { setSmsFeedback({ type: 'error', msg: 'Message cannot be empty.' }); return; }
+    if (!window.confirm(`Broadcast SMS to ALL ${smsUserCount ?? '?'} registered users? This cannot be undone.`)) return;
+    setSmsSendingAll(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/superadmin/sms/all-users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: smsMessage })
+      });
+      const d = await res.json();
+      setSmsFeedback({ type: 'success', msg: d.message || 'Broadcast initiated!' });
+      setTimeout(() => setSmsFeedback(null), 5000);
+    } catch (e) { setSmsFeedback({ type: 'error', msg: 'Network error.' }); }
+    finally { setSmsSendingAll(false); }
+  };
 
   // Coupons state
   const [coupons, setCoupons] = useState<any[]>([]);
@@ -305,6 +413,10 @@ export const SuperDashboard: React.FC = () => {
     if (activeTab === 'fees' && user && user.role === 'superadmin') {
       fetchFees();
     }
+    if (activeTab === 'sms' && user && user.role === 'superadmin') {
+      fetchSmsTemplates();
+      fetchSmsUserCount();
+    }
   }, [activeTab, user]);
 
   useEffect(() => {
@@ -455,6 +567,8 @@ export const SuperDashboard: React.FC = () => {
       setActiveTab('coupons');
     } else if (location.pathname.endsWith('/fees')) {
       setActiveTab('fees');
+    } else if (location.pathname.endsWith('/sms')) {
+      setActiveTab('sms');
     } else {
       setActiveTab('dashboard');
     }
@@ -616,6 +730,7 @@ export const SuperDashboard: React.FC = () => {
             { id: 'issues', label: 'Issues & Status', icon: AlertCircle },
             { id: 'coupons', label: 'Coupons', icon: Ticket },
             { id: 'fees', label: 'Fees Configurator', icon: IndianRupee },
+            { id: 'sms', label: 'SMS Broadcast', icon: Smartphone },
           ].map(tab => (
             <button
               key={tab.id}
@@ -1454,7 +1569,272 @@ export const SuperDashboard: React.FC = () => {
           )}
         </AnimatePresence>
 
-        {/* MODAL: Event Review / Guest List Modal */}
+        {/* ──── SMS BROADCAST TAB ──────────────────────────────────────────── */}
+        <AnimatePresence mode="wait">
+          {activeTab === 'sms' && (
+            <motion.div
+              key="sms"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              className="space-y-8"
+            >
+              {/* Header info */}
+              <div className="flex items-center gap-4 p-4 rounded-2xl bg-[var(--violet-primary)]/10 border border-[var(--violet-primary)]/25">
+                <div className="p-3 rounded-xl bg-[var(--violet-primary)]/20">
+                  <Smartphone className="w-6 h-6 text-[var(--violet-bright)]" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-sm">SMS Broadcast via Message Central</h3>
+                  <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                    Compose a message, load a template, then send to a specific event's guest list or broadcast to all users.
+                    Auto-confirmation SMS fires automatically on every successful ticket booking.
+                  </p>
+                </div>
+              </div>
+
+              {/* Feedback banner */}
+              {smsFeedback && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className={`p-4 rounded-xl border text-sm font-semibold ${
+                    smsFeedback.type === 'success'
+                      ? 'bg-green-500/10 border-green-500/30 text-green-400'
+                      : 'bg-red-500/10 border-red-500/30 text-red-400'
+                  }`}
+                >
+                  {smsFeedback.msg}
+                </motion.div>
+              )}
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Left: Message Composer */}
+                <div className="lg:col-span-2 space-y-6">
+                  <GlassCard className="p-8">
+                    <div className="flex items-center justify-between mb-6">
+                      <h3 className="text-xl font-bold font-display text-white">Message Composer</h3>
+                      <span className={`text-xs font-bold px-3 py-1 rounded-full border ${
+                        smsMessage.length > 160
+                          ? 'bg-red-500/10 border-red-500/25 text-red-400'
+                          : smsMessage.length > 120
+                          ? 'bg-amber-500/10 border-amber-500/25 text-amber-400'
+                          : 'bg-green-500/10 border-green-500/25 text-green-400'
+                      }`}>
+                        {smsMessage.length} / 160 chars {smsMessage.length > 160 ? `(${Math.ceil(smsMessage.length / 160)} SMS units)` : '(1 SMS unit)'}
+                      </span>
+                    </div>
+
+                    {/* Load template */}
+                    <div className="mb-4">
+                      <label className="text-xs font-bold text-[var(--text-muted)] uppercase mb-2 block">Load a Saved Template</label>
+                      <select
+                        value={selectedSmsTemplate}
+                        onChange={(e) => handleLoadSmsTemplate(e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:border-[var(--violet-bright)] outline-none"
+                      >
+                        <option value="" className="bg-[#110F20]">— Select template to load —</option>
+                        {smsTemplates.map(t => (
+                          <option key={t.id} value={t.id} className="bg-[#110F20]">{t.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Message textarea */}
+                    <div className="mb-4">
+                      <label className="text-xs font-bold text-[var(--text-muted)] uppercase mb-2 block">
+                        Message Body
+                        <span className="ml-2 font-normal normal-case text-[var(--text-muted)]/60">Variables: {'{{name}}'}, {'{{event}}'}, {'{{booking_id}}'}, {'{{date}}'}</span>
+                      </label>
+                      <textarea
+                        rows={6}
+                        value={smsMessage}
+                        onChange={(e) => setSmsMessage(e.target.value)}
+                        placeholder="Type your SMS message here... Use {{name}}, {{event}} etc. as variables (you'll substitute manually when sending)."
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:border-[var(--violet-bright)] outline-none resize-none transition-all"
+                      />
+                    </div>
+
+                    {/* Save as template */}
+                    <div className="flex gap-3 pt-2 border-t border-white/5">
+                      <input
+                        type="text"
+                        placeholder="Template name (e.g. 'Event Reminder')"
+                        value={smsTemplateName}
+                        onChange={(e) => setSmsTemplateName(e.target.value)}
+                        className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:border-[var(--violet-bright)] outline-none"
+                      />
+                      <button
+                        onClick={handleSaveSmsTemplate}
+                        disabled={isSavingTemplate}
+                        className="px-5 py-2.5 rounded-xl bg-[var(--violet-primary)]/20 text-[var(--violet-bright)] border border-[var(--violet-primary)]/30 text-xs font-bold hover:bg-[var(--violet-primary)] hover:text-white transition-all disabled:opacity-50"
+                      >
+                        {isSavingTemplate ? 'Saving...' : 'Save Template'}
+                      </button>
+                    </div>
+                  </GlassCard>
+
+                  {/* Send to Event Guests */}
+                  <GlassCard className="p-8 border-[var(--accent-cyan)]/20">
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className="p-2.5 rounded-xl bg-[var(--accent-cyan)]/10">
+                        <Calendar className="w-5 h-5 text-[var(--accent-cyan)]" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-white">Send to Event Guest List</h3>
+                        <p className="text-xs text-[var(--text-muted)]">Target all confirmed ticket holders of a specific event</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div>
+                        <label className="text-xs font-bold text-[var(--text-muted)] uppercase mb-2 block">Select Event</label>
+                        <select
+                          value={smsSelectedEventId}
+                          onChange={(e) => {
+                            setSmsSelectedEventId(e.target.value);
+                            fetchSmsGuestCount(e.target.value);
+                          }}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:border-[var(--violet-bright)] outline-none"
+                        >
+                          <option value="" className="bg-[#110F20]">— Pick an event —</option>
+                          {events.map(ev => (
+                            <option key={ev.id} value={ev.id} className="bg-[#110F20]">
+                              {ev.title} — {ev.city} ({ev.status})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {smsSelectedEventId && (
+                        <div className="flex items-center gap-3 p-3 rounded-xl bg-[var(--accent-cyan)]/5 border border-[var(--accent-cyan)]/20">
+                          <Users className="w-4 h-4 text-[var(--accent-cyan)]" />
+                          <span className="text-sm text-white">
+                            <strong className="text-[var(--accent-cyan)]">{smsGuestCount ?? '...'}</strong> guest(s) with a registered phone number will receive this SMS
+                          </span>
+                        </div>
+                      )}
+
+                      <button
+                        onClick={handleSendToEventGuests}
+                        disabled={smsSendingEvent || !smsSelectedEventId || !smsMessage.trim()}
+                        className="w-full py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 bg-[var(--accent-cyan)]/10 text-[var(--accent-cyan)] border border-[var(--accent-cyan)]/25 hover:bg-[var(--accent-cyan)] hover:text-[#0a0812] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {smsSendingEvent ? (
+                          <><RefreshCw className="w-4 h-4 animate-spin" /> Sending...</>
+                        ) : (
+                          <><Send className="w-4 h-4" /> Send to Event Guests</>
+                        )}
+                      </button>
+                    </div>
+                  </GlassCard>
+
+                  {/* Broadcast to All Users */}
+                  <GlassCard className="p-8 border-amber-500/20">
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className="p-2.5 rounded-xl bg-amber-500/10">
+                        <Radio className="w-5 h-5 text-amber-400" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-white">Broadcast to All Users</h3>
+                        <p className="text-xs text-[var(--text-muted)]">Send an offer, announcement or reminder to every registered user</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-500/5 border border-amber-500/20 mb-5">
+                      <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                      <span className="text-sm text-white">
+                        <strong className="text-amber-400">{smsUserCount ?? '...'}</strong> registered users with phone numbers will receive this SMS. This action cannot be undone.
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={handleSendToAllUsers}
+                      disabled={smsSendingAll || !smsMessage.trim()}
+                      className="w-full py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 bg-amber-500/10 text-amber-400 border border-amber-500/25 hover:bg-amber-500 hover:text-black transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {smsSendingAll ? (
+                        <><RefreshCw className="w-4 h-4 animate-spin" /> Broadcasting...</>
+                      ) : (
+                        <><Radio className="w-4 h-4" /> Broadcast to All Users</>
+                      )}
+                    </button>
+                  </GlassCard>
+                </div>
+
+                {/* Right: Saved Templates */}
+                <div className="space-y-6">
+                  <GlassCard className="p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-bold text-white">Saved Templates</h3>
+                      <button
+                        onClick={fetchSmsTemplates}
+                        className="p-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-[var(--text-muted)] hover:text-white transition-all"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {smsTemplates.length === 0 ? (
+                      <p className="text-xs text-[var(--text-muted)] text-center py-8">No saved templates yet. Compose a message and click Save Template.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {smsTemplates.map(tpl => (
+                          <div
+                            key={tpl.id}
+                            className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
+                              selectedSmsTemplate === tpl.id
+                                ? 'bg-[var(--violet-primary)]/20 border-[var(--violet-primary)]/40'
+                                : 'bg-white/5 border-white/10 hover:bg-white/8 hover:border-white/20'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <button
+                                onClick={() => handleLoadSmsTemplate(tpl.id)}
+                                className="flex-1 text-left"
+                              >
+                                <p className="text-xs font-bold text-white">{tpl.name}</p>
+                                <p className="text-[10px] text-[var(--text-muted)] mt-1 line-clamp-3 leading-relaxed">{tpl.body}</p>
+                              </button>
+                              <button
+                                onClick={() => handleDeleteSmsTemplate(tpl.id)}
+                                className="p-1 rounded-lg text-[var(--text-muted)] hover:text-red-400 hover:bg-red-500/10 transition-all flex-shrink-0 mt-0.5"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </GlassCard>
+
+                  {/* Auto-send info card */}
+                  <GlassCard className="p-6 border-green-500/20">
+                    <div className="flex items-center gap-2 mb-3">
+                      <CheckCircle className="w-4 h-4 text-green-400" />
+                      <h4 className="text-sm font-bold text-white">Auto Booking SMS</h4>
+                    </div>
+                    <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                      A booking confirmation SMS is automatically sent to the customer's registered mobile number after every successful payment. 
+                      No action required — this fires via the <span className="text-[var(--violet-bright)] font-mono">confirmBooking()</span> server function.
+                    </p>
+                    <div className="mt-3 p-2.5 rounded-lg bg-white/5 border border-white/10">
+                      <p className="text-[10px] font-mono text-[var(--text-muted)] leading-relaxed">
+                        Hi [Name]! Your VHOP ticket is confirmed 🎉<br/>
+                        Event: [Title] · ID: [Booking ID]<br/>
+                        Venue: [Venue], [City] · Date: [Date]<br/>
+                        Qty: [N] ticket(s) | Total: ₹[Amount]
+                      </p>
+                    </div>
+                  </GlassCard>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+
         <AnimatePresence>
           {selectedEvent && (
             <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">

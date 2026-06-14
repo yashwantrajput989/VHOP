@@ -556,7 +556,7 @@ export const CreateEvent: React.FC = () => {
                   {formData.cover_image ? (
                     <img 
                       src={getImageUrl(formData.cover_image)} 
-                      className="w-full h-32 object-cover rounded-lg mb-4" 
+                      className="w-full aspect-video object-cover rounded-lg mb-4" 
                       alt="Preview" 
                     />
                   ) : (
@@ -616,7 +616,7 @@ export const CreateEvent: React.FC = () => {
         {isCropperOpen && selectedImageSrc && (
           <ImageCropper
             imageSrc={selectedImageSrc}
-            aspectRatio="portrait"
+            aspectRatio="landscape"
             onCancel={() => {
               setIsCropperOpen(false);
               setSelectedImageSrc(null);

@@ -79,6 +79,8 @@ interface AuthState {
   loginWithEmail: (email: string, password: string) => Promise<UserProfile>;
   registerWithEmail: (email: string, password: string, fullName: string, referralCode?: string) => Promise<UserProfile>;
   loginAdmin: (email: string, password: string, role: 'admin' | 'superadmin') => Promise<void>;
+  sendOtp: (phone: string) => Promise<{ success: boolean; devOtp?: string }>;
+  verifyOtp: (phone: string, code: string, referralCode?: string) => Promise<UserProfile>;
   logout: () => Promise<void>;
   initialize: () => Promise<void>;
 }
@@ -244,6 +246,56 @@ export const useAuthStore = create<AuthState>()(
         } catch (error: any) {
           set({ isLoading: false });
           logToBackend('google_login_error', null, { error: error.message });
+          throw error;
+        }
+      },
+
+      sendOtp: async (phone) => {
+        set({ isLoading: true });
+        try {
+          const response = await fetch(`${API_BASE_URL}/api/auth/otp/send`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone })
+          });
+
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.error || 'Failed to send OTP');
+          }
+
+          set({ isLoading: false });
+          logToBackend('otp_send_success', { phone });
+          return { success: true, devOtp: data.devOtp };
+        } catch (error: any) {
+          set({ isLoading: false });
+          logToBackend('otp_send_error', null, { error: error.message });
+          throw error;
+        }
+      },
+
+      verifyOtp: async (phone, code, referralCode) => {
+        set({ isLoading: true });
+        try {
+          const response = await fetch(`${API_BASE_URL}/api/auth/otp/verify`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone, code, referred_by_code: referralCode || undefined })
+          });
+
+          const profile = await response.json();
+          if (!response.ok) {
+            throw new Error(profile.error || 'Failed to verify OTP');
+          }
+
+          localStorage.removeItem('referred_by_code');
+          localStorage.removeItem('vhop_location_prompt_seen');
+          set({ user: sanitizeUser(profile), session: { uid: profile.id }, isLoading: false });
+          logToBackend('otp_verify_success', profile);
+          return profile;
+        } catch (error: any) {
+          set({ isLoading: false });
+          logToBackend('otp_verify_error', null, { error: error.message });
           throw error;
         }
       },
