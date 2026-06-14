@@ -12,7 +12,8 @@ const {
     sendPartnerReceiptEmail, 
     sendPartnerNotificationToSuperEmail, 
     sendPartnerApprovalCredentialsEmail,
-    sendContactFormDetailsToSuperEmail
+    sendContactFormDetailsToSuperEmail,
+    sendVerificationEmail
 } = require('./utils/email');
 const { sendSMS, sendBulkSMS, buildBookingConfirmationSMS } = require('./utils/sms');
 // Razorpay import removed - using Cashfree now
@@ -332,6 +333,61 @@ const pool = mysql.createPool({
             )
         `);
         console.log('🟢 Phone OTPs table verified/created.');
+
+        // Create email_otps table
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS email_otps (
+                email VARCHAR(255) PRIMARY KEY,
+                otp_code VARCHAR(10) NOT NULL,
+                expires_at TIMESTAMP NOT NULL
+            )
+        `);
+        console.log('🟢 Email OTPs table verified/created.');
+
+        // Create friendships table
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS friendships (
+                user_id VARCHAR(255) NOT NULL,
+                friend_id VARCHAR(255) NOT NULL,
+                status ENUM('pending', 'accepted') DEFAULT 'accepted',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, friend_id),
+                FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE,
+                FOREIGN KEY (friend_id) REFERENCES profiles(id) ON DELETE CASCADE
+            )
+        `);
+        console.log('🟢 Friendships table verified/created.');
+
+        // Create squads table
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS squads (
+                id VARCHAR(255) PRIMARY KEY,
+                event_id VARCHAR(255) NOT NULL,
+                name VARCHAR(255) NOT NULL,
+                organiser_id VARCHAR(255) NOT NULL,
+                size INT NOT NULL,
+                tier VARCHAR(50) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+                FOREIGN KEY (organiser_id) REFERENCES profiles(id) ON DELETE CASCADE
+            )
+        `);
+        console.log('🟢 Squads table verified/created.');
+
+        // Create squad_members table
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS squad_members (
+                squad_id VARCHAR(255) NOT NULL,
+                user_id VARCHAR(255) NOT NULL,
+                payment_status ENUM('pending', 'paid') DEFAULT 'pending',
+                reserved_until TIMESTAMP NULL,
+                joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (squad_id, user_id),
+                FOREIGN KEY (squad_id) REFERENCES squads(id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+            )
+        `);
+        console.log('🟢 Squad members table verified/created.');
 
         // Verify required columns in events
         const [eventColumns] = await pool.execute('DESCRIBE events');
@@ -999,9 +1055,127 @@ app.post('/api/auth/reset-password', async (req, res) => {
     }
 });
 
+// Check if email or phone already exists in profiles
+app.get('/api/auth/check-exists', async (req, res) => {
+    const { email, phone } = req.query;
+    try {
+        if (email) {
+            const cleanEmail = email.toLowerCase().trim();
+            const [rows] = await pool.execute('SELECT id FROM profiles WHERE email = ?', [cleanEmail]);
+            if (rows.length > 0) {
+                return res.status(200).json({ exists: true, channel: 'email', value: cleanEmail });
+            }
+        }
+        if (phone) {
+            const cleanPhone = phone.replace(/\D/g, '').slice(-10);
+            const [rows] = await pool.execute('SELECT id FROM profiles WHERE phone = ?', [cleanPhone]);
+            if (rows.length > 0) {
+                return res.status(200).json({ exists: true, channel: 'phone', value: cleanPhone });
+            }
+        }
+        res.status(200).json({ exists: false });
+    } catch (error) {
+        console.error('Check exists error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Send OTP to email
+app.post('/api/auth/email-otp/send', async (req, res) => {
+    const { email, checkExists } = req.body;
+    try {
+        if (!email) {
+            return res.status(400).json({ error: 'Email is required' });
+        }
+        const cleanEmail = email.toLowerCase().trim();
+
+        // Check if user already exists
+        if (checkExists) {
+            const [existing] = await pool.execute('SELECT id FROM profiles WHERE email = ?', [cleanEmail]);
+            if (existing.length > 0) {
+                return res.status(400).json({ 
+                    error: 'An account with this email already exists.', 
+                    code: 'DUPLICATE_USER', 
+                    channel: 'email' 
+                });
+            }
+        }
+
+        // Generate a 6-digit random OTP
+        const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+        // Store code with 10-minute expiry
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+        await pool.execute(
+            'INSERT INTO email_otps (email, otp_code, expires_at) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE otp_code = VALUES(otp_code), expires_at = VALUES(expires_at)',
+            [cleanEmail, otpCode, expiresAt]
+        );
+
+        const isSandbox = !process.env.EMAIL_USER || !process.env.EMAIL_PASS ||
+                          process.env.EMAIL_USER.includes('placeholder') || 
+                          process.env.EMAIL_PASS.includes('placeholder');
+
+        if (isSandbox) {
+            console.log(`\n===============================================\n[EMAIL OTP SANDBOX DEBUG]\nEmail: ${cleanEmail}\nOTP Code: ${otpCode}\n===============================================\n`);
+            return res.status(200).json({ 
+                success: true, 
+                message: 'Verification code sent successfully (Sandbox Mode)', 
+                devOtp: otpCode 
+            });
+        }
+
+        await sendVerificationEmail(cleanEmail, otpCode);
+        res.status(200).json({ success: true, message: 'Verification code sent successfully to your email.' });
+    } catch (error) {
+        console.error('Send email OTP error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Verify email OTP
+app.post('/api/auth/email-otp/verify', async (req, res) => {
+    const { email, code } = req.body;
+    try {
+        if (!email || !code) {
+            return res.status(400).json({ error: 'Email and verification code are required' });
+        }
+        const cleanEmail = email.toLowerCase().trim();
+
+        // Fetch OTP from database
+        const [otpRows] = await pool.execute(
+            'SELECT * FROM email_otps WHERE email = ?',
+            [cleanEmail]
+        );
+
+        if (otpRows.length === 0) {
+            return res.status(400).json({ error: 'Invalid or expired verification code' });
+        }
+
+        const otpRecord = otpRows[0];
+        
+        // Expiry comparison in Javascript
+        const expiryTime = new Date(otpRecord.expires_at).getTime();
+        if (expiryTime < Date.now()) {
+            return res.status(400).json({ error: 'Verification code has expired. Please request a new one.' });
+        }
+
+        if (otpRecord.otp_code !== code.toString().trim()) {
+            return res.status(400).json({ error: 'Invalid verification code' });
+        }
+
+        // Clean up to prevent reuse
+        await pool.execute('DELETE FROM email_otps WHERE email = ?', [cleanEmail]);
+
+        res.status(200).json({ success: true, message: 'Email verified successfully.' });
+    } catch (error) {
+        console.error('Verify email OTP error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Send OTP via SMS (Message Central)
 app.post('/api/auth/otp/send', async (req, res) => {
-    const { phone } = req.body;
+    const { phone, checkExists } = req.body;
     try {
         if (!phone) {
             return res.status(400).json({ error: 'Phone number is required' });
@@ -1014,13 +1188,29 @@ app.post('/api/auth/otp/send', async (req, res) => {
         }
         const mobileNo = digits.slice(-10);
 
+        // Check if user already exists
+        if (checkExists) {
+            const [existing] = await pool.execute(
+                'SELECT id FROM profiles WHERE phone = ? OR phone = ?',
+                [mobileNo, `+91${mobileNo}`]
+            );
+            if (existing.length > 0) {
+                return res.status(400).json({ 
+                    error: 'An account with this phone number already exists.', 
+                    code: 'DUPLICATE_USER', 
+                    channel: 'phone' 
+                });
+            }
+        }
+
         // Generate a 6-digit random OTP
         const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
 
-        // Upsert into DB with 10 minutes validity
+        // Upsert into DB with 10 minutes validity (using JavaScript Date for timezone safety)
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
         await pool.execute(
-            'INSERT INTO phone_otps (phone, otp_code, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE)) ON DUPLICATE KEY UPDATE otp_code = VALUES(otp_code), expires_at = VALUES(expires_at)',
-            [mobileNo, otpCode]
+            'INSERT INTO phone_otps (phone, otp_code, expires_at) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE otp_code = VALUES(otp_code), expires_at = VALUES(expires_at)',
+            [mobileNo, otpCode, expiresAt]
         );
 
         const message = `[VHOP] Your OTP for secure login is ${otpCode}. Valid for 10 minutes. Please do not share this code. 🎶`;
@@ -1055,7 +1245,7 @@ app.post('/api/auth/otp/send', async (req, res) => {
 
 // Verify OTP & Login/Register (Message Central)
 app.post('/api/auth/otp/verify', async (req, res) => {
-    const { phone, code, referred_by_code } = req.body;
+    const { phone, code, referred_by_code, verifyOnly, full_name } = req.body;
     try {
         if (!phone || !code) {
             return res.status(400).json({ error: 'Phone number and OTP code are required' });
@@ -1066,16 +1256,33 @@ app.post('/api/auth/otp/verify', async (req, res) => {
 
         // Fetch OTP from database
         const [otpRows] = await pool.execute(
-            'SELECT * FROM phone_otps WHERE phone = ? AND expires_at > NOW()',
+            'SELECT * FROM phone_otps WHERE phone = ?',
             [mobileNo]
         );
 
-        if (otpRows.length === 0 || otpRows[0].otp_code !== code.toString().trim()) {
+        if (otpRows.length === 0) {
             return res.status(400).json({ error: 'Invalid or expired OTP code' });
+        }
+
+        const otpRecord = otpRows[0];
+        
+        // Expiry comparison in Javascript (safe from DB timezone offset mismatches)
+        const expiryTime = new Date(otpRecord.expires_at).getTime();
+        if (expiryTime < Date.now()) {
+            return res.status(400).json({ error: 'OTP has expired. Please request a new one.' });
+        }
+
+        if (otpRecord.otp_code !== code.toString().trim()) {
+            return res.status(400).json({ error: 'Invalid OTP code' });
         }
 
         // Clean up OTP to prevent reuse
         await pool.execute('DELETE FROM phone_otps WHERE phone = ?', [mobileNo]);
+
+        // If we only wanted verification, stop here
+        if (verifyOnly) {
+            return res.status(200).json({ success: true, message: 'OTP verified successfully.' });
+        }
 
         // Find existing user profile
         const [userRows] = await pool.execute(
@@ -1113,13 +1320,13 @@ app.post('/api/auth/otp/verify', async (req, res) => {
         // New User - Auto-Register
         const id = `usr_p_${Math.random().toString(36).substring(2, 11)}`;
         const username = `user_${mobileNo}`;
-        const full_name = `User ${mobileNo.slice(-4)}`;
+        const registrationName = full_name || `User ${mobileNo.slice(-4)}`;
         const email = `${mobileNo}@vhop.in`; // Default placeholder
         const avatar_url = `https://api.dicebear.com/7.x/avataaars/svg?seed=${mobileNo}`;
 
         await pool.execute(
             'INSERT INTO profiles (id, full_name, username, email, avatar_url, role, v_coins, city, phone, streak_count, streak_updated_at, onboarded) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), FALSE)',
-            [id, full_name, username, email, avatar_url, 'user', 500, 'Visakhapatnam', mobileNo]
+            [id, registrationName, username, email, avatar_url, 'user', 500, 'Visakhapatnam', mobileNo]
         );
 
         logActivity({ type: 'profile_created', userId: id });
@@ -1163,6 +1370,14 @@ app.put('/api/auth/profile/complete', async (req, res) => {
             return res.status(404).json({ error: 'Profile not found' });
         }
 
+        const cleanPhone = phone ? phone.replace(/\D/g, '').slice(-10) : '';
+        if (cleanPhone) {
+            const [existing] = await pool.execute('SELECT id FROM profiles WHERE phone = ? AND id != ?', [cleanPhone, userId]);
+            if (existing.length > 0) {
+                return res.status(400).json({ error: 'Phone number is already registered to another account.' });
+            }
+        }
+
         const user = rows[0];
         let v_coins = user.v_coins;
         let rewardCredited = false;
@@ -1176,7 +1391,7 @@ app.put('/api/auth/profile/complete', async (req, res) => {
 
         await pool.execute(
             'UPDATE profiles SET age = ?, phone = ?, address = ?, gender = ?, birthday = ?, v_coins = ?, v_coins_rewarded = ? WHERE id = ?',
-            [age ? parseInt(age, 10) : null, phone || '', address || '', gender || null, birthday || null, v_coins, new_v_coins_rewarded, userId]
+            [age ? parseInt(age, 10) : null, cleanPhone, address || '', gender || null, birthday || null, v_coins, new_v_coins_rewarded, userId]
         );
 
         logActivity({ type: 'profile_completed', userId, coinsCredited: rewardCredited ? 100 : 0 });
@@ -1195,7 +1410,7 @@ app.put('/api/auth/profile/complete', async (req, res) => {
 
 // Update Profile details
 app.put('/api/auth/profile/update', async (req, res) => {
-    const { userId, fullName, username, city, phone, age, gender, address, avatarUrl, birthday } = req.body;
+    const { userId, fullName, username, city, phone, age, gender, address, avatarUrl, birthday, email } = req.body;
     try {
         // Verify unique username if changed
         if (username) {
@@ -1205,16 +1420,35 @@ app.put('/api/auth/profile/update', async (req, res) => {
             }
         }
 
-        let query = 'UPDATE profiles SET full_name = ?, username = ?, city = ?, phone = ?, age = ?, gender = ?, address = ?, birthday = ?';
+        // Verify unique phone if changed
+        const cleanPhone = phone ? phone.replace(/\D/g, '').slice(-10) : '';
+        if (cleanPhone) {
+            const [existing] = await pool.execute('SELECT id FROM profiles WHERE phone = ? AND id != ?', [cleanPhone, userId]);
+            if (existing.length > 0) {
+                return res.status(400).json({ error: 'Phone number is already registered to another account.' });
+            }
+        }
+
+        // Verify unique email if changed
+        const cleanEmail = email ? email.toLowerCase().trim() : null;
+        if (cleanEmail) {
+            const [existing] = await pool.execute('SELECT id FROM profiles WHERE email = ? AND id != ?', [cleanEmail, userId]);
+            if (existing.length > 0) {
+                return res.status(400).json({ error: 'Email address is already registered to another account.' });
+            }
+        }
+
+        let query = 'UPDATE profiles SET full_name = ?, username = ?, city = ?, phone = ?, age = ?, gender = ?, address = ?, birthday = ?, email = ?';
         let params = [
             fullName || null,
             username || null,
             city || 'Mumbai',
-            phone || '',
+            cleanPhone,
             age ? parseInt(age, 10) : null,
             gender || null,
             address || '',
-            birthday || null
+            birthday || null,
+            cleanEmail
         ];
 
         if (avatarUrl !== undefined) {
@@ -1380,6 +1614,296 @@ app.post('/api/admin/visitors', async (req, res) => {
         res.status(201).json({ id, message: 'Visitor checked in successfully.' });
     } catch (error) {
         console.error('Error checking in visitor:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/social/friends/:userId', async (req, res) => {
+    const { userId } = req.params;
+    try {
+        const [rows] = await pool.execute(`
+            SELECT p.id, p.full_name, p.username, p.email, p.avatar_url, p.v_coins, p.city, p.phone
+            FROM friendships f
+            JOIN profiles p ON (f.user_id = p.id AND f.friend_id = ?) OR (f.friend_id = p.id AND f.user_id = ?)
+            WHERE f.status = 'accepted' AND p.id != ?
+        `, [userId, userId, userId]);
+        
+        res.status(200).json(rows);
+    } catch (error) {
+        console.error('Error fetching friends:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/social/friends/add', async (req, res) => {
+    const { userId, friendUsername, friendId } = req.body;
+    try {
+        let targetFriendId = friendId;
+        
+        if (friendUsername) {
+            const [userRows] = await pool.execute('SELECT id FROM profiles WHERE LOWER(username) = ?', [friendUsername.toLowerCase().trim()]);
+            if (userRows.length === 0) {
+                return res.status(404).json({ error: 'User with this username not found.' });
+            }
+            targetFriendId = userRows[0].id;
+        }
+        
+        if (!targetFriendId) {
+            return res.status(400).json({ error: 'Friend identifier is required.' });
+        }
+        
+        if (targetFriendId === userId) {
+            return res.status(400).json({ error: 'You cannot add yourself as a friend.' });
+        }
+        
+        // Check existing
+        const [existing] = await pool.execute(`
+            SELECT * FROM friendships 
+            WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)
+        `, [userId, targetFriendId, targetFriendId, userId]);
+        
+        if (existing.length > 0) {
+            return res.status(200).json({ success: true, message: 'You are already friends!' });
+        }
+        
+        // Insert friendship
+        await pool.execute(
+            'INSERT INTO friendships (user_id, friend_id, status) VALUES (?, ?, "accepted")',
+            [userId, targetFriendId]
+        );
+        
+        // Retrieve friend profile
+        const [friendProfile] = await pool.execute('SELECT id, full_name, username, avatar_url FROM profiles WHERE id = ?', [targetFriendId]);
+        
+        res.status(200).json({ success: true, message: 'Friend added successfully!', friend: friendProfile[0] });
+    } catch (error) {
+        console.error('Error adding friend:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// --- SQUAD BOOKING ENDPOINTS ---
+
+// Initialize / Create Squad
+app.post('/api/squads/create', async (req, res) => {
+    const { eventId, name, organiserId, size, tier } = req.body;
+    try {
+        if (!eventId || !organiserId || !size || !tier) {
+            return res.status(400).json({ error: 'Missing required parameters.' });
+        }
+        
+        const squadId = `sq_${Math.random().toString(36).substring(2, 11)}`;
+        const squadName = name || `Squad ${squadId.slice(-4)}`;
+        
+        // Insert squad
+        await pool.execute(
+            'INSERT INTO squads (id, event_id, name, organiser_id, size, tier) VALUES (?, ?, ?, ?, ?, ?)',
+            [squadId, eventId, squadName, organiserId, parseInt(size, 10), tier]
+        );
+        
+        // Insert organiser as first squad member (paid automatically)
+        await pool.execute(
+            'INSERT INTO squad_members (squad_id, user_id, payment_status) VALUES (?, ?, "paid")',
+            [squadId, organiserId]
+        );
+        
+        res.status(201).json({ squadId, name: squadName, message: 'Squad successfully created.' });
+    } catch (error) {
+        console.error('Error creating squad:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Retrieve Squad details
+app.get('/api/squads/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        // Get squad and event details
+        const [squadRows] = await pool.execute(`
+            SELECT s.*, e.title AS event_title, e.venue_name, e.start_date, e.cover_image, p.full_name AS organiser_name
+            FROM squads s
+            JOIN events e ON s.event_id = e.id
+            JOIN profiles p ON s.organiser_id = p.id
+            WHERE s.id = ?
+        `, [id]);
+        
+        if (squadRows.length === 0) {
+            return res.status(404).json({ error: 'Squad not found.' });
+        }
+        
+        const squad = squadRows[0];
+        
+        // Get member list
+        const [memberRows] = await pool.execute(`
+            SELECT sm.payment_status, sm.reserved_until, p.id, p.full_name, p.username, p.avatar_url, p.aadhaar_verified
+            FROM squad_members sm
+            JOIN profiles p ON sm.user_id = p.id
+            WHERE sm.squad_id = ?
+            ORDER BY sm.joined_at ASC
+        `, [id]);
+        
+        res.status(200).json({ squad, members: memberRows });
+    } catch (error) {
+        console.error('Error fetching squad:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Join Squad slot
+app.post('/api/squads/:id/join', async (req, res) => {
+    const { id } = req.params;
+    const { userId } = req.body;
+    try {
+        if (!userId) {
+            return res.status(400).json({ error: 'User ID is required.' });
+        }
+        
+        // Check squad details & current capacity
+        const [squadRows] = await pool.execute('SELECT size FROM squads WHERE id = ?', [id]);
+        if (squadRows.length === 0) {
+            return res.status(404).json({ error: 'Squad not found.' });
+        }
+        
+        const maxSize = squadRows[0].size;
+        
+        // Count active members (either paid, or pending with unexpired reservation holds)
+        const [activeRows] = await pool.execute(`
+            SELECT COUNT(*) AS active_count 
+            FROM squad_members 
+            WHERE squad_id = ? AND (payment_status = "paid" OR reserved_until > NOW() OR user_id = ?)
+        `, [id, userId]);
+        
+        const currentActive = activeRows[0].active_count;
+        
+        // If user is already in squad, refresh reservation timer
+        const [existing] = await pool.execute('SELECT * FROM squad_members WHERE squad_id = ? AND user_id = ?', [id, userId]);
+        if (existing.length > 0) {
+            if (existing[0].payment_status === 'paid') {
+                return res.status(200).json({ success: true, message: 'You have already paid.' });
+            }
+            // Refresh reservation timer
+            await pool.execute(
+                'UPDATE squad_members SET reserved_until = DATE_ADD(NOW(), INTERVAL 10 MINUTE) WHERE squad_id = ? AND user_id = ?',
+                [id, userId]
+            );
+            return res.status(200).json({ success: true, message: 'Reservation hold refreshed.' });
+        }
+        
+        if (currentActive >= maxSize) {
+            return res.status(400).json({ error: 'This squad is already full.' });
+        }
+        
+        // Add member with 10-minute hold
+        const reservedUntil = new Date(Date.now() + 10 * 60 * 1000);
+        await pool.execute(
+            'INSERT INTO squad_members (squad_id, user_id, payment_status, reserved_until) VALUES (?, ?, "pending", ?)',
+            [id, userId, reservedUntil]
+        );
+        
+        res.status(200).json({ success: true, message: 'Slot reserved for 10 minutes.' });
+    } catch (error) {
+        console.error('Error joining squad:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Pay Split Share
+app.post('/api/squads/:id/pay', async (req, res) => {
+    const { id } = req.params;
+    const { userId } = req.body;
+    try {
+        if (!userId) {
+            return res.status(400).json({ error: 'User ID is required.' });
+        }
+        
+        // Mark paid
+        await pool.execute(
+            'UPDATE squad_members SET payment_status = "paid", reserved_until = NULL WHERE squad_id = ? AND user_id = ?',
+            [id, userId]
+        );
+        
+        // Check if squad is completely paid and active
+        const [squadRows] = await pool.execute('SELECT organiser_id, size FROM squads WHERE id = ?', [id]);
+        if (squadRows.length > 0) {
+            const { organiser_id, size } = squadRows[0];
+            
+            const [paidRows] = await pool.execute(
+                'SELECT COUNT(*) AS paid_count FROM squad_members WHERE squad_id = ? AND payment_status = "paid"',
+                [id]
+            );
+            
+            const paidCount = paidRows[0].paid_count;
+            if (paidCount === size) {
+                // Award 50 V Coins to organiser
+                await pool.execute('UPDATE profiles SET v_coins = v_coins + 50 WHERE id = ?', [organiser_id]);
+                console.log(`[Squad Complete] Squad ${id} fully paid! Credited +50 V-Coins to organiser ${organiser_id}.`);
+            }
+        }
+        
+        res.status(200).json({ success: true, message: 'Payment successfully processed!' });
+    } catch (error) {
+        console.error('Error processing squad payment:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Nudge Squad Member
+app.post('/api/squads/:id/nudge', async (req, res) => {
+    const { id } = req.params;
+    const { userId } = req.body;
+    try {
+        const [userRows] = await pool.execute('SELECT full_name, phone FROM profiles WHERE id = ?', [userId]);
+        const [squadRows] = await pool.execute('SELECT name FROM squads WHERE id = ?', [id]);
+        
+        if (userRows.length > 0 && squadRows.length > 0) {
+            const userName = userRows[0].full_name;
+            const squadName = squadRows[0].name;
+            console.log(`\n===============================================\n[SQUAD NUDGE] Sending reminder to ${userName} (+91 ${userRows[0].phone || 'N/A'})\nMessage: Hey ${userName}! Your squad "${squadName}" is waiting for your share payment. Pay now to lock your spot!\n===============================================\n`);
+        }
+        
+        res.status(200).json({ success: true, message: 'Member nudged successfully.' });
+    } catch (error) {
+        console.error('Error nudging member:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Cancel Squad
+app.post('/api/squads/:id/cancel', async (req, res) => {
+    const { id } = req.params;
+    const { organiserId } = req.body;
+    try {
+        const [squadRows] = await pool.execute('SELECT organiser_id FROM squads WHERE id = ?', [id]);
+        if (squadRows.length === 0) {
+            return res.status(404).json({ error: 'Squad not found.' });
+        }
+        
+        if (squadRows[0].organiser_id !== organiserId) {
+            return res.status(403).json({ error: 'Only the organiser can cancel the squad.' });
+        }
+        
+        // Delete members and squad
+        await pool.execute('DELETE FROM squad_members WHERE squad_id = ?', [id]);
+        await pool.execute('DELETE FROM squads WHERE id = ?', [id]);
+        
+        res.status(200).json({ success: true, message: 'Squad successfully cancelled.' });
+    } catch (error) {
+        console.error('Error cancelling squad:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Retrieve Active Squads Organised by User
+app.get('/api/squads/organiser/:userId', async (req, res) => {
+    try {
+        const [rows] = await pool.execute(`
+            SELECT s.*, e.title AS event_title 
+            FROM squads s 
+            JOIN events e ON s.event_id = e.id 
+            WHERE s.organiser_id = ?
+        `, [req.params.userId]);
+        res.status(200).json(rows);
+    } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });

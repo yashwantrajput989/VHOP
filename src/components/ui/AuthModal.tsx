@@ -44,6 +44,8 @@ export const AuthModal: React.FC = () => {
     registerWithEmail, 
     sendOtp, 
     verifyOtp, 
+    sendEmailOtp,
+    verifyEmailOtp,
     isLoading, 
     user, 
     setUser 
@@ -70,6 +72,15 @@ export const AuthModal: React.FC = () => {
   const [isOtpSent, setIsOtpSent] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const [devOtpHelp, setDevOtpHelp] = useState('');
+  const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string; duplicate?: { channel: 'email' | 'phone'; value: string } } | null>(null);
+
+  // Clear status alert when modal active status, mode, or method switches
+  useEffect(() => {
+    setStatus(null);
+    setIsOtpSent(false);
+    setOtpCode('');
+    setDevOtpHelp('');
+  }, [mode, loginMethod, activeModal]);
 
   // Countdown timer for OTP resend
   useEffect(() => {
@@ -114,7 +125,7 @@ export const AuthModal: React.FC = () => {
       }
     } catch (error: any) {
       console.error(error);
-      alert(error.message || 'Google Login failed');
+      setStatus({ type: 'error', message: error.message || 'Google Login failed' });
     }
   };
 
@@ -151,25 +162,57 @@ export const AuthModal: React.FC = () => {
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      let profile;
       if (mode === 'signup') {
         if (!fullName.trim()) {
-          alert('Please enter your full name to sign up.');
+          setStatus({ type: 'error', message: 'Please enter your full name to sign up.' });
           return;
         }
-        profile = await registerWithEmail(email, password, fullName, referralCode.trim() || undefined);
-      } else {
-        profile = await loginWithEmail(email, password);
-      }
 
-      if (profile && profile.onboarded) {
-        closeModal();
+        if (!isOtpSent) {
+          setLocalLoading(true);
+          setStatus(null);
+          const res = await sendEmailOtp(email, true);
+          setIsOtpSent(true);
+          setCountdown(60);
+          setDevOtpHelp(res.devOtp || '');
+          setStatus({ type: 'success', message: 'Verification OTP code sent to your email address!' });
+          setLocalLoading(false);
+        } else {
+          setLocalLoading(true);
+          setStatus(null);
+          await verifyEmailOtp(email, otpCode);
+          const profile = await registerWithEmail(email, password, fullName, referralCode.trim() || undefined);
+          if (profile && profile.onboarded) {
+            closeModal();
+          } else {
+            setOnboardingStep('policy');
+          }
+          setLocalLoading(false);
+        }
       } else {
-        setOnboardingStep('policy');
+        setLocalLoading(true);
+        setStatus(null);
+        const profile = await loginWithEmail(email, password);
+        if (profile && profile.onboarded) {
+          closeModal();
+        } else {
+          setOnboardingStep('policy');
+        }
+        setLocalLoading(false);
       }
     } catch (error: any) {
       console.error('Auth error:', error);
-      alert(error.message || 'Authentication failed. Please check your credentials.');
+      setLocalLoading(false);
+      const isDuplicate = error.message.includes('already exists') || error.message.includes('already registered');
+      if (isDuplicate) {
+        setStatus({
+          type: 'error',
+          message: `An account with this email already exists. Would you like to sign in?`,
+          duplicate: { channel: 'email', value: email }
+        });
+      } else {
+        setStatus({ type: 'error', message: error.message || 'Authentication failed. Please check your credentials.' });
+      }
     }
   };
 
@@ -177,22 +220,31 @@ export const AuthModal: React.FC = () => {
     e.preventDefault();
     if (!phone) return;
     
+    if (mode === 'signup' && !fullName.trim()) {
+      setStatus({ type: 'error', message: 'Please enter your full name to sign up.' });
+      return;
+    }
+
     setLocalLoading(true);
+    setStatus(null);
     try {
-      const res = await sendOtp(phone);
+      const res = await sendOtp(phone, mode === 'signup');
       setIsOtpSent(true);
       setCountdown(60);
-      
-      if (res.devOtp) {
-        setDevOtpHelp(res.devOtp);
-      } else {
-        setDevOtpHelp('');
-      }
-      
-      alert('Verification code sent successfully to your phone!');
+      setDevOtpHelp(res.devOtp || '');
+      setStatus({ type: 'success', message: 'Verification code sent successfully to your phone!' });
     } catch (error: any) {
       console.error(error);
-      alert(error.message || 'Failed to send OTP. Please check your phone number.');
+      const isDuplicate = error.message.includes('already exists') || error.message.includes('already registered');
+      if (isDuplicate) {
+        setStatus({
+          type: 'error',
+          message: `An account with this phone number already exists. Would you like to sign in?`,
+          duplicate: { channel: 'phone', value: phone }
+        });
+      } else {
+        setStatus({ type: 'error', message: error.message || 'Failed to send OTP. Please check your phone number.' });
+      }
     } finally {
       setLocalLoading(false);
     }
@@ -203,8 +255,9 @@ export const AuthModal: React.FC = () => {
     if (!phone || !otpCode) return;
     
     setLocalLoading(true);
+    setStatus(null);
     try {
-      const profile = await verifyOtp(phone, otpCode, referralCode || undefined);
+      const profile = await verifyOtp(phone, otpCode, referralCode || undefined, false, mode === 'signup' ? fullName : undefined);
       if (profile && profile.onboarded) {
         closeModal();
       } else {
@@ -212,7 +265,7 @@ export const AuthModal: React.FC = () => {
       }
     } catch (error: any) {
       console.error(error);
-      alert(error.message || 'OTP verification failed. Please try again.');
+      setStatus({ type: 'error', message: error.message || 'OTP verification failed. Please try again.' });
     } finally {
       setLocalLoading(false);
     }
@@ -222,6 +275,7 @@ export const AuthModal: React.FC = () => {
     e.preventDefault();
     if (!email) return;
     setLocalLoading(true);
+    setStatus(null);
     try {
       const response = await fetch(`${API_BASE_URL}/api/auth/forgot-password`, {
         method: 'POST',
@@ -232,11 +286,11 @@ export const AuthModal: React.FC = () => {
       if (!response.ok) {
         throw new Error(data.error || 'Failed to send verification code');
       }
-      alert('Verification code sent successfully! Please check your email inbox.');
+      setStatus({ type: 'success', message: 'Verification code sent successfully! Please check your email inbox.' });
       setMode('reset');
     } catch (error: any) {
       console.error('Forgot password error:', error);
-      alert(error.message || 'Error requesting reset code');
+      setStatus({ type: 'error', message: error.message || 'Error requesting reset code' });
     } finally {
       setLocalLoading(false);
     }
@@ -245,10 +299,11 @@ export const AuthModal: React.FC = () => {
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !otp || !password) {
-      alert('Please fill out all fields.');
+      setStatus({ type: 'error', message: 'Please fill out all fields.' });
       return;
     }
     setLocalLoading(true);
+    setStatus(null);
     try {
       const response = await fetch(`${API_BASE_URL}/api/auth/reset-password`, {
         method: 'POST',
@@ -259,13 +314,13 @@ export const AuthModal: React.FC = () => {
       if (!response.ok) {
         throw new Error(data.error || 'Failed to reset password');
       }
-      alert('Password has been reset successfully! You can now sign in with your new password.');
+      setStatus({ type: 'success', message: 'Password has been reset successfully! You can now sign in with your new password.' });
       setOtp('');
       setPassword('');
       setMode('login');
     } catch (error: any) {
       console.error('Reset password error:', error);
-      alert(error.message || 'Failed to reset password');
+      setStatus({ type: 'error', message: error.message || 'Failed to reset password' });
     } finally {
       setLocalLoading(false);
     }
@@ -295,6 +350,50 @@ export const AuthModal: React.FC = () => {
             <X className="w-5 h-5" />
           </button>
 
+          {/* Premium Animated In-App Status Alerts */}
+          <AnimatePresence>
+            {status && (
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className={`p-4 rounded-2xl mb-6 flex gap-3 items-start border transition-all ${
+                  status.type === 'success' 
+                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' 
+                    : 'bg-rose-500/10 border-rose-500/20 text-rose-300'
+                }`}
+              >
+                {status.type === 'success' ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                )}
+                <div className="flex-1">
+                  <p className="text-xs font-bold leading-normal">{status.message}</p>
+                  {status.duplicate && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const { channel, value } = status.duplicate!;
+                        setMode('login');
+                        setLoginMethod(channel);
+                        if (channel === 'email') {
+                          setEmail(value);
+                        } else {
+                          setPhone(value);
+                        }
+                        setStatus(null);
+                      }}
+                      className="mt-2 text-xs bg-white/10 hover:bg-white/20 text-white font-bold py-1.5 px-3 rounded-lg border border-white/10 transition-colors cursor-pointer"
+                    >
+                      Yes, Sign In
+                    </button>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <AnimatePresence mode="wait">
             {onboardingStep === 'none' ? (
               <motion.div
@@ -314,7 +413,7 @@ export const AuthModal: React.FC = () => {
                       </p>
                     </div>
 
-                    {mode === 'login' && (
+                    {(mode === 'login' || mode === 'signup') && (
                       <div className="flex bg-white/5 p-1 rounded-xl gap-1 mb-6 border border-white/5">
                         <button
                           type="button"
@@ -328,123 +427,200 @@ export const AuthModal: React.FC = () => {
                               : 'text-[var(--text-secondary)] hover:text-white'
                           }`}
                         >
-                          <Mail className="w-3.5 h-3.5" /> Email
+                          <Mail className="w-3.5 h-3.5" /> {mode === 'login' ? 'Email' : 'Email SignUp'}
                         </button>
                         <button
                           type="button"
-                          onClick={() => setLoginMethod('phone')}
+                          onClick={() => {
+                            setLoginMethod('phone');
+                            setIsOtpSent(false);
+                          }}
                           className={`flex-1 py-2.5 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
                             loginMethod === 'phone'
                               ? 'bg-[var(--violet-primary)] text-white shadow-md'
                               : 'text-[var(--text-secondary)] hover:text-white'
                           }`}
                         >
-                          <Smartphone className="w-3.5 h-3.5" /> Phone OTP
+                          <Smartphone className="w-3.5 h-3.5" /> {mode === 'login' ? 'Phone OTP' : 'Phone SignUp'}
                         </button>
                       </div>
                     )}
 
-                    {mode === 'signup' || loginMethod === 'email' ? (
+                    {loginMethod === 'email' ? (
                       <form onSubmit={handleEmailSubmit} className="space-y-4">
-                        <AnimatePresence mode="wait">
-                          {mode === 'signup' && (
-                            <motion.div
-                              initial={{ opacity: 0, height: 0 }}
-                              animate={{ opacity: 1, height: 'auto' }}
-                              exit={{ opacity: 0, height: 0 }}
-                              className="space-y-2 overflow-hidden"
-                            >
-                              <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Full Name</label>
+                        {!isOtpSent ? (
+                          <>
+                            <AnimatePresence mode="wait">
+                              {mode === 'signup' && (
+                                <motion.div
+                                  initial={{ opacity: 0, height: 0 }}
+                                  animate={{ opacity: 1, height: 'auto' }}
+                                  exit={{ opacity: 0, height: 0 }}
+                                  className="space-y-2 overflow-hidden"
+                                >
+                                  <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Full Name</label>
+                                  <div className="relative">
+                                    <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
+                                    <input 
+                                      type="text" 
+                                      required
+                                      value={fullName}
+                                      onChange={(e) => setFullName(e.target.value)}
+                                      className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all text-white"
+                                      placeholder="Alex Rivera"
+                                    />
+                                  </div>
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+
+                            <div className="space-y-2">
+                              <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Email Address</label>
                               <div className="relative">
-                                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
+                                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
+                                <input 
+                                  type="email" 
+                                  required
+                                  value={email}
+                                  onChange={(e) => setEmail(e.target.value)}
+                                  className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all text-white"
+                                  placeholder="name@example.com"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="space-y-2">
+                              <div className="flex justify-between items-center">
+                                <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Password</label>
+                                {mode === 'login' && (
+                                  <button 
+                                    type="button" 
+                                    onClick={() => {
+                                      setMode('forgot');
+                                      setPassword('');
+                                    }}
+                                    className="text-xs text-[var(--violet-bright)] font-semibold hover:underline bg-transparent border-none"
+                                  >
+                                    Forgot password?
+                                  </button>
+                                )}
+                              </div>
+                              <div className="relative">
+                                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
+                                <input 
+                                  type="password" 
+                                  required
+                                  value={password}
+                                  onChange={(e) => setPassword(e.target.value)}
+                                  className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all text-white"
+                                  placeholder="••••••••"
+                                />
+                              </div>
+                            </div>
+
+                            <AnimatePresence mode="wait">
+                              {mode === 'signup' && (
+                                <motion.div
+                                  initial={{ opacity: 0, height: 0 }}
+                                  animate={{ opacity: 1, height: 'auto' }}
+                                  exit={{ opacity: 0, height: 0 }}
+                                  className="space-y-2 overflow-hidden"
+                                >
+                                  <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Referral Code (Optional)</label>
+                                  <div className="relative">
+                                    <Zap className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
+                                    <input 
+                                      type="text" 
+                                      value={referralCode}
+                                      onChange={(e) => setReferralCode(e.target.value)}
+                                      className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all text-white"
+                                      placeholder="e.g. VHOP-USER-2026"
+                                    />
+                                  </div>
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+
+                            <GlowButton type="submit" isLoading={localLoading} className="w-full py-4 text-base mt-2">
+                              {mode === 'login' ? 'Sign In' : 'Send Verification OTP'}
+                            </GlowButton>
+                          </>
+                        ) : (
+                          <>
+                            <div className="space-y-2">
+                              <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Enter 6-Digit Email OTP</label>
+                              <div className="relative">
+                                <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
                                 <input 
                                   type="text" 
                                   required
-                                  value={fullName}
-                                  onChange={(e) => setFullName(e.target.value)}
-                                  className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all"
-                                  placeholder="Alex Rivera"
+                                  maxLength={6}
+                                  value={otpCode}
+                                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                                  className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3.5 tracking-[0.5em] text-center text-lg font-extrabold focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all text-white font-mono"
+                                  placeholder="123456"
                                 />
                               </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
+                              
+                              {devOtpHelp && (
+                                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-400 font-bold text-center mt-2.5 animate-pulse">
+                                  [SANDBOX OTP]: {devOtpHelp}
+                                </div>
+                              )}
+                            </div>
 
-                        <div className="space-y-2">
-                          <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Email Address</label>
-                          <div className="relative">
-                            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
-                            <input 
-                              type="email" 
-                              required
-                              value={email}
-                              onChange={(e) => setEmail(e.target.value)}
-                              className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all"
-                              placeholder="name@example.com"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center">
-                            <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Password</label>
-                            {mode === 'login' && (
-                              <button 
-                                type="button" 
+                            <div className="flex justify-between items-center text-xs mt-3">
+                              <button
+                                type="button"
                                 onClick={() => {
-                                  setMode('forgot');
-                                  setPassword('');
+                                  setIsOtpSent(false);
+                                  setOtpCode('');
                                 }}
-                                className="text-xs text-[var(--violet-bright)] font-semibold hover:underline"
+                                className="text-[var(--text-secondary)] hover:text-white hover:underline transition-colors bg-transparent border-none"
                               >
-                                Forgot password?
+                                Change Email
                               </button>
-                            )}
-                          </div>
-                          <div className="relative">
-                            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
-                            <input 
-                              type="password" 
-                              required
-                              value={password}
-                              onChange={(e) => setPassword(e.target.value)}
-                              className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all"
-                              placeholder="••••••••"
-                            />
-                          </div>
-                        </div>
+                              
+                              {countdown > 0 ? (
+                                <span className="text-[var(--text-muted)] font-mono">Resend in {countdown}s</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={handleEmailSubmit}
+                                  className="text-[var(--violet-bright)] font-bold hover:underline bg-transparent border-none"
+                                >
+                                  Resend OTP
+                                </button>
+                              )}
+                            </div>
 
-                        <AnimatePresence mode="wait">
-                          {mode === 'signup' && (
-                            <motion.div
-                              initial={{ opacity: 0, height: 0 }}
-                              animate={{ opacity: 1, height: 'auto' }}
-                              exit={{ opacity: 0, height: 0 }}
-                              className="space-y-2 overflow-hidden"
-                            >
-                              <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Referral Code (Optional)</label>
-                              <div className="relative">
-                                <Zap className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
-                                <input 
-                                  type="text" 
-                                  value={referralCode}
-                                  onChange={(e) => setReferralCode(e.target.value)}
-                                  className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all"
-                                  placeholder="e.g. VHOP-USER-2026"
-                                />
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-
-                        <GlowButton type="submit" className="w-full py-4 text-base mt-2">
-                          {mode === 'login' ? 'Sign In' : 'Create Account'}
-                        </GlowButton>
+                            <GlowButton type="submit" isLoading={localLoading} className="w-full py-4 text-base mt-4">
+                              Verify & Create Account
+                            </GlowButton>
+                          </>
+                        )}
                       </form>
                     ) : (
                       <div className="space-y-4">
                         {!isOtpSent ? (
                           <form onSubmit={handlePhoneSubmit} className="space-y-4">
+                            {mode === 'signup' && (
+                              <div className="space-y-2">
+                                <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Full Name</label>
+                                <div className="relative">
+                                  <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
+                                  <input 
+                                    type="text" 
+                                    required
+                                    value={fullName}
+                                    onChange={(e) => setFullName(e.target.value)}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all text-white"
+                                    placeholder="Alex Rivera"
+                                  />
+                                </div>
+                              </div>
+                            )}
+
                             <div className="space-y-2">
                               <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Phone Number</label>
                               <div className="relative">
@@ -463,6 +639,22 @@ export const AuthModal: React.FC = () => {
                                 />
                               </div>
                             </div>
+
+                            {mode === 'signup' && (
+                              <div className="space-y-2">
+                                <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Referral Code (Optional)</label>
+                                <div className="relative">
+                                  <Zap className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
+                                  <input 
+                                    type="text" 
+                                    value={referralCode}
+                                    onChange={(e) => setReferralCode(e.target.value)}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all text-white"
+                                    placeholder="e.g. VHOP-USER-2026"
+                                  />
+                                </div>
+                              </div>
+                            )}
 
                             <GlowButton type="submit" isLoading={localLoading} className="w-full py-4 text-base mt-2">
                               Send OTP
@@ -499,7 +691,7 @@ export const AuthModal: React.FC = () => {
                                   setIsOtpSent(false);
                                   setOtpCode('');
                                 }}
-                                className="text-[var(--text-secondary)] hover:text-white hover:underline transition-colors"
+                                className="text-[var(--text-secondary)] hover:text-white hover:underline transition-colors bg-transparent border-none"
                               >
                                 Change Phone Number
                               </button>
@@ -510,7 +702,7 @@ export const AuthModal: React.FC = () => {
                                 <button
                                   type="button"
                                   onClick={handlePhoneSubmit}
-                                  className="text-[var(--violet-bright)] font-bold hover:underline"
+                                  className="text-[var(--violet-bright)] font-bold hover:underline bg-transparent border-none"
                                 >
                                   Resend OTP
                                 </button>
@@ -518,7 +710,7 @@ export const AuthModal: React.FC = () => {
                             </div>
 
                             <GlowButton type="submit" isLoading={localLoading} className="w-full py-4 text-base mt-4">
-                              Verify & Sign In
+                              {mode === 'login' ? 'Verify & Sign In' : 'Verify & Sign Up'}
                             </GlowButton>
                           </form>
                         )}

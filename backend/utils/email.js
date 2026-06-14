@@ -379,11 +379,68 @@ const sendContactFormDetailsToSuperEmail = async (contactData) => {
     }
 };
 
+/**
+ * Sends an email verification code (OTP)
+ * @param {string} userEmail - Recipient's email
+ * @param {string} otp - The 6-digit verification code
+ */
+const sendVerificationEmail = async (userEmail, otp) => {
+    try {
+        if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+            console.warn('Email credentials not configured. Skipping email.');
+            return;
+        }
+
+        const mailOptions = {
+            from: `"VHOP Accounts" <${process.env.EMAIL_USER}>`,
+            to: userEmail,
+            subject: `Verify Your Email: ${otp} 🔑`,
+            html: `
+                <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background-color: #0a0a0b; color: #ffffff; border-radius: 20px; overflow: hidden; border: 1px solid #1f1f23;">
+                    <div style="background: linear-gradient(135deg, #7c3aed 0%, #db2777 100%); padding: 40px 20px; text-align: center;">
+                        <h1 style="margin: 0; font-size: 32px; letter-spacing: 2px; color: #ffffff;">VHOP</h1>
+                        <p style="margin-top: 10px; font-weight: 500; opacity: 0.9; color: #ffffff;">Account Verification</p>
+                    </div>
+                    
+                    <div style="padding: 30px;">
+                        <h2 style="color: #ffffff; margin-bottom: 20px; text-align: center;">Verify Your Email Address</h2>
+                        
+                        <p style="color: #a1a1aa; font-size: 15px; line-height: 1.6; text-align: center;">
+                            Use the verification code (OTP) below to verify your email address. This code is valid for 10 minutes.
+                        </p>
+
+                        <div style="text-align: center; background-color: #161618; border-radius: 15px; padding: 20px 30px; margin: 30px auto; border: 1px solid #27272a; width: fit-content;">
+                            <span style="font-family: monospace; font-size: 36px; letter-spacing: 6px; font-weight: bold; color: #7c3aed;">${otp}</span>
+                        </div>
+
+                        <p style="color: #71717a; font-size: 13px; text-align: center; margin-bottom: 30px;">
+                            If you did not request this, you can safely ignore this email.
+                        </p>
+
+                        <div style="text-align: center; color: #a1a1aa; font-size: 14px;">
+                            <hr style="border: 0; border-top: 1px solid #27272a; margin: 25px 0;">
+                            <p style="font-size: 12px; color: #71717a;">VHOP - The Ultimate Live Experience Platform</p>
+                        </div>
+                    </div>
+                </div>
+            `
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Verification email sent: %s', info.messageId);
+        return info;
+    } catch (error) {
+        console.error('Error sending verification email:', error);
+        throw error;
+    }
+};
+
 module.exports = { 
     sendBookingEmail, 
     sendResetEmail,
     sendPartnerReceiptEmail,
     sendPartnerNotificationToSuperEmail,
     sendPartnerApprovalCredentialsEmail,
-    sendContactFormDetailsToSuperEmail
+    sendContactFormDetailsToSuperEmail,
+    sendVerificationEmail
 };

@@ -12,7 +12,7 @@ export const isProfileComplete = (user: any): boolean => {
 };
 
 export const ProfileCompletionBanner: React.FC = () => {
-  const { user, setUser } = useAuthStore();
+  const { user, setUser, sendOtp, verifyOtp } = useAuthStore();
   const [isOpen, setIsOpen] = useState(false);
   const [phone, setPhone] = useState(user?.phone || '');
   const [birthday, setBirthday] = useState(user?.birthday || '');
@@ -21,6 +21,20 @@ export const ProfileCompletionBanner: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
   const [error, setError] = useState('');
+
+  // Verification states
+  const [verificationStep, setVerificationStep] = useState<'none' | 'otp'>('none');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [verificationCountdown, setVerificationCountdown] = useState(0);
+  const [devOtpHelp, setDevOtpHelp] = useState('');
+
+  React.useEffect(() => {
+    if (verificationCountdown <= 0) return;
+    const timer = setInterval(() => {
+      setVerificationCountdown((prev) => prev - 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [verificationCountdown]);
 
   const location = useLocation();
 
@@ -46,31 +60,12 @@ export const ProfileCompletionBanner: React.FC = () => {
     return calculatedAge;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitCompletion = async () => {
+    setIsSubmitting(true);
     setError('');
 
-    if (!phone.trim()) {
-      setError('Phone number is required.');
-      return;
-    }
-    if (!birthday) {
-      setError('Birth date is required.');
-      return;
-    }
-    const calculatedAge = calculateAge(birthday);
-    if (isNaN(calculatedAge) || calculatedAge < 18) {
-      setError('Please enter a valid birthday (must be 18 or older).');
-      return;
-    }
-    if (!gender) {
-      setError('Please select your gender.');
-      return;
-    }
-
-    setIsSubmitting(true);
-
     try {
+      const calculatedAge = calculateAge(birthday);
       const response = await fetch(`${API_BASE_URL}/api/auth/profile/complete`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -94,10 +89,75 @@ export const ProfileCompletionBanner: React.FC = () => {
       
       // Trigger celebration
       setIsOpen(false);
+      setVerificationStep('none');
       setShowCelebration(true);
     } catch (err: any) {
       setError(err.message || 'An error occurred.');
     } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    if (!phone.trim()) {
+      setError('Phone number is required.');
+      return;
+    }
+    if (!birthday) {
+      setError('Birth date is required.');
+      return;
+    }
+    const calculatedAge = calculateAge(birthday);
+    if (isNaN(calculatedAge) || calculatedAge < 18) {
+      setError('Please enter a valid birthday (must be 18 or older).');
+      return;
+    }
+    if (!gender) {
+      setError('Please select your gender.');
+      return;
+    }
+
+    const phoneChanged = phone.trim() !== (user?.phone || '').trim();
+    if (phoneChanged) {
+      setIsSubmitting(true);
+      try {
+        const checkRes = await fetch(`${API_BASE_URL}/api/auth/check-exists?phone=${phone}`);
+        const checkData = await checkRes.json();
+        if (checkData.exists) {
+          setError('This phone number is already registered to another account.');
+          setIsSubmitting(false);
+          return;
+        }
+
+        const otpRes = await sendOtp(phone, true);
+        setVerificationStep('otp');
+        setVerificationCode('');
+        setVerificationCountdown(60);
+        setDevOtpHelp(otpRes.devOtp || '');
+      } catch (err: any) {
+        setError(err.message || 'Failed to send verification code.');
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
+    await submitCompletion();
+  };
+
+  const handleVerifyOtpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setIsSubmitting(true);
+    try {
+      await verifyOtp(phone, verificationCode, undefined, true);
+      setVerificationStep('none');
+      await submitCompletion();
+    } catch (err: any) {
+      setError(err.message || 'Invalid or expired OTP code.');
       setIsSubmitting(false);
     }
   };
@@ -202,100 +262,175 @@ export const ProfileCompletionBanner: React.FC = () => {
               className="relative w-full max-w-md z-10"
             >
               <GlassCard className="p-6 md:p-8 space-y-6 border border-[var(--violet-bright)]/30 shadow-glow">
-                <div className="text-center space-y-2">
-                  <div className="w-16 h-16 rounded-3xl bg-[var(--violet-primary)]/10 border border-[var(--violet-bright)]/30 flex items-center justify-center mx-auto shadow-glow">
-                    <Award className="w-8 h-8 text-[var(--violet-bright)] animate-bounce" />
-                  </div>
-                  <h3 className="text-2xl font-display font-bold">Claim Your Reward 🪙</h3>
-                  <p className="text-sm text-[var(--text-secondary)]">
-                    Finish updating your details to unlock 100 V-Coins and your custom Entry QR V-Card.
-                  </p>
-                </div>
+                {verificationStep !== 'none' ? (
+                  <form onSubmit={handleVerifyOtpSubmit} className="space-y-6">
+                    <div className="text-center space-y-2">
+                      <div className="w-16 h-16 rounded-3xl bg-[var(--violet-primary)]/10 border border-[var(--violet-bright)]/30 flex items-center justify-center mx-auto shadow-glow">
+                        <Smartphone className="w-8 h-8 text-[var(--violet-bright)]" />
+                      </div>
+                      <h3 className="text-2xl font-display font-bold">Verify Phone Number</h3>
+                      <p className="text-sm text-[var(--text-secondary)]">
+                        We sent a 6-digit OTP code to verify your phone number:{' '}
+                        <span className="font-bold text-white">{phone}</span>
+                      </p>
+                    </div>
 
-                {error && (
-                  <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/25 flex items-center gap-3">
-                    <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
-                    <p className="text-xs text-red-200/90 font-medium">{error}</p>
-                  </div>
+                    {error && (
+                      <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/25 flex items-center gap-3">
+                        <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
+                        <p className="text-xs text-red-200/90 font-medium">{error}</p>
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider block text-center">
+                        Enter 6-Digit OTP
+                      </label>
+                      <input 
+                        type="text" 
+                        required
+                        maxLength={6}
+                        value={verificationCode}
+                        onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 tracking-[0.5em] text-center text-lg font-extrabold focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all text-white font-mono"
+                        placeholder="123456"
+                      />
+                      
+                      {devOtpHelp && (
+                        <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-400 font-bold text-center mt-2.5 animate-pulse">
+                          [SANDBOX OTP]: {devOtpHelp}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex justify-between items-center text-xs">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVerificationStep('none');
+                          setVerificationCode('');
+                          setError('');
+                        }}
+                        className="text-[var(--text-secondary)] hover:text-white hover:underline transition-colors bg-transparent border-none cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      
+                      {verificationCountdown > 0 ? (
+                        <span className="text-[var(--text-muted)] font-mono">Resend in {verificationCountdown}s</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleSubmit}
+                          className="text-[var(--violet-bright)] font-bold hover:underline bg-transparent border-none cursor-pointer"
+                        >
+                          Resend OTP
+                        </button>
+                      )}
+                    </div>
+
+                    <GlowButton type="submit" isLoading={isSubmitting} className="w-full py-4 text-base">
+                      Verify & Claim Reward
+                    </GlowButton>
+                  </form>
+                ) : (
+                  <>
+                    <div className="text-center space-y-2">
+                      <div className="w-16 h-16 rounded-3xl bg-[var(--violet-primary)]/10 border border-[var(--violet-bright)]/30 flex items-center justify-center mx-auto shadow-glow">
+                        <Award className="w-8 h-8 text-[var(--violet-bright)] animate-bounce" />
+                      </div>
+                      <h3 className="text-2xl font-display font-bold">Claim Your Reward 🪙</h3>
+                      <p className="text-sm text-[var(--text-secondary)]">
+                        Finish updating your details to unlock 100 V-Coins and your custom Entry QR V-Card.
+                      </p>
+                    </div>
+
+                    {error && (
+                      <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/25 flex items-center gap-3">
+                        <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
+                        <p className="text-xs text-red-200/90 font-medium">{error}</p>
+                      </div>
+                    )}
+
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-1.5">
+                          <Smartphone className="w-3.5 h-3.5 text-[var(--violet-bright)]" /> Phone Number *
+                        </label>
+                        <input
+                          type="tel"
+                          value={phone}
+                          onChange={(e) => setPhone(e.target.value)}
+                          placeholder="+91 XXXXX XXXXX"
+                          className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors"
+                          required
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-[var(--violet-bright)]" /> Birth Date *
+                        </label>
+                        <input
+                          type="date"
+                          value={birthday}
+                          onChange={(e) => setBirthday(e.target.value)}
+                          className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors bg-[var(--bg-card)] cursor-pointer"
+                          required
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-1.5">
+                          <User className="w-3.5 h-3.5 text-[var(--violet-bright)]" /> Gender *
+                        </label>
+                        <select
+                          value={gender}
+                          onChange={(e) => setGender(e.target.value)}
+                          className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors bg-[var(--bg-card)] cursor-pointer"
+                          required
+                        >
+                          <option value="" disabled className="bg-[var(--bg-primary)]">Select Gender</option>
+                          <option value="male" className="bg-[var(--bg-primary)] text-white">Male</option>
+                          <option value="female" className="bg-[var(--bg-primary)] text-white">Female</option>
+                          <option value="other" className="bg-[var(--bg-primary)] text-white">Other</option>
+                          <option value="prefer_not_to_say" className="bg-[var(--bg-primary)] text-white">Prefer not to say</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-[var(--violet-bright)]" /> Address (Optional)
+                        </label>
+                        <textarea
+                          value={address}
+                          onChange={(e) => setAddress(e.target.value)}
+                          placeholder="Enter your residence details for VIP entry verification..."
+                          rows={3}
+                          className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors resize-none"
+                        />
+                      </div>
+
+                      <div className="pt-4 flex gap-3">
+                        <GlowButton
+                          type="button"
+                          variant="secondary"
+                          onClick={() => setIsOpen(false)}
+                          className="flex-1 py-3"
+                        >
+                          Cancel
+                        </GlowButton>
+                        <GlowButton
+                          type="submit"
+                          isLoading={isSubmitting}
+                          className="flex-1 py-3"
+                        >
+                          Save & Claim
+                        </GlowButton>
+                      </div>
+                    </form>
+                  </>
                 )}
-
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-1.5">
-                      <Smartphone className="w-3.5 h-3.5 text-[var(--violet-bright)]" /> Phone Number *
-                    </label>
-                    <input
-                      type="tel"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      placeholder="+91 XXXXX XXXXX"
-                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors"
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5 text-[var(--violet-bright)]" /> Birth Date *
-                    </label>
-                    <input
-                      type="date"
-                      value={birthday}
-                      onChange={(e) => setBirthday(e.target.value)}
-                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors bg-[var(--bg-card)] cursor-pointer"
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-1.5">
-                      <User className="w-3.5 h-3.5 text-[var(--violet-bright)]" /> Gender *
-                    </label>
-                    <select
-                      value={gender}
-                      onChange={(e) => setGender(e.target.value)}
-                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors bg-[var(--bg-card)] cursor-pointer"
-                      required
-                    >
-                      <option value="" disabled className="bg-[var(--bg-primary)]">Select Gender</option>
-                      <option value="male" className="bg-[var(--bg-primary)] text-white">Male</option>
-                      <option value="female" className="bg-[var(--bg-primary)] text-white">Female</option>
-                      <option value="other" className="bg-[var(--bg-primary)] text-white">Other</option>
-                      <option value="prefer_not_to_say" className="bg-[var(--bg-primary)] text-white">Prefer not to say</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-[var(--violet-bright)]" /> Address (Optional)
-                    </label>
-                    <textarea
-                      value={address}
-                      onChange={(e) => setAddress(e.target.value)}
-                      placeholder="Enter your residence details for VIP entry verification..."
-                      rows={3}
-                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors resize-none"
-                    />
-                  </div>
-
-                  <div className="pt-4 flex gap-3">
-                    <GlowButton
-                      type="button"
-                      variant="secondary"
-                      onClick={() => setIsOpen(false)}
-                      className="flex-1 py-3"
-                    >
-                      Cancel
-                    </GlowButton>
-                    <GlowButton
-                      type="submit"
-                      isLoading={isSubmitting}
-                      className="flex-1 py-3"
-                    >
-                      Save & Claim
-                    </GlowButton>
-                  </div>
-                </form>
               </GlassCard>
             </motion.div>
           </div>

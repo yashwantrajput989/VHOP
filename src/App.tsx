@@ -22,6 +22,7 @@ import { Dashboard } from './pages/user/Dashboard';
 import { ContactUs } from './pages/user/ContactUs';
 import { TermsConditions } from './pages/user/TermsConditions';
 import { RefundsCancellations } from './pages/user/RefundsCancellations';
+import { SquadView } from './pages/user/SquadView';
 
 import { useAuthStore } from './store/authStore';
 import { useUIStore } from './store/uiStore';
@@ -121,6 +122,7 @@ function App() {
             <Route path="/events/:id" element={<EventDetails />} />
             <Route path="/social" element={<Social />} />
             <Route path="/community" element={<Community />} />
+            <Route path="/squad/:id" element={<SquadView />} />
             <Route path="/profile" element={
               <ProtectedRoute>
                 <Profile />

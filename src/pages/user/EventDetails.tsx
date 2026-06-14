@@ -271,6 +271,14 @@ export const EventDetails: React.FC = () => {
               >
                 Proceed to Checkout
               </GlowButton>
+
+              <GlowButton 
+                variant="secondary"
+                onClick={() => navigate(`/squad/new?event_id=${event.id}`)}
+                className="w-full py-3.5 text-xs font-black uppercase tracking-wider mt-2 border border-[var(--violet-bright)]/40 hover:bg-[var(--violet-bright)]/10"
+              >
+                Plan a Squad Night (Split Pay) 🤝
+              </GlowButton>
               
               <p className="text-[10px] text-center text-[var(--text-muted)] mt-4">
                 By proceeding, you agree to VHOP's Terms & Conditions and Privacy Policy.

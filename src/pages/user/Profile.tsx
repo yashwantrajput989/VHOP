@@ -22,7 +22,7 @@ import { FloatingOrb } from '../../components/ui/FloatingOrb';
 import { ImageCropper } from '../../components/profile/ImageCropper';
 
 export const Profile: React.FC = () => {
-  const { user, setUser } = useAuthStore();
+  const { user, setUser, sendOtp, verifyOtp, sendEmailOtp, verifyEmailOtp } = useAuthStore();
   const navigate = useNavigate();
   const { tickets, addTicket } = useTicketStore();
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
@@ -38,11 +38,27 @@ export const Profile: React.FC = () => {
     gender: '',
     address: '',
     avatarUrl: '',
-    birthday: ''
+    birthday: '',
+    email: ''
   });
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
   const [editError, setEditError] = useState('');
   const [editSuccess, setEditSuccess] = useState('');
+
+  // Verification states for edit modal
+  const [verificationStep, setVerificationStep] = useState<'none' | 'phone_otp' | 'email_otp'>('none');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [verificationCountdown, setVerificationCountdown] = useState(0);
+  const [verificationError, setVerificationError] = useState('');
+  const [devOtpHelp, setDevOtpHelp] = useState('');
+
+  useEffect(() => {
+    if (verificationCountdown <= 0) return;
+    const timer = setInterval(() => {
+      setVerificationCountdown((prev) => prev - 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [verificationCountdown]);
 
   // Cropper and file upload states
   const [selectedImageSrc, setSelectedImageSrc] = useState<string | null>(null);
@@ -151,19 +167,21 @@ export const Profile: React.FC = () => {
       gender: user?.gender || '',
       address: user?.address || '',
       avatarUrl: user?.avatar_url || '',
-      birthday: user?.birthday || ''
+      birthday: user?.birthday || '',
+      email: user?.email || ''
     });
     setEditError('');
     setEditSuccess('');
+    setVerificationStep('none');
+    setVerificationCode('');
+    setVerificationError('');
     setIsEditModalOpen(true);
   };
 
-  const handleEditSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitProfileUpdate = async () => {
+    setIsSubmittingEdit(true);
     setEditError('');
     setEditSuccess('');
-    setIsSubmittingEdit(true);
-
     try {
       let calculatedAge = editForm.age ? Number(editForm.age) : null;
       if (editForm.birthday) {
@@ -190,7 +208,8 @@ export const Profile: React.FC = () => {
           gender: editForm.gender,
           address: editForm.address,
           avatarUrl: editForm.avatarUrl,
-          birthday: editForm.birthday
+          birthday: editForm.birthday,
+          email: editForm.email
         })
       });
 
@@ -202,10 +221,108 @@ export const Profile: React.FC = () => {
       const data = await response.json();
       setUser(data.user);
       setEditSuccess('Profile updated successfully!');
-      setTimeout(() => setIsEditModalOpen(false), 1200);
+      setTimeout(() => {
+        setIsEditModalOpen(false);
+        setVerificationStep('none');
+      }, 1200);
     } catch (err: any) {
       setEditError(err.message || 'An error occurred.');
     } finally {
+      setIsSubmittingEdit(false);
+    }
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setEditError('');
+    setEditSuccess('');
+
+    const phoneChanged = editForm.phone.trim() !== (user?.phone || '').trim();
+    const emailChanged = editForm.email.trim() !== (user?.email || '').trim();
+
+    if (phoneChanged) {
+      try {
+        setIsSubmittingEdit(true);
+        const checkRes = await fetch(`${API_BASE_URL}/api/auth/check-exists?phone=${editForm.phone}`);
+        const checkData = await checkRes.json();
+        if (checkData.exists) {
+          setEditError('This phone number is already registered to another account.');
+          setIsSubmittingEdit(false);
+          return;
+        }
+        const otpRes = await sendOtp(editForm.phone, true);
+        setVerificationStep('phone_otp');
+        setVerificationCode('');
+        setVerificationCountdown(60);
+        setDevOtpHelp(otpRes.devOtp || '');
+      } catch (err: any) {
+        setEditError(err.message || 'Failed to send phone verification code.');
+      } finally {
+        setIsSubmittingEdit(false);
+      }
+      return;
+    }
+
+    if (emailChanged) {
+      try {
+        setIsSubmittingEdit(true);
+        const checkRes = await fetch(`${API_BASE_URL}/api/auth/check-exists?email=${editForm.email}`);
+        const checkData = await checkRes.json();
+        if (checkData.exists) {
+          setEditError('This email address is already registered to another account.');
+          setIsSubmittingEdit(false);
+          return;
+        }
+        const otpRes = await sendEmailOtp(editForm.email, true);
+        setVerificationStep('email_otp');
+        setVerificationCode('');
+        setVerificationCountdown(60);
+        setDevOtpHelp(otpRes.devOtp || '');
+      } catch (err: any) {
+        setEditError(err.message || 'Failed to send email verification code.');
+      } finally {
+        setIsSubmittingEdit(false);
+      }
+      return;
+    }
+
+    await submitProfileUpdate();
+  };
+
+  const handleVerifyStepSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setVerificationError('');
+    setIsSubmittingEdit(true);
+    try {
+      if (verificationStep === 'phone_otp') {
+        await verifyOtp(editForm.phone, verificationCode, undefined, true);
+        setVerificationStep('none');
+        
+        const emailChanged = editForm.email.trim() !== (user?.email || '').trim();
+        if (emailChanged) {
+          const checkRes = await fetch(`${API_BASE_URL}/api/auth/check-exists?email=${editForm.email}`);
+          const checkData = await checkRes.json();
+          if (checkData.exists) {
+            setEditError('This email address is already registered to another account.');
+            setIsSubmittingEdit(false);
+            return;
+          }
+          const otpRes = await sendEmailOtp(editForm.email, true);
+          setVerificationStep('email_otp');
+          setVerificationCode('');
+          setVerificationCountdown(60);
+          setDevOtpHelp(otpRes.devOtp || '');
+          setIsSubmittingEdit(false);
+        } else {
+          await submitProfileUpdate();
+        }
+      } else if (verificationStep === 'email_otp') {
+        await verifyEmailOtp(editForm.email, verificationCode);
+        setVerificationStep('none');
+        await submitProfileUpdate();
+      }
+    } catch (err: any) {
+      setVerificationError(err.message || 'Invalid or expired OTP code.');
       setIsSubmittingEdit(false);
     }
   };
@@ -977,183 +1094,273 @@ export const Profile: React.FC = () => {
                   </div>
                 )}
 
-                <form onSubmit={handleEditSubmit} className="space-y-4 max-h-[60vh] overflow-y-auto pr-1 scrollbar-thin">
-                   
-                   {/* Profile Picture Uploader */}
-                   <div className="flex flex-col items-center gap-3 pb-4 border-b border-white/5">
-                     <div className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider self-start">
-                       Profile Picture
-                     </div>
-                     
-                     <div className="relative group">
-                       {/* Interactive Circular Preview */}
-                       <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-[var(--violet-bright)] p-1 bg-black/40 relative">
-                         {editForm.avatarUrl ? (
-                           <img 
-                             src={getImageUrl(editForm.avatarUrl)} 
-                             alt="Avatar Preview" 
-                             className="w-full h-full rounded-full object-cover"
-                           />
-                         ) : (
-                           <div className="w-full h-full bg-[var(--violet-primary)]/20 rounded-full flex items-center justify-center text-white text-2xl font-bold">
-                             {getInitials(editForm.fullName)}
-                           </div>
-                         )}
-                         
-                         {/* Hover Overlay */}
-                         <div 
-                           onClick={() => fileInputRef.current?.click()}
-                           className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col items-center justify-center text-white text-[9px] font-bold cursor-pointer gap-1"
-                         >
-                           <Camera className="w-4 h-4 text-[var(--violet-bright)]" />
-                           <span>UPLOAD</span>
-                         </div>
-                       </div>
+                {verificationStep !== 'none' ? (
+                  <form onSubmit={handleVerifyStepSubmit} className="space-y-6">
+                    <div className="text-center space-y-2">
+                      <div className="w-16 h-16 rounded-3xl bg-[var(--violet-primary)]/10 border border-[var(--violet-bright)]/30 flex items-center justify-center mx-auto shadow-glow">
+                        <ShieldCheck className="w-8 h-8 text-[var(--violet-bright)]" />
+                      </div>
+                      <h3 className="text-2xl font-display font-bold">Verification Required</h3>
+                      <p className="text-sm text-[var(--text-secondary)]">
+                        We sent a 6-digit OTP code to verify your new{' '}
+                        <span className="font-bold text-white">
+                          {verificationStep === 'phone_otp' ? 'phone number' : 'email address'}
+                        </span>
+                        : <span className="font-mono text-[var(--violet-bright)]">{verificationStep === 'phone_otp' ? editForm.phone : editForm.email}</span>
+                      </p>
+                    </div>
 
-                       {/* Small floating edit icon */}
-                       <button
-                         type="button"
-                         onClick={() => fileInputRef.current?.click()}
-                         className="absolute -bottom-1 -right-1 p-2 bg-[var(--violet-primary)] hover:bg-[var(--violet-bright)] border border-white/10 rounded-full text-white shadow-glow transition-all active:scale-90 cursor-pointer"
-                         title="Upload Photo"
-                       >
-                         <Camera className="w-3.5 h-3.5" />
-                       </button>
-                     </div>
+                    {verificationError && (
+                      <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/25 flex items-center gap-3">
+                        <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
+                        <p className="text-xs text-red-200/90 font-medium">{verificationError}</p>
+                      </div>
+                    )}
 
-                     <input 
-                       type="file"
-                       ref={fileInputRef}
-                       onChange={handleFileChange}
-                       accept="image/jpeg, image/jpg"
-                       className="hidden"
-                     />
-                     
-                     <p className="text-[9px] text-[var(--text-muted)] italic leading-tight">
-                       Supported format: JPEG/JPG (Max 5MB)
-                     </p>
-                   </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
-                        Full Name
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider block text-center">
+                        Enter 6-Digit OTP Code
                       </label>
-                      <input
-                        type="text"
-                        value={editForm.fullName}
-                        onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })}
-                        placeholder="John Doe"
-                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors"
+                      <input 
+                        type="text" 
                         required
+                        maxLength={6}
+                        value={verificationCode}
+                        onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 tracking-[0.5em] text-center text-lg font-extrabold focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all text-white font-mono"
+                        placeholder="123456"
                       />
+                      
+                      {devOtpHelp && (
+                        <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-400 font-bold text-center mt-2.5 animate-pulse">
+                          [SANDBOX OTP]: {devOtpHelp}
+                        </div>
+                      )}
                     </div>
 
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
-                        Username
-                      </label>
-                      <input
-                        type="text"
-                        value={editForm.username}
-                        onChange={(e) => setEditForm({ ...editForm, username: e.target.value })}
-                        placeholder="johndoe"
-                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
-                        City
-                      </label>
-                      <input
-                        type="text"
-                        value={editForm.city}
-                        onChange={(e) => setEditForm({ ...editForm, city: e.target.value })}
-                        placeholder="Visakhapatnam"
-                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
-                        Phone Number
-                      </label>
-                      <input
-                        type="tel"
-                        value={editForm.phone}
-                        onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-                        placeholder="+91 XXXXX XXXXX"
-                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
-                        Birth Date
-                      </label>
-                      <input
-                        type="date"
-                        value={editForm.birthday}
-                        onChange={(e) => setEditForm({ ...editForm, birthday: e.target.value })}
-                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors bg-[var(--bg-card)] cursor-pointer"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
-                        Gender
-                      </label>
-                      <select
-                        value={editForm.gender}
-                        onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}
-                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors bg-[var(--bg-card)] cursor-pointer"
+                    <div className="flex justify-between items-center text-xs">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVerificationStep('none');
+                          setVerificationCode('');
+                          setVerificationError('');
+                        }}
+                        className="text-[var(--text-secondary)] hover:text-white hover:underline transition-colors bg-transparent border-none cursor-pointer"
                       >
-                        <option value="" disabled className="bg-[var(--bg-primary)]">Select Gender</option>
-                        <option value="male" className="bg-[var(--bg-primary)] text-white">Male</option>
-                        <option value="female" className="bg-[var(--bg-primary)] text-white">Female</option>
-                        <option value="other" className="bg-[var(--bg-primary)] text-white">Other</option>
-                        <option value="prefer_not_to_say" className="bg-[var(--bg-primary)] text-white">Prefer not to say</option>
-                      </select>
+                        Cancel
+                      </button>
+                      
+                      {verificationCountdown > 0 ? (
+                        <span className="text-[var(--text-muted)] font-mono">Resend in {verificationCountdown}s</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleEditSubmit}
+                          className="text-[var(--violet-bright)] font-bold hover:underline bg-transparent border-none cursor-pointer"
+                        >
+                          Resend OTP
+                        </button>
+                      )}
                     </div>
-                  </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
-                      Address
-                    </label>
-                    <textarea
-                      value={editForm.address}
-                      onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
-                      placeholder="Enter your residence details for VIP entry verification..."
-                      rows={3}
-                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors resize-none"
-                    />
-                  </div>
+                    <GlowButton type="submit" isLoading={isSubmittingEdit} className="w-full py-4 text-base">
+                      Verify & Continue
+                    </GlowButton>
+                  </form>
+                ) : (
+                  <form onSubmit={handleEditSubmit} className="space-y-4 max-h-[60vh] overflow-y-auto pr-1 scrollbar-thin">
+                     
+                     {/* Profile Picture Uploader */}
+                     <div className="flex flex-col items-center gap-3 pb-4 border-b border-white/5">
+                       <div className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider self-start">
+                         Profile Picture
+                       </div>
+                       
+                       <div className="relative group">
+                         {/* Interactive Circular Preview */}
+                         <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-[var(--violet-bright)] p-1 bg-black/40 relative">
+                           {editForm.avatarUrl ? (
+                             <img 
+                               src={getImageUrl(editForm.avatarUrl)} 
+                               alt="Avatar Preview" 
+                               className="w-full h-full rounded-full object-cover"
+                             />
+                           ) : (
+                             <div className="w-full h-full bg-[var(--violet-primary)]/20 rounded-full flex items-center justify-center text-white text-2xl font-bold">
+                               {getInitials(editForm.fullName)}
+                             </div>
+                           )}
+                           
+                           {/* Hover Overlay */}
+                           <div 
+                             onClick={() => fileInputRef.current?.click()}
+                             className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col items-center justify-center text-white text-[9px] font-bold cursor-pointer gap-1"
+                           >
+                             <Camera className="w-4 h-4 text-[var(--violet-bright)]" />
+                             <span>UPLOAD</span>
+                           </div>
+                         </div>
+  
+                         {/* Small floating edit icon */}
+                         <button
+                           type="button"
+                           onClick={() => fileInputRef.current?.click()}
+                           className="absolute -bottom-1 -right-1 p-2 bg-[var(--violet-primary)] hover:bg-[var(--violet-bright)] border border-white/10 rounded-full text-white shadow-glow transition-all active:scale-90 cursor-pointer"
+                           title="Upload Photo"
+                         >
+                           <Camera className="w-3.5 h-3.5" />
+                         </button>
+                       </div>
+  
+                       <input 
+                         type="file"
+                         ref={fileInputRef}
+                         onChange={handleFileChange}
+                         accept="image/jpeg, image/jpg"
+                         className="hidden"
+                       />
+                       
+                       <p className="text-[9px] text-[var(--text-muted)] italic leading-tight">
+                         Supported format: JPEG/JPG (Max 5MB)
+                       </p>
+                     </div>
+  
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+                          Full Name
+                        </label>
+                        <input
+                          type="text"
+                          value={editForm.fullName}
+                          onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })}
+                          placeholder="John Doe"
+                          className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors"
+                          required
+                        />
+                      </div>
+  
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+                          Username
+                        </label>
+                        <input
+                          type="text"
+                          value={editForm.username}
+                          onChange={(e) => setEditForm({ ...editForm, username: e.target.value })}
+                          placeholder="johndoe"
+                          className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors"
+                          required
+                        />
+                      </div>
+                    </div>
 
-                  <div className="pt-4 flex gap-3">
-                    <GlowButton
-                      type="button"
-                      variant="secondary"
-                      onClick={() => setIsEditModalOpen(false)}
-                      className="flex-1 py-3.5"
-                    >
-                      Cancel
-                    </GlowButton>
-                    <GlowButton
-                      type="submit"
-                      isLoading={isSubmittingEdit}
-                      className="flex-1 py-3.5"
-                    >
-                      Save Changes
-                    </GlowButton>
-                  </div>
-                </form>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+                        Email Address
+                      </label>
+                      <input
+                        type="email"
+                        value={editForm.email}
+                        onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                        placeholder="alex@example.com"
+                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors"
+                        required
+                      />
+                    </div>
+  
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+                          City
+                        </label>
+                        <input
+                          type="text"
+                          value={editForm.city}
+                          onChange={(e) => setEditForm({ ...editForm, city: e.target.value })}
+                          placeholder="Visakhapatnam"
+                          className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors"
+                        />
+                      </div>
+  
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+                          Phone Number
+                        </label>
+                        <input
+                          type="tel"
+                          value={editForm.phone}
+                          onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                          placeholder="+91 XXXXX XXXXX"
+                          className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors"
+                        />
+                      </div>
+                    </div>
+  
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+                          Birth Date
+                        </label>
+                        <input
+                          type="date"
+                          value={editForm.birthday}
+                          onChange={(e) => setEditForm({ ...editForm, birthday: e.target.value })}
+                          className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors bg-[var(--bg-card)] cursor-pointer"
+                        />
+                      </div>
+  
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+                          Gender
+                        </label>
+                        <select
+                          value={editForm.gender}
+                          onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}
+                          className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors bg-[var(--bg-card)] cursor-pointer"
+                        >
+                          <option value="" disabled className="bg-[var(--bg-primary)]">Select Gender</option>
+                          <option value="male" className="bg-[var(--bg-primary)] text-white">Male</option>
+                          <option value="female" className="bg-[var(--bg-primary)] text-white">Female</option>
+                          <option value="other" className="bg-[var(--bg-primary)] text-white">Other</option>
+                          <option value="prefer_not_to_say" className="bg-[var(--bg-primary)] text-white">Prefer not to say</option>
+                        </select>
+                      </div>
+                    </div>
+  
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+                        Address
+                      </label>
+                      <textarea
+                        value={editForm.address}
+                        onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
+                        placeholder="Enter your residence details for VIP entry verification..."
+                        rows={3}
+                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:border-[var(--violet-bright)] focus:outline-none transition-colors resize-none"
+                      />
+                    </div>
+  
+                    <div className="pt-4 flex gap-3">
+                      <GlowButton
+                        type="button"
+                        variant="secondary"
+                        onClick={() => setIsEditModalOpen(false)}
+                        className="flex-1 py-3.5"
+                      >
+                        Cancel
+                      </GlowButton>
+                      <GlowButton
+                        type="submit"
+                        isLoading={isSubmittingEdit}
+                        className="flex-1 py-3.5"
+                      >
+                        Save Changes
+                      </GlowButton>
+                    </div>
+                  </form>
+                )}
               </GlassCard>
             </motion.div>
           </div>

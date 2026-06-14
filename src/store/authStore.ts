@@ -79,8 +79,10 @@ interface AuthState {
   loginWithEmail: (email: string, password: string) => Promise<UserProfile>;
   registerWithEmail: (email: string, password: string, fullName: string, referralCode?: string) => Promise<UserProfile>;
   loginAdmin: (email: string, password: string, role: 'admin' | 'superadmin') => Promise<void>;
-  sendOtp: (phone: string) => Promise<{ success: boolean; devOtp?: string }>;
-  verifyOtp: (phone: string, code: string, referralCode?: string) => Promise<UserProfile>;
+  sendOtp: (phone: string, checkExists?: boolean) => Promise<{ success: boolean; devOtp?: string }>;
+  verifyOtp: (phone: string, code: string, referralCode?: string, verifyOnly?: boolean, fullName?: string) => Promise<any>;
+  sendEmailOtp: (email: string, checkExists?: boolean) => Promise<{ success: boolean; devOtp?: string }>;
+  verifyEmailOtp: (email: string, code: string) => Promise<{ success: boolean }>;
   logout: () => Promise<void>;
   initialize: () => Promise<void>;
 }
@@ -250,13 +252,13 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      sendOtp: async (phone) => {
+      sendOtp: async (phone, checkExists) => {
         set({ isLoading: true });
         try {
           const response = await fetch(`${API_BASE_URL}/api/auth/otp/send`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phone })
+            body: JSON.stringify({ phone, checkExists })
           });
 
           const data = await response.json();
@@ -274,28 +276,86 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      verifyOtp: async (phone, code, referralCode) => {
+      verifyOtp: async (phone, code, referralCode, verifyOnly, fullName) => {
         set({ isLoading: true });
         try {
           const response = await fetch(`${API_BASE_URL}/api/auth/otp/verify`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phone, code, referred_by_code: referralCode || undefined })
+            body: JSON.stringify({ 
+              phone, 
+              code, 
+              referred_by_code: referralCode || undefined,
+              verifyOnly,
+              full_name: fullName
+            })
           });
 
-          const profile = await response.json();
+          const data = await response.json();
           if (!response.ok) {
-            throw new Error(profile.error || 'Failed to verify OTP');
+            throw new Error(data.error || 'Failed to verify OTP');
           }
 
           localStorage.removeItem('referred_by_code');
           localStorage.removeItem('vhop_location_prompt_seen');
-          set({ user: sanitizeUser(profile), session: { uid: profile.id }, isLoading: false });
-          logToBackend('otp_verify_success', profile);
-          return profile;
+          
+          if (!verifyOnly) {
+            set({ user: sanitizeUser(data), session: { uid: data.id } });
+            logToBackend('otp_verify_success', data);
+          }
+          set({ isLoading: false });
+          return data;
         } catch (error: any) {
           set({ isLoading: false });
           logToBackend('otp_verify_error', null, { error: error.message });
+          throw error;
+        }
+      },
+
+      sendEmailOtp: async (email, checkExists) => {
+        set({ isLoading: true });
+        try {
+          const response = await fetch(`${API_BASE_URL}/api/auth/email-otp/send`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, checkExists })
+          });
+
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.error || 'Failed to send email OTP');
+          }
+
+          set({ isLoading: false });
+          logToBackend('email_otp_send_success', { email });
+          return { success: true, devOtp: data.devOtp };
+        } catch (error: any) {
+          set({ isLoading: false });
+          logToBackend('email_otp_send_error', null, { error: error.message });
+          throw error;
+        }
+      },
+
+      verifyEmailOtp: async (email, code) => {
+        set({ isLoading: true });
+        try {
+          const response = await fetch(`${API_BASE_URL}/api/auth/email-otp/verify`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, code })
+          });
+
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.error || 'Failed to verify email OTP');
+          }
+
+          set({ isLoading: false });
+          logToBackend('email_otp_verify_success', { email });
+          return { success: true };
+        } catch (error: any) {
+          set({ isLoading: false });
+          logToBackend('email_otp_verify_error', null, { error: error.message });
           throw error;
         }
       },
