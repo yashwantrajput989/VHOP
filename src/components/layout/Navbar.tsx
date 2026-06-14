@@ -237,18 +237,27 @@ export const Navbar: React.FC = () => {
 
           {/* Profile Avatar / Auth trigger */}
           {user ? (
-            <button
-              onClick={() => navigate('/profile')}
-              className="w-8.5 h-8.5 rounded-xl overflow-hidden border border-[var(--violet-bright)]/30 active:scale-95 transition-all focus:outline-none ring-2 ring-[var(--violet-bright)]/10 shadow-[0_0_10px_rgba(124,58,237,0.2)] shrink-0"
-            >
-              {user.avatar_url ? (
-                <img src={getImageUrl(user.avatar_url)} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full bg-[var(--violet-primary)]/20 flex items-center justify-center">
-                  <User className="w-4 h-4 text-[var(--violet-bright)]" />
-                </div>
-              )}
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => navigate('/profile')}
+                className="w-8.5 h-8.5 rounded-xl overflow-hidden border border-[var(--violet-bright)]/30 active:scale-95 transition-all focus:outline-none ring-2 ring-[var(--violet-bright)]/10 shadow-[0_0_10px_rgba(124,58,237,0.2)]"
+              >
+                {user.avatar_url ? (
+                  <img src={getImageUrl(user.avatar_url)} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full bg-[var(--violet-primary)]/20 flex items-center justify-center">
+                    <User className="w-4 h-4 text-[var(--violet-bright)]" />
+                  </div>
+                )}
+              </button>
+              <button
+                onClick={() => logout()}
+                className="w-8.5 h-8.5 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-red-400 active:scale-95 transition-all hover:bg-red-500/10 hover:border-red-500/20"
+                title="Logout"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
           ) : (
             <button
               onClick={() => openModal('auth')}
