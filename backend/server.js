@@ -1203,8 +1203,8 @@ app.post('/api/auth/otp/send', async (req, res) => {
             }
         }
 
-        // Generate a 6-digit random OTP
-        const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+        // Generate a 4-digit random OTP to match templates/DLT restrictions
+        const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
 
         // Upsert into DB with 10 minutes validity (using JavaScript Date for timezone safety)
         const expiresAt = new Date(Date.now() + 10 * 60 * 1000);

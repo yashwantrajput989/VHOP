@@ -284,16 +284,16 @@ export const ProfileCompletionBanner: React.FC = () => {
 
                     <div className="space-y-2">
                       <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider block text-center">
-                        Enter 6-Digit OTP
+                        Enter 4-Digit OTP
                       </label>
                       <input 
                         type="text" 
                         required
-                        maxLength={6}
+                        maxLength={4}
                         value={verificationCode}
                         onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))}
                         className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 tracking-[0.5em] text-center text-lg font-extrabold focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all text-white font-mono"
-                        placeholder="123456"
+                        placeholder="1234"
                       />
                       
                       {devOtpHelp && (

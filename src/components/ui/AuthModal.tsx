@@ -663,17 +663,17 @@ export const AuthModal: React.FC = () => {
                         ) : (
                           <form onSubmit={handleOtpVerify} className="space-y-4">
                             <div className="space-y-2">
-                              <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Enter 6-Digit OTP</label>
+                              <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Enter 4-Digit OTP</label>
                               <div className="relative">
                                 <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
                                 <input 
                                   type="text" 
                                   required
-                                  maxLength={6}
+                                  maxLength={4}
                                   value={otpCode}
                                   onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
                                   className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3.5 tracking-[0.5em] text-center text-lg font-extrabold focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all text-white font-mono"
-                                  placeholder="123456"
+                                  placeholder="1234"
                                 />
                               </div>
                               
