@@ -2,22 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { PageWrapper } from '../../components/layout/PageWrapper';
 import { FloatingOrb } from '../../components/ui/FloatingOrb';
 import { GlassCard } from '../../components/ui/GlassCard';
-import { GlowButton } from '../../components/ui/GlowButton';
 import { 
   Users, 
   UserPlus, 
   Search, 
   Check, 
-  Clock, 
   Plus, 
-  Zap, 
   Sparkles, 
-  MessageSquare,
   QrCode,
   Camera,
   UserCheck,
-  Send,
-  UserX
+  Send
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { API_BASE_URL } from '../../config';
@@ -54,7 +49,6 @@ export const Social: React.FC = () => {
   const [friends, setFriends] = useState<FriendProfile[]>([]);
   const [allUsers, setAllUsers] = useState<RegisterUser[]>([]);
   const [activeSquads, setActiveSquads] = useState<OrganiserSquad[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   
   // Search & Modals
   const [searchQuery, setSearchQuery] = useState('');

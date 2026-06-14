@@ -3,7 +3,6 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageWrapper } from '../../components/layout/PageWrapper';
 import { GlassCard } from '../../components/ui/GlassCard';
 import { GlowButton } from '../../components/ui/GlowButton';
-import { Badge } from '../../components/ui/Badge';
 import { FloatingOrb } from '../../components/ui/FloatingOrb';
 import { 
   Users, 
@@ -13,10 +12,6 @@ import {
   Share2, 
   AlertTriangle, 
   CreditCard, 
-  ChevronRight, 
-  Smartphone, 
-  RefreshCw, 
-  UserCheck, 
   Calendar, 
   MapPin, 
   Plus, 
@@ -68,7 +63,7 @@ export const SquadView: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user, openAuthModal } = useAuthStore();
+  const { user } = useAuthStore();
   
   // Dev State Switcher (Overrides backend state for quick visual demonstration)
   const [devStateOverride, setDevStateOverride] = useState<'none' | 'state1' | 'state2' | 'state3'>('none');
@@ -88,7 +83,7 @@ export const SquadView: React.FC = () => {
 
   // Reservation Hold Timer (State 3)
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<any>(null);
 
   // Payment UI simulation state
   const [isPaying, setIsPaying] = useState(false);
