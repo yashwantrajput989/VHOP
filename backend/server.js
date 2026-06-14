@@ -15,7 +15,7 @@ const {
     sendContactFormDetailsToSuperEmail,
     sendVerificationEmail
 } = require('./utils/email');
-const { sendSMS, sendBulkSMS, buildBookingConfirmationSMS } = require('./utils/sms');
+const { sendSMS, sendBulkSMS, buildBookingConfirmationSMS, validateOTP } = require('./utils/sms');
 // Razorpay import removed - using Cashfree now
 const crypto = require('crypto');
 
@@ -328,11 +328,19 @@ const pool = mysql.createPool({
         await pool.execute(`
             CREATE TABLE IF NOT EXISTS phone_otps (
                 phone VARCHAR(20) PRIMARY KEY,
-                otp_code VARCHAR(10) NOT NULL,
+                otp_code VARCHAR(255) NOT NULL,
                 expires_at TIMESTAMP NOT NULL
             )
         `);
         console.log('🟢 Phone OTPs table verified/created.');
+
+        // Alter phone_otps table if it already exists to ensure otp_code can fit verificationId
+        try {
+            await pool.execute('ALTER TABLE phone_otps MODIFY COLUMN otp_code VARCHAR(255) NOT NULL');
+            console.log('🟢 phone_otps.otp_code column verified/altered to VARCHAR(255).');
+        } catch (alterErr) {
+            console.error('🔴 Error altering phone_otps.otp_code column:', alterErr);
+        }
 
         // Create email_otps table
         await pool.execute(`
@@ -1203,17 +1211,7 @@ app.post('/api/auth/otp/send', async (req, res) => {
             }
         }
 
-        // Generate a 4-digit random OTP to match templates/DLT restrictions
-        const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
-
-        // Upsert into DB with 10 minutes validity (using JavaScript Date for timezone safety)
         const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-        await pool.execute(
-            'INSERT INTO phone_otps (phone, otp_code, expires_at) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE otp_code = VALUES(otp_code), expires_at = VALUES(expires_at)',
-            [mobileNo, otpCode, expiresAt]
-        );
-
-        const message = `[VHOP] Your OTP for secure login is ${otpCode}. Valid for 10 minutes. Please do not share this code. 🎶`;
 
         // Sandbox check
         const isSandbox = !process.env.MSG_CENTRAL_AUTH_TOKEN || 
@@ -1221,6 +1219,15 @@ app.post('/api/auth/otp/send', async (req, res) => {
                           process.env.MSG_CENTRAL_AUTH_TOKEN.includes('your_message');
 
         if (isSandbox) {
+            const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
+            const storedCode = 'sandbox_' + otpCode;
+            const message = `[VHOP] Your OTP for secure login is ${otpCode}. Valid for 10 minutes. Please do not share this code. 🎶`;
+
+            await pool.execute(
+                'INSERT INTO phone_otps (phone, otp_code, expires_at) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE otp_code = VALUES(otp_code), expires_at = VALUES(expires_at)',
+                [mobileNo, storedCode, expiresAt]
+            );
+
             console.log(`\n===============================================\n[OTP SANDBOX DEBUG]\nPhone: +91${mobileNo}\nOTP Code: ${otpCode}\nMessage: ${message}\n===============================================\n`);
             return res.status(200).json({ 
                 success: true, 
@@ -1229,12 +1236,25 @@ app.post('/api/auth/otp/send', async (req, res) => {
             });
         }
 
+        // Message Central live mode
+        const message = `[VHOP] Your OTP for secure login is ##OTP##. Valid for 10 minutes. Please do not share this code. 🎶`;
         const smsResult = await sendSMS(mobileNo, message);
+
         if (smsResult.success) {
+            const verificationId = smsResult.data && smsResult.data.data && smsResult.data.data.verificationId;
+            if (!verificationId) {
+                console.error('No verificationId returned from Message Central:', smsResult.data);
+                return res.status(500).json({ error: 'Failed to initiate OTP verification from provider response' });
+            }
+
+            await pool.execute(
+                'INSERT INTO phone_otps (phone, otp_code, expires_at) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE otp_code = VALUES(otp_code), expires_at = VALUES(expires_at)',
+                [mobileNo, verificationId, expiresAt]
+            );
+
             res.status(200).json({ success: true, message: 'OTP sent successfully' });
         } else {
             console.error('Failed to send OTP SMS:', smsResult.error);
-            // Fallback to debug in case of API failure during testing/demo
             res.status(500).json({ error: 'Failed to send OTP SMS. Please try again later.' });
         }
     } catch (error) {
@@ -1272,8 +1292,19 @@ app.post('/api/auth/otp/verify', async (req, res) => {
             return res.status(400).json({ error: 'OTP has expired. Please request a new one.' });
         }
 
-        if (otpRecord.otp_code.toString().trim() !== code.toString().trim()) {
-            return res.status(400).json({ error: 'Invalid OTP code' });
+        const isSandboxRecord = otpRecord.otp_code.startsWith('sandbox_');
+
+        if (isSandboxRecord) {
+            const actualCode = otpRecord.otp_code.replace('sandbox_', '');
+            if (actualCode.trim() !== code.toString().trim()) {
+                return res.status(400).json({ error: 'Invalid OTP code' });
+            }
+        } else {
+            console.log(`[OTP AUTH] Validating Message Central OTP for ${mobileNo} with verificationId: ${otpRecord.otp_code}`);
+            const validateResult = await validateOTP(otpRecord.otp_code, code.toString().trim());
+            if (!validateResult.success) {
+                return res.status(400).json({ error: validateResult.error || 'Invalid OTP code' });
+            }
         }
 
         // Clean up OTP to prevent reuse

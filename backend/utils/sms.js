@@ -124,4 +124,60 @@ function buildBookingConfirmationSMS({ userName, eventTitle, bookingId, venueNam
     ].join('\n');
 }
 
-module.exports = { sendSMS, sendBulkSMS, buildBookingConfirmationSMS };
+/**
+ * Validate an OTP code via Message Central.
+ * @param {string} verificationId 
+ * @param {string} code 
+ * @returns {Promise<{success: boolean, data?: any, error?: string}>}
+ */
+async function validateOTP(verificationId, code) {
+    if (!AUTH_TOKEN) {
+        return { success: false, error: 'AUTH_TOKEN not configured' };
+    }
+
+    const path = `/verification/v3/validateOtp?verificationId=${encodeURIComponent(verificationId)}&code=${encodeURIComponent(code)}`;
+
+    return new Promise((resolve) => {
+        const options = {
+            hostname: MC_HOST,
+            path,
+            method: 'POST',
+            headers: {
+                'authToken':     AUTH_TOKEN,
+                'Content-Type':  'application/json',
+                'Content-Length': 0
+            }
+        };
+
+        const req = https.request(options, (res) => {
+            let body = '';
+            res.on('data', chunk => { body += chunk; });
+            res.on('end', () => {
+                try {
+                    const data = JSON.parse(body);
+                    if (res.statusCode >= 200 && res.statusCode < 300) {
+                        // Message Central V3 response format checks
+                        if (data.status === 200 || data.responseCode === 200 || data.message === 'Verification Success' || data.message === 'Approved') {
+                            resolve({ success: true, data });
+                        } else {
+                            resolve({ success: false, error: data.message || 'OTP verification failed' });
+                        }
+                    } else {
+                        resolve({ success: false, error: data.message || body });
+                    }
+                } catch (e) {
+                    resolve({ success: false, error: body });
+                }
+            });
+        });
+
+        req.on('error', (err) => {
+            console.error('[SMS] validateOTP request error:', err.message);
+            resolve({ success: false, error: err.message });
+        });
+
+        req.end();
+    });
+}
+
+module.exports = { sendSMS, sendBulkSMS, buildBookingConfirmationSMS, validateOTP };

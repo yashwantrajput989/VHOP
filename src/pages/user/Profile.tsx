@@ -1102,7 +1102,7 @@ export const Profile: React.FC = () => {
                       </div>
                       <h3 className="text-2xl font-display font-bold">Verification Required</h3>
                       <p className="text-sm text-[var(--text-secondary)]">
-                        We sent a 6-digit OTP code to verify your new{' '}
+                        We sent a {verificationStep === 'phone_otp' ? '4-digit' : '6-digit'} OTP code to verify your new{' '}
                         <span className="font-bold text-white">
                           {verificationStep === 'phone_otp' ? 'phone number' : 'email address'}
                         </span>
@@ -1119,16 +1119,16 @@ export const Profile: React.FC = () => {
 
                     <div className="space-y-2">
                       <label className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider block text-center">
-                        Enter 6-Digit OTP Code
+                        Enter {verificationStep === 'phone_otp' ? '4-Digit' : '6-Digit'} OTP Code
                       </label>
                       <input 
                         type="text" 
                         required
-                        maxLength={6}
+                        maxLength={verificationStep === 'phone_otp' ? 4 : 6}
                         value={verificationCode}
                         onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))}
                         className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 tracking-[0.5em] text-center text-lg font-extrabold focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-all text-white font-mono"
-                        placeholder="123456"
+                        placeholder={verificationStep === 'phone_otp' ? "1234" : "123456"}
                       />
                       
                       {devOtpHelp && (

@@ -270,7 +270,7 @@ export const ProfileCompletionBanner: React.FC = () => {
                       </div>
                       <h3 className="text-2xl font-display font-bold">Verify Phone Number</h3>
                       <p className="text-sm text-[var(--text-secondary)]">
-                        We sent a 6-digit OTP code to verify your phone number:{' '}
+                        We sent a 4-digit OTP code to verify your phone number:{' '}
                         <span className="font-bold text-white">{phone}</span>
                       </p>
                     </div>
