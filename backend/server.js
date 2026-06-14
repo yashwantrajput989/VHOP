@@ -1141,9 +1141,9 @@ app.post('/api/auth/email-otp/verify', async (req, res) => {
         }
         const cleanEmail = email.toLowerCase().trim();
 
-        // Fetch OTP from database
+        // Fetch OTP from database with UNIX_TIMESTAMP for timezone safety
         const [otpRows] = await pool.execute(
-            'SELECT * FROM email_otps WHERE email = ?',
+            'SELECT *, UNIX_TIMESTAMP(expires_at) AS expires_epoch FROM email_otps WHERE email = ?',
             [cleanEmail]
         );
 
@@ -1153,13 +1153,13 @@ app.post('/api/auth/email-otp/verify', async (req, res) => {
 
         const otpRecord = otpRows[0];
         
-        // Expiry comparison in Javascript
-        const expiryTime = new Date(otpRecord.expires_at).getTime();
+        // Timezone-safe comparison using unix timestamp
+        const expiryTime = otpRecord.expires_epoch * 1000;
         if (expiryTime < Date.now()) {
             return res.status(400).json({ error: 'Verification code has expired. Please request a new one.' });
         }
 
-        if (otpRecord.otp_code !== code.toString().trim()) {
+        if (otpRecord.otp_code.toString().trim() !== code.toString().trim()) {
             return res.status(400).json({ error: 'Invalid verification code' });
         }
 
@@ -1254,9 +1254,9 @@ app.post('/api/auth/otp/verify', async (req, res) => {
         const digits = phone.replace(/\D/g, '');
         const mobileNo = digits.slice(-10);
 
-        // Fetch OTP from database
+        // Fetch OTP from database with UNIX_TIMESTAMP for timezone safety
         const [otpRows] = await pool.execute(
-            'SELECT * FROM phone_otps WHERE phone = ?',
+            'SELECT *, UNIX_TIMESTAMP(expires_at) AS expires_epoch FROM phone_otps WHERE phone = ?',
             [mobileNo]
         );
 
@@ -1266,13 +1266,13 @@ app.post('/api/auth/otp/verify', async (req, res) => {
 
         const otpRecord = otpRows[0];
         
-        // Expiry comparison in Javascript (safe from DB timezone offset mismatches)
-        const expiryTime = new Date(otpRecord.expires_at).getTime();
+        // Timezone-safe comparison using unix timestamp
+        const expiryTime = otpRecord.expires_epoch * 1000;
         if (expiryTime < Date.now()) {
             return res.status(400).json({ error: 'OTP has expired. Please request a new one.' });
         }
 
-        if (otpRecord.otp_code !== code.toString().trim()) {
+        if (otpRecord.otp_code.toString().trim() !== code.toString().trim()) {
             return res.status(400).json({ error: 'Invalid OTP code' });
         }
 
