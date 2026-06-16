@@ -535,7 +535,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, eve
                     <GlowButton 
                       onClick={() => {
                         onClose();
-                        navigate('/profile');
+                        navigate('/tickets');
                       }} 
                       variant="secondary" 
                       className="w-full py-4"

@@ -141,6 +141,8 @@ export const Profile: React.FC = () => {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showContactModal, setShowContactModal] = useState(false);
   const [showPartnerModal, setShowPartnerModal] = useState(false);
+  const [showDnaModal, setShowDnaModal] = useState(false);
+  const [rawBookings, setRawBookings] = useState<any[]>([]);
 
   // Contact form state
   const [contactForm, setContactForm] = useState({ name: '', email: '', phone: '', message: '' });
@@ -518,8 +520,19 @@ export const Profile: React.FC = () => {
       if (!user) return;
       
       try {
+        const profResponse = await fetch(`${API_BASE_URL}/api/auth/profile/${user.id}`);
+        if (profResponse.ok) {
+          const freshProfile = await profResponse.json();
+          setUser(freshProfile);
+        }
+      } catch (e) {
+        console.error('Failed to sync profile on mount:', e);
+      }
+      
+      try {
         const response = await fetch(`${API_BASE_URL}/api/bookings/user/${user.id}`);
         const data = await response.json();
+        setRawBookings(data);
         
         data.forEach((dbTicket: any) => {
           if (!tickets.find(t => t.id === dbTicket.id)) {
@@ -990,13 +1003,7 @@ export const Profile: React.FC = () => {
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-black text-slate-300 tracking-wider uppercase">NIGHT DNA</h3>
             <button 
-              onClick={() => {
-                if (tickets.length > 0) {
-                  setSelectedTicket(tickets[0]);
-                } else {
-                  alert("No checked-in booking history found.");
-                }
-              }}
+              onClick={() => setShowDnaModal(true)}
               className="text-xs font-bold text-emerald-400 hover:text-emerald-300 transition-colors"
             >
               See history
@@ -1065,7 +1072,7 @@ export const Profile: React.FC = () => {
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-black text-slate-300 tracking-wider uppercase">TONIGHT'S PASS</h3>
               <button 
-                onClick={() => setShowAllPassesModal(true)}
+                onClick={() => navigate('/tickets')}
                 className="text-xs font-bold text-emerald-400 hover:text-emerald-300 transition-colors"
               >
                 View all
@@ -1073,7 +1080,7 @@ export const Profile: React.FC = () => {
             </div>
 
             <GlassCard 
-              onClick={() => setSelectedTicket(tickets[0])}
+              onClick={() => navigate('/tickets')}
               className="border-emerald-500/35 hover:bg-white/[0.05] p-4.5 cursor-pointer relative overflow-hidden transition-all duration-300 shadow-[0_0_24px_rgba(16,185,129,0.1)] group border"
             >
               <div className="flex gap-4 items-center">
@@ -2470,6 +2477,123 @@ export const Profile: React.FC = () => {
                     </p>
                   </form>
                 )}
+              </GlassCard>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ================= NIGHT DNA HISTORY MODAL ================= */}
+      <AnimatePresence>
+        {showDnaModal && (
+          <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowDnaModal(false)}
+              className="fixed inset-0 bg-black/90 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative w-full max-w-md z-10"
+            >
+              <GlassCard className="p-6 space-y-5 border-emerald-500/30 shadow-[0_0_30px_rgba(16,185,129,0.15)] max-h-[80vh] flex flex-col overflow-hidden">
+                <div className="flex justify-between items-center pb-3 border-b border-white/5 shrink-0">
+                  <h3 className="text-base font-display font-black text-white flex items-center gap-2">
+                    <Zap className="w-4.5 h-4.5 text-emerald-400 fill-emerald-400/20 animate-pulse" /> Night DNA Insights
+                  </h3>
+                  <button onClick={() => setShowDnaModal(false)} className="text-slate-400 hover:text-white font-extrabold text-xl cursor-pointer bg-transparent border-none">&times;</button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto space-y-4 pr-1 custom-scrollbar">
+                  <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl space-y-2">
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5 text-emerald-400">
+                      How It Works
+                    </h4>
+                    <p className="text-[11px] text-slate-300 leading-relaxed font-medium">
+                      Your Night DNA is dynamic. We map your confirmed bookings to specific music vibes based on the event's category and title keywords:
+                    </p>
+                    <ul className="text-[10px] text-slate-400 space-y-1 pl-4 list-disc font-medium">
+                      <li><strong className="text-blue-400 font-bold">EDM / House:</strong> EDM, Trance, Techno, House, Clubbing, Rave, DJ events</li>
+                      <li><strong className="text-pink-400 font-bold">Bollywood:</strong> Bollywood, Desi, Commercial, Punjabi nights</li>
+                      <li><strong className="text-teal-400 font-bold">Live Music:</strong> Acoustic sessions, Band performances, Concerts, Unplugged gigs</li>
+                    </ul>
+                  </div>
+
+                  {/* Bookings log explaining how the user got their DNA */}
+                  <div className="space-y-2.5">
+                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5 font-display">
+                      <Calendar className="w-4 h-4 text-emerald-400" /> Event Contribution History
+                    </h4>
+                    
+                    {rawBookings.length === 0 ? (
+                      <div className="p-5 text-center bg-white/[0.01] border border-dashed border-white/10 rounded-2xl space-y-2">
+                        <p className="text-xs font-bold text-white">No Event Bookings Found</p>
+                        <p className="text-[10px] text-slate-500 leading-normal max-w-[280px] mx-auto">
+                          You haven't booked any premium nightlife passes yet. Showing default baseline profile vibes (72% EDM, 18% Bollywood, 10% Live).
+                        </p>
+                        <button 
+                          onClick={() => {
+                            setShowDnaModal(false);
+                            navigate('/events');
+                          }}
+                          className="mt-2 text-[10px] font-bold text-[var(--violet-bright)] hover:underline bg-transparent border-none cursor-pointer"
+                        >
+                          Browse events to build your profile →
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {rawBookings.map((b: any, index: number) => {
+                          const cat = (b.category || '').toLowerCase();
+                          const title = (b.event_title || b.title || '').toLowerCase();
+                          let vibe = 'EDM / House';
+                          let badgeColor = 'text-blue-400 bg-blue-500/10 border-blue-500/20';
+
+                          if (cat.includes('edm') || cat.includes('trance') || cat.includes('techno') || cat.includes('house') || cat.includes('clubbing') || cat.includes('rave') || cat.includes('music') ||
+                              title.includes('rave') || title.includes('techno') || title.includes('trance') || title.includes('house') || title.includes('edm') || title.includes('dj')) {
+                            vibe = 'EDM / House';
+                            badgeColor = 'text-blue-400 bg-blue-500/10 border-blue-500/20';
+                          } else if (cat.includes('bollywood') || cat.includes('desi') || cat.includes('commercial') || cat.includes('punjabi') ||
+                                     title.includes('bollywood') || title.includes('desi') || title.includes('punjabi') || title.includes('night show')) {
+                            vibe = 'Bollywood';
+                            badgeColor = 'text-pink-400 bg-rose-500/10 border-rose-500/20';
+                          } else if (cat.includes('live') || cat.includes('acoustic') || cat.includes('band') || cat.includes('concert') ||
+                                     title.includes('live') || title.includes('acoustic') || title.includes('band') || title.includes('concert') || title.includes('unplugged')) {
+                            vibe = 'Live Music';
+                            badgeColor = 'text-teal-400 bg-emerald-500/10 border-emerald-500/20';
+                          } else {
+                            vibe = 'EDM / House';
+                            badgeColor = 'text-blue-400 bg-blue-500/10 border-blue-500/20';
+                          }
+
+                          return (
+                            <div key={b.id || index} className="p-3 bg-white/[0.02] border border-white/5 rounded-2xl flex justify-between items-center gap-3">
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-white truncate leading-snug font-display">
+                                  {b.event_title || 'Premium Event'}
+                                </p>
+                                <p className="text-[9px] text-slate-400 mt-1 font-medium">
+                                  {b.venue_name || 'Venue'} • {b.city || 'City'}
+                                </p>
+                              </div>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border shrink-0 uppercase tracking-wide ${badgeColor}`}>
+                                +1 {vibe}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                <GlowButton onClick={() => setShowDnaModal(false)} className="w-full py-3.5 text-xs font-bold uppercase tracking-wider shrink-0" variant="secondary">
+                  Close Insights
+                </GlowButton>
               </GlassCard>
             </motion.div>
           </div>

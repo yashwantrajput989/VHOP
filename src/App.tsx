@@ -24,6 +24,7 @@ import { TermsConditions } from './pages/user/TermsConditions';
 import { RefundsCancellations } from './pages/user/RefundsCancellations';
 import { SquadView } from './pages/user/SquadView';
 import { SquadsFeed } from './pages/user/SquadsFeed';
+import { BookedTickets } from './pages/user/BookedTickets';
 
 import { useAuthStore } from './store/authStore';
 import { useUIStore } from './store/uiStore';
@@ -128,6 +129,11 @@ function App() {
             <Route path="/profile" element={
               <ProtectedRoute>
                 <Profile />
+              </ProtectedRoute>
+            } />
+            <Route path="/tickets" element={
+              <ProtectedRoute>
+                <BookedTickets />
               </ProtectedRoute>
             } />
             <Route path="/contact-us" element={<ContactUs />} />

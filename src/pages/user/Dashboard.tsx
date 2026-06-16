@@ -84,7 +84,7 @@ export const Dashboard: React.FC = () => {
   const quickActions = [
     { label: 'Events', icon: Calendar, path: '/events', color: 'text-blue-400' },
     { label: 'Social', icon: Users, path: '/social', color: 'text-purple-400' },
-    { label: 'Tickets', icon: TicketIcon, path: '/profile', color: 'text-pink-400' },
+    { label: 'Tickets', icon: TicketIcon, path: '/tickets', color: 'text-pink-400' },
     { label: 'VIP', icon: Crown, path: '/community', color: 'text-amber-400' },
   ];
 
@@ -159,7 +159,7 @@ export const Dashboard: React.FC = () => {
                 <Zap className="w-5 h-5 text-[var(--violet-bright)]" />
                 Upcoming Bookings
               </h2>
-              <Link to="/profile" className="text-xs text-[var(--violet-bright)] font-bold flex items-center gap-1">
+              <Link to="/tickets" className="text-xs text-[var(--violet-bright)] font-bold flex items-center gap-1">
                 View All <ArrowRight className="w-3 h-3" />
               </Link>
             </div>
