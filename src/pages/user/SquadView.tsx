@@ -1,26 +1,33 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageWrapper } from '../../components/layout/PageWrapper';
 import { GlassCard } from '../../components/ui/GlassCard';
 import { GlowButton } from '../../components/ui/GlowButton';
 import { FloatingOrb } from '../../components/ui/FloatingOrb';
 import { 
-  Users, 
   Crown, 
   Check, 
   Clock, 
   Share2, 
-  AlertTriangle, 
   CreditCard, 
   Calendar, 
   MapPin, 
-  Plus, 
-  Minus,
-  Sparkles,
-  Info
+  Sparkles, 
+  Info,
+  ChevronLeft,
+  Search,
+  CheckCircle,
+  MessageSquare,
+  Smartphone,
+  Shield,
+  GlassWater,
+  Settings,
+  PlusCircle,
+  QrCode,
+  Camera
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
-import { API_BASE_URL, getImageUrl } from '../../config';
+import { API_BASE_URL } from '../../config';
 
 interface SquadDetails {
   id: string;
@@ -30,6 +37,10 @@ interface SquadDetails {
   size: number;
   tier: string;
   created_at: string;
+  anyone_can_join: boolean;
+  require_approval: boolean;
+  entry_price: number;
+  status: string;
   event_title?: string;
   venue_name?: string;
   start_date?: string;
@@ -47,43 +58,44 @@ interface SquadMember {
   aadhaar_verified: boolean;
 }
 
-const TIER_PRICES: Record<string, number> = {
-  regular: 0,
-  vip_silver: 299,
-  vip_gold: 799
-};
-
-const TIER_LABELS: Record<string, string> = {
-  regular: 'Regular (Free Entry, Queue)',
-  vip_silver: 'VIP Silver (₹299 total base)',
-  vip_gold: 'VIP Gold (₹799 total base)'
-};
-
 export const SquadView: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user } = useAuthStore();
   
-  // Dev State Switcher (Overrides backend state for quick visual demonstration)
-  const [devStateOverride, setDevStateOverride] = useState<'none' | 'state1' | 'state2' | 'state3'>('none');
+  // Dev State Switcher (Overrides backend state for visual validation)
+  const [devStateOverride, setDevStateOverride] = useState<'none' | 'creator_flow' | 'host_dashboard' | 'invitee_checkout'>('none');
 
   // Core Data States
-  const [eventContext, setEventContext] = useState<any>(null);
   const [squad, setSquad] = useState<SquadDetails | null>(null);
   const [members, setMembers] = useState<SquadMember[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
   const [notification, setNotification] = useState('');
 
-  // Setup Form States (State 1)
+  // Creation Wizard States (isNew)
+  const [creationStep, setCreationStep] = useState<1 | 2 | 3>(1);
   const [squadName, setSquadName] = useState('');
-  const [squadSize, setSquadSize] = useState(4);
-  const [selectedTier, setSelectedTier] = useState<'regular' | 'vip_silver' | 'vip_gold'>('vip_silver');
+  const [squadSize, setSquadSize] = useState<5 | 10 | 20>(10);
+  const [anyoneCanJoin, setAnyoneCanJoin] = useState(true);
+  const [requireApproval, setRequireApproval] = useState(false);
+  const [entryPrice, setEntryPrice] = useState<number>(1200);
 
-  // Reservation Hold Timer (State 3)
-  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
-  const timerRef = useRef<any>(null);
+  // Search linked events states
+  const [allEvents, setAllEvents] = useState<any[]>([]);
+  const [eventSearch, setEventSearch] = useState('');
+  const [selectedEvent, setSelectedEvent] = useState<any>(null);
+  const [showEventDropdown, setShowEventDropdown] = useState(false);
+
+  // Success Screen Newly Created ID
+  const [createdSquadId, setCreatedSquadId] = useState('');
+
+  // Roster Invitation features (Host dashboard)
+  const [usernameInput, setUsernameInput] = useState('');
+  const [showScannerModal, setShowScannerModal] = useState(false);
+  const [scannerUsersList, setScannerUsersList] = useState<any[]>([]);
+  const [selectedScannerUserId, setSelectedScannerUserId] = useState('');
 
   // Payment UI simulation state
   const [isPaying, setIsPaying] = useState(false);
@@ -92,23 +104,36 @@ export const SquadView: React.FC = () => {
 
   const isNew = id === 'new';
 
-  // Load Event or Squad Details
+  const showToast = (msg: string) => {
+    setNotification(msg);
+    setTimeout(() => setNotification(''), 4500);
+  };
+
+  // Load Event Context or Squad Details
   const fetchData = async () => {
     setIsLoading(true);
     setErrorMessage('');
     try {
+      // Load events list for the creation dropdown search
+      const eventsRes = await fetch(`${API_BASE_URL}/api/events`);
+      if (eventsRes.ok) {
+        const eventsData = await eventsRes.json();
+        setAllEvents(eventsData);
+      }
+
       if (isNew) {
         const eventId = searchParams.get('event_id');
-        if (!eventId) {
-          throw new Error('Missing event_id in query parameters.');
+        if (eventId && eventsRes.ok) {
+          const eventsData = await eventsRes.json().catch(() => null);
+          const activeEv = (eventsData || allEvents).find((e: any) => e.id === eventId);
+          if (activeEv) {
+            setSelectedEvent(activeEv);
+            setEventSearch(activeEv.title);
+            setSquadName(`VIP Table — ${activeEv.title}`);
+          }
+        } else {
+          setSquadName('e.g. VIP Table — Friday Night');
         }
-        const res = await fetch(`${API_BASE_URL}/api/events/${eventId}`);
-        if (!res.ok) throw new Error('Event details could not be retrieved.');
-        const data = await res.json();
-        setEventContext(data);
-        // Default Squad Name
-        const organiserName = user?.full_name || 'My';
-        setSquadName(`${organiserName}'s Squad — ${data.title}`);
       } else {
         const res = await fetch(`${API_BASE_URL}/api/squads/${id}`);
         if (!res.ok) throw new Error('Squad not found or expired.');
@@ -124,48 +149,30 @@ export const SquadView: React.FC = () => {
     }
   };
 
+  // Load registered users for scanner target selection
+  const fetchScannerUsers = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/users`);
+      if (res.ok) {
+        const data = await res.json();
+        setScannerUsersList(data.filter((u: any) => u.id !== user?.id));
+      }
+    } catch (err) {
+      console.error('Error fetching scanner users:', err);
+    }
+  };
+
   useEffect(() => {
     fetchData();
+    fetchScannerUsers();
   }, [id, searchParams, user?.id]);
 
-  // Invitee countdown timer setup (State 3)
-  useEffect(() => {
-    // Determine target reservation
-    if (isNew || !squad || !user) return;
-    
-    const myMemberSlot = members.find(m => m.id === user.id);
-    if (myMemberSlot && myMemberSlot.payment_status === 'pending' && myMemberSlot.reserved_until) {
-      const startTimer = () => {
-        if (timerRef.current) clearInterval(timerRef.current);
-        
-        const updateTimer = () => {
-          const reservedTime = new Date(myMemberSlot.reserved_until!).getTime();
-          const diffSeconds = Math.max(0, Math.floor((reservedTime - Date.now()) / 1000));
-          setSecondsLeft(diffSeconds);
-          
-          if (diffSeconds <= 0) {
-            if (timerRef.current) clearInterval(timerRef.current);
-          }
-        };
-        
-        updateTimer();
-        timerRef.current = setInterval(updateTimer, 1000);
-      };
-      
-      startTimer();
-    } else {
-      setSecondsLeft(null);
-      if (timerRef.current) clearInterval(timerRef.current);
-    }
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [members, squad, user, isNew]);
-
-  const showToast = (msg: string) => {
-    setNotification(msg);
-    setTimeout(() => setNotification(''), 4500);
+  // handle event selection in Step 1
+  const selectEventFromSearch = (ev: any) => {
+    setSelectedEvent(ev);
+    setEventSearch(ev.title);
+    setSquadName(`VIP Booth — ${ev.title}`);
+    setShowEventDropdown(false);
   };
 
   // State 1: Creation Submit
@@ -174,18 +181,24 @@ export const SquadView: React.FC = () => {
       showToast('Please sign in to book your squad.');
       return;
     }
+    if (!selectedEvent) {
+      showToast('Please search and select a linked event/venue first.');
+      return;
+    }
     setIsLoading(true);
     try {
-      const eventId = eventContext?.id || searchParams.get('event_id');
       const response = await fetch(`${API_BASE_URL}/api/squads/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          eventId,
+          eventId: selectedEvent.id,
           name: squadName,
           organiserId: user.id,
           size: squadSize,
-          tier: selectedTier
+          tier: squadSize === 5 ? 'intimate' : squadSize === 20 ? 'big_squad' : 'standard',
+          anyoneCanJoin,
+          requireApproval,
+          entryPrice
         })
       });
 
@@ -195,17 +208,9 @@ export const SquadView: React.FC = () => {
       }
 
       const data = await response.json();
-      
-      // Open WhatsApp Share immediately
-      const deepLink = `${window.location.origin}/squad/${data.squadId}`;
-      const messageText = `Hey! Join my squad "${squadName}" for tonight's pass! Pay your share independently here: ${deepLink}`;
-      const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(messageText)}`;
-      window.open(whatsappUrl, '_blank');
-
-      showToast('Squad created! Redirecting to dashboard...');
-      setTimeout(() => {
-        navigate(`/squad/${data.squadId}`);
-      }, 1500);
+      setCreatedSquadId(data.squadId);
+      setCreationStep(3); // Go to Success Screen
+      showToast('Squad is live! Share with your friends.');
     } catch (err: any) {
       showToast(err.message || 'Error creating squad.');
     } finally {
@@ -213,7 +218,82 @@ export const SquadView: React.FC = () => {
     }
   };
 
-  // State 2: Organizer live tracking operations
+  // Add Member by Username input
+  const handleAddByUsername = async () => {
+    if (!usernameInput.trim() || !squad) return;
+    try {
+      // Find the user by username in scanner list
+      const targetUser = scannerUsersList.find(
+        (u: any) => u.username?.toLowerCase() === usernameInput.trim().toLowerCase()
+      );
+      if (!targetUser) {
+        showToast('Username not found. Try kabir, riya, or aarav.');
+        return;
+      }
+      
+      // Call join squad slot
+      const joinRes = await fetch(`${API_BASE_URL}/api/squads/${squad.id}/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: targetUser.id })
+      });
+      
+      if (!joinRes.ok) {
+        const joinErr = await joinRes.json();
+        throw new Error(joinErr.error || 'Could not join slot.');
+      }
+
+      // Mark payment complete immediately (simulate direct cash split or split authorization)
+      await fetch(`${API_BASE_URL}/api/squads/${squad.id}/pay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: targetUser.id })
+      });
+
+      showToast(`Added ${targetUser.full_name} to your squad!`);
+      setUsernameInput('');
+      fetchData(); // reload members list
+    } catch (err: any) {
+      showToast(err.message || 'Failed to invite user.');
+    }
+  };
+
+  // QR Code Scanner simulate scan trigger
+  const handleScanQRUser = async (userId: string) => {
+    if (!userId || !squad) return;
+    const targetUser = scannerUsersList.find((u: any) => u.id === userId);
+    if (!targetUser) return;
+    
+    try {
+      // Call join squad slot
+      const joinRes = await fetch(`${API_BASE_URL}/api/squads/${squad.id}/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: targetUser.id })
+      });
+
+      if (!joinRes.ok) {
+        const joinErr = await joinRes.json();
+        throw new Error(joinErr.error || 'Could not join slot.');
+      }
+
+      // Mark paid
+      await fetch(`${API_BASE_URL}/api/squads/${squad.id}/pay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: targetUser.id })
+      });
+
+      showToast(`Scanned & added ${targetUser.full_name} instantly!`);
+      setShowScannerModal(false);
+      setSelectedScannerUserId('');
+      fetchData();
+    } catch (err: any) {
+      showToast(err.message || 'Scanner transaction failed.');
+    }
+  };
+
+  // WhatsApp Nudge
   const handleNudgeMember = async (memberId: string) => {
     if (nudgeCooldown[memberId]) return;
     try {
@@ -224,13 +304,7 @@ export const SquadView: React.FC = () => {
       });
       if (response.ok) {
         setNudgeCooldown(prev => ({ ...prev, [memberId]: true }));
-        showToast('WhatsApp nudge reminder sent successfully! 💬');
-        
-        // Mock open whatsapp to simulate nudge link
-        const targetMember = members.find(m => m.id === memberId);
-        const deepLink = `${window.location.origin}/squad/${id}`;
-        const nudgeText = `Hey ${targetMember?.full_name || 'friend'}! Don't lose your spot in our squad booking. Pay your share before the 10-minute lock expires: ${deepLink}`;
-        window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(nudgeText)}`, '_blank');
+        showToast('Nudge reminder sent successfully! 💬');
       }
     } catch (err) {
       showToast('Failed to send nudge.');
@@ -239,31 +313,28 @@ export const SquadView: React.FC = () => {
 
   const handleCancelSquad = async () => {
     if (!user || !squad) return;
-    
-    const confirmCancel = window.confirm('Are you sure you want to cancel this squad booking? You will receive a full refund.');
+    const confirmCancel = window.confirm('Are you sure you want to cancel this squad booking? All paid members get a full refund.');
     if (!confirmCancel) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/squads/${id}/cancel`, {
+      const response = await fetch(`${API_BASE_URL}/api/squads/${squad.id}/cancel`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ organiserId: user.id })
       });
       if (response.ok) {
         showToast('Squad successfully cancelled. Refunding...');
-        setTimeout(() => {
-          navigate('/events');
-        }, 1500);
+        setTimeout(() => navigate('/squads'), 1500);
       } else {
         const err = await response.json();
-        showToast(err.error || 'Failed to cancel squad.');
+        showToast(err.error || 'Failed to cancel.');
       }
     } catch (err) {
       showToast('Cancellation error.');
     }
   };
 
-  // State 3: Invitee Join and payment simulation
+  // Join Spot & Pay (Invitee flow)
   const handleJoinSquadSlot = async () => {
     if (!user) {
       showToast('Please sign in or register to join the squad!');
@@ -271,7 +342,7 @@ export const SquadView: React.FC = () => {
     }
     setIsLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/squads/${id}/join`, {
+      const response = await fetch(`${API_BASE_URL}/api/squads/${squad?.id}/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id })
@@ -279,11 +350,11 @@ export const SquadView: React.FC = () => {
 
       if (!response.ok) {
         const err = await response.json();
-        throw new Error(err.error || 'Failed to join squad slot.');
+        throw new Error(err.error || 'Failed to join.');
       }
       
-      showToast('Spot locked for 10 minutes! Proceed to payment.');
-      await fetchData();
+      showToast('Spot reserved! Processing checkout payment.');
+      await handlePaySplit();
     } catch (err: any) {
       showToast(err.message || 'Error joining slot.');
     } finally {
@@ -295,10 +366,10 @@ export const SquadView: React.FC = () => {
     if (!user || !squad) return;
     setIsPaying(true);
     
-    // Simulate Razorpay transaction overlay
+    // Simulate transaction delay
     setTimeout(async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/api/squads/${id}/pay`, {
+        const response = await fetch(`${API_BASE_URL}/api/squads/${squad.id}/pay`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ userId: user.id })
@@ -306,433 +377,49 @@ export const SquadView: React.FC = () => {
         
         if (response.ok) {
           setPaymentComplete(true);
-          showToast('Payment successful! Your spot is fully verified. 🎉');
+          showToast('Payment successful! Spot locked. 🎉');
           await fetchData();
         } else {
           showToast('Payment verification failed.');
         }
       } catch (err) {
-        showToast('Network error verifying payment.');
+        showToast('Network error.');
       } finally {
         setIsPaying(false);
       }
     }, 2000);
   };
 
-  // Mathematical pricing breakdowns
-  const getPricingMath = () => {
-    const size = squad ? squad.size : squadSize;
-    const tier = squad ? squad.tier : selectedTier;
-    const basePrice = TIER_PRICES[tier] || 0;
-    
-    const perHeadShare = Math.round(basePrice / size);
-    const serviceFee = 10;
-    const totalToPay = perHeadShare + serviceFee;
-
-    return {
-      basePrice,
-      perHeadShare,
-      serviceFee,
-      totalToPay
-    };
+  // Copy Link utility
+  const copySquadLink = (sqId: string) => {
+    const link = `${window.location.origin}/squad/${sqId}`;
+    navigator.clipboard.writeText(link);
+    showToast('Squad link copied to clipboard!');
   };
 
-  const pricing = getPricingMath();
+  // Mathematics pricing calculations
+  const totalCollected = squadSize * entryPrice;
+  const commission = Math.round(totalCollected * 0.15);
+  const payoutToReceive = totalCollected - commission;
 
-  // Determine current active view based on parameters & data
-  const renderCurrentState = () => {
-    const activeState = devStateOverride !== 'none' ? devStateOverride : (isNew ? 'state1' : (user && squad && squad.organiser_id === user.id ? 'state2' : 'state3'));
+  // Search event dropdown filter
+  const filteredEvents = allEvents.filter(e => 
+    e.title.toLowerCase().includes(eventSearch.toLowerCase()) ||
+    e.venue_name.toLowerCase().includes(eventSearch.toLowerCase())
+  );
 
-    if (activeState === 'state1') {
-      const ev = eventContext || { title: 'Luminescence Club Night', venue_name: 'The Playground', start_date: '2026-06-19 22:00:00', price: 999 };
-      return (
-        <div className="space-y-6">
-          {/* STATE 1: ORGANISER SETUP VIEW */}
-          <section className="text-center py-2">
-            <span className="text-xs uppercase font-extrabold tracking-widest text-[var(--violet-bright)] px-3 py-1 rounded-full bg-[var(--violet-primary)]/10 border border-[var(--violet-bright)]/20">
-              Split-Payment Group Booking
-            </span>
-            <h1 className="text-3xl font-display font-black text-white mt-3 leading-tight">Setup Your Squad</h1>
-          </section>
-
-          {/* Event Header Summary */}
-          <GlassCard className="p-4 border-white/5 flex gap-4 items-center">
-            <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0 border border-white/10 bg-slate-950">
-              <img src={getImageUrl(ev.cover_image) || 'https://images.unsplash.com/photo-1541701494587-cb58502866ab?q=80&w=300'} className="w-full h-full object-cover" alt="" />
-            </div>
-            <div className="min-w-0">
-              <h3 className="text-sm font-extrabold text-white truncate">{ev.title}</h3>
-              <p className="text-[10px] text-[var(--text-muted)] mt-1 flex items-center gap-1.5 truncate">
-                <MapPin className="w-3 h-3 text-[var(--accent-pink)] shrink-0" /> {ev.venue_name} • {ev.city || 'Mumbai'}
-              </p>
-              <p className="text-[10px] text-[var(--text-muted)] mt-0.5 flex items-center gap-1.5 truncate">
-                <Calendar className="w-3 h-3 text-[var(--accent-cyan)] shrink-0" /> {new Date(ev.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-              </p>
-            </div>
-          </GlassCard>
-
-          {/* Config Setup */}
-          <GlassCard className="p-6 border-white/5 space-y-5">
-            {/* Squad Name Input */}
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Squad Name</label>
-              <input 
-                type="text"
-                value={squadName}
-                onChange={(e) => setSquadName(e.target.value)}
-                placeholder="Name your party alliance..."
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-[var(--violet-bright)] focus:ring-1 focus:ring-[var(--violet-bright)] outline-none transition-colors"
-              />
-            </div>
-
-            {/* Pass Tier Selector */}
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider block">Select Pass Tier</label>
-              <div className="grid grid-cols-1 gap-2.5">
-                {(['regular', 'vip_silver', 'vip_gold'] as const).map((t) => (
-                  <div
-                    key={t}
-                    onClick={() => setSelectedTier(t)}
-                    className={`p-4 rounded-2xl border transition-all cursor-pointer flex justify-between items-center ${
-                      selectedTier === t
-                        ? 'bg-[var(--violet-primary)]/10 border-[var(--violet-bright)] ring-1 ring-[var(--violet-bright)]/30'
-                        : 'bg-white/5 border-white/5 hover:border-white/15'
-                    }`}
-                  >
-                    <div>
-                      <p className="text-xs font-bold text-white capitalize">{t.replace('_', ' ')} Pass</p>
-                      <p className="text-[10px] text-[var(--text-secondary)] mt-0.5">{TIER_LABELS[t]}</p>
-                    </div>
-                    <span className="text-sm font-extrabold text-white">₹{TIER_PRICES[t]}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Squad Size Counter Stepper */}
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider block">Squad Size (2 - 10 people)</label>
-              <div className="flex items-center gap-4 bg-white/5 border border-white/10 w-fit rounded-xl p-1.5">
-                <button
-                  type="button"
-                  onClick={() => setSquadSize(Math.max(2, squadSize - 1))}
-                  className="w-9 h-9 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 text-white font-bold transition-colors active:scale-95 shrink-0"
-                >
-                  <Minus className="w-4 h-4" />
-                </button>
-                <span className="text-base font-extrabold text-white w-8 text-center">{squadSize}</span>
-                <button
-                  type="button"
-                  onClick={() => setSquadSize(Math.min(10, squadSize + 1))}
-                  className="w-9 h-9 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 text-white font-bold transition-colors active:scale-95 shrink-0"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* Dynamic Price Breakdown Footnote */}
-            <div className="p-3.5 bg-[var(--violet-primary)]/5 border border-[var(--violet-primary)]/10 rounded-xl text-center">
-              <p className="text-xs text-[var(--text-secondary)] font-medium">
-                Per-Head Breakdown: <span className="font-extrabold text-white">₹{pricing.perHeadShare} share</span> + <span className="text-[var(--violet-glow)] font-extrabold">₹10 VHOP platform fee</span> = <span className="text-[var(--accent-green)] font-extrabold">₹{pricing.totalToPay} per head</span>
-              </p>
-              <p className="text-[9px] text-[var(--text-muted)] mt-1.5 leading-relaxed">
-                (Base Price ₹{pricing.basePrice} ÷ Group Size {squadSize}) + ₹10 Platform service fee. Individual links generated instantly.
-              </p>
-            </div>
-
-            {/* Create Button */}
-            <GlowButton onClick={handleCreateSquad} className="w-full py-4 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2">
-              <Share2 className="w-4 h-4" /> Create Squad & Share via WhatsApp
-            </GlowButton>
-          </GlassCard>
-        </div>
-      );
+  const getHostInitials = (name: string) => {
+    if (!name) return '??';
+    const parts = name.split(' ');
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
     }
-
-    if (activeState === 'state2') {
-      // STATE 2: ORGANISER LIVE DASHBOARD
-      const sq = squad || { name: "Kabir's Rave Squad", size: 6, tier: 'vip_silver', event_title: 'Cyberpunk Rooftop Rave', venue_name: 'Bandra Rooftop' };
-      const paidCount = members.filter(m => m.payment_status === 'paid').length;
-      const allPaid = paidCount === sq.size;
-
-      // Fill in remaining slot representations
-      const slotList = [...members];
-      while (slotList.length < sq.size) {
-        slotList.push({
-          id: `empty_${slotList.length}`,
-          full_name: 'Slot Waiting...',
-          username: 'invited',
-          avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=invited_${slotList.length}`,
-          payment_status: 'pending',
-          reserved_until: null,
-          aadhaar_verified: false
-        });
-      }
-
-      return (
-        <div className="space-y-6">
-          <section className="text-center py-2 space-y-1">
-            <span className="text-xs uppercase font-extrabold tracking-widest text-emerald-400 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 shadow-[0_0_8px_rgba(16,185,129,0.1)]">
-              Live Squad Tracker
-            </span>
-            <h1 className="text-3xl font-display font-black text-white truncate mt-2">{sq.name}</h1>
-          </section>
-
-          {/* Squad Status Header */}
-          <GlassCard className="p-5 border-white/5 text-center relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 blur-3xl -z-10" />
-            <h3 className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">Squad Status</h3>
-            <p className="text-3xl font-display font-black text-white mt-1.5">
-              {paidCount} / {sq.size} Joined & Paid
-            </p>
-            <div className="w-full bg-white/5 rounded-full h-2 mt-4 overflow-hidden border border-white/5">
-              <div 
-                className="bg-gradient-to-r from-[var(--violet-bright)] to-emerald-400 h-full transition-all duration-700" 
-                style={{ width: `${(paidCount / sq.size) * 100}%` }}
-              />
-            </div>
-            <p className="text-[10px] text-[var(--text-muted)] mt-2.5">
-              Share link with friends to split payment: <span className="font-mono text-[var(--accent-cyan)]">{window.location.origin}/squad/{id || 'demo_id'}</span>
-            </p>
-          </GlassCard>
-
-          {/* Real-time Tracking List */}
-          <div className="space-y-2.5">
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex justify-between">
-              <span>Alliance Roster</span>
-              <span className="text-[10px] text-[var(--violet-bright)]">Reward Potential: +50 V Coins</span>
-            </h3>
-
-            <div className="space-y-2">
-              {slotList.map((m, idx) => {
-                const isOrganiser = idx === 0; // The first slot represents the organizer/creator
-                const isWaiting = m.username === 'invited';
-                
-                return (
-                  <GlassCard key={m.id} className="p-4 border-white/5 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="relative shrink-0">
-                        <img 
-                          src={m.avatar_url} 
-                          alt="" 
-                          className="w-10 h-10 rounded-xl border border-white/10 bg-slate-900" 
-                        />
-                        {isOrganiser && (
-                          <div className="absolute -top-2.5 -right-2.5 bg-[var(--accent-gold)] p-1 rounded-lg shadow-md rotate-12">
-                            <Crown className="w-3.5 h-3.5 text-slate-950 fill-slate-950" />
-                          </div>
-                        )}
-                      </div>
-                      
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-extrabold text-white leading-none">
-                            {isOrganiser ? `${m.full_name} (You)` : m.full_name}
-                          </p>
-                          {isOrganiser && (
-                            <span className="text-[8px] font-black uppercase bg-[var(--accent-gold)]/15 border border-[var(--accent-gold)]/20 px-1.5 py-0.5 rounded text-[var(--accent-gold)]">
-                              Squad Lead
-                            </span>
-                          )}
-                        </div>
-                        {isWaiting ? (
-                          <span className="text-[9px] text-[var(--text-muted)] mt-1 block">Unclaimed slot invitation</span>
-                        ) : (
-                          <span className="text-[9px] text-[var(--text-secondary)] mt-1 block">@{m.username}</span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3 shrink-0">
-                      {isOrganiser ? (
-                        <span className="text-[9px] font-bold text-[var(--accent-gold)] bg-amber-500/10 border border-amber-500/25 px-2 py-0.5 rounded-lg">
-                          +50 V Coins Reward
-                        </span>
-                      ) : isWaiting ? (
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-[var(--text-muted)] font-medium">Waiting for payment...</span>
-                        </div>
-                      ) : m.payment_status === 'paid' ? (
-                        <div className="px-2.5 py-1 bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[9px] font-black rounded-lg flex items-center gap-1 uppercase tracking-wider">
-                          <Check className="w-3 h-3" /> Paid
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <span className="text-[9px] text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg flex items-center gap-1 uppercase tracking-wider">
-                            <Clock className="w-2.5 h-2.5 animate-spin" /> Pending
-                          </span>
-                          <button
-                            onClick={() => handleNudgeMember(m.id)}
-                            disabled={nudgeCooldown[m.id]}
-                            className={`p-1.5 rounded-lg border text-white font-bold transition-all active:scale-95 flex items-center justify-center ${
-                              nudgeCooldown[m.id]
-                                ? 'bg-slate-800 border-slate-700 opacity-50 text-slate-500'
-                                : 'bg-green-600 border-green-500 hover:bg-green-500 shadow-glow cursor-pointer'
-                            }`}
-                            title="Nudge Friend via WhatsApp"
-                          >
-                            <span className="text-[10px] font-black uppercase tracking-wider px-1">Nudge</span>
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </GlassCard>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Action Control Footer */}
-          <footer className="space-y-4 pt-4">
-            <GlowButton
-              disabled={!allPaid}
-              className={`w-full py-4 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 ${
-                allPaid ? '' : 'opacity-50 cursor-not-allowed'
-              }`}
-            >
-              Confirm & Issue QR Passes
-            </GlowButton>
-            
-            <div className="text-center space-y-1">
-              <button 
-                onClick={handleCancelSquad}
-                className="text-xs text-red-500 font-bold hover:underline hover:text-red-400 transition-colors bg-transparent border-none cursor-pointer"
-              >
-                Cancel Squad Booking
-              </button>
-              <p className="text-[9px] text-[var(--text-muted)]">
-                Full refund available up to 4 hours before the event. Refund processed instantly back to checkout account.
-              </p>
-            </div>
-          </footer>
-        </div>
-      );
-    }
-
-    if (activeState === 'state3') {
-      // STATE 3: SQUAD MEMBER INVITEE VIEW
-      const sq = squad || { organiser_name: 'Kabir Sharma', name: "Kabir's Rave Squad", event_title: 'Cyberpunk Rooftop Rave', size: 6, tier: 'vip_silver' };
-      const isAlreadyMember = members.find(m => m.id === user?.id);
-      const isPaid = isAlreadyMember && isAlreadyMember.payment_status === 'paid';
-
-      // Format countdown time
-      const formatTime = (seconds: number) => {
-        const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-        const s = (seconds % 60).toString().padStart(2, '0');
-        return `${m}:${s}`;
-      };
-
-      return (
-        <div className="space-y-6">
-          {/* Invitation Banner */}
-          <section className="text-center py-2 space-y-1.5">
-            <div className="w-16 h-16 bg-[var(--violet-primary)]/10 border border-[var(--violet-bright)]/20 rounded-2xl flex items-center justify-center mx-auto mb-2">
-              <Users className="w-8 h-8 text-[var(--violet-bright)] animate-pulse" />
-            </div>
-            <h1 className="text-2xl md:text-3xl font-display font-black text-white leading-tight">
-              Join the Alliance
-            </h1>
-            <div className="p-4 bg-[var(--violet-primary)]/10 border border-[var(--violet-bright)]/20 rounded-2xl max-w-md mx-auto">
-              <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                <span className="font-black text-white">{sq.organiser_name || 'Your friend'}</span> invited you to join their squad <span className="font-bold text-[var(--violet-glow)]">"{sq.name}"</span> for <span className="font-extrabold text-white">{sq.event_title || 'tonight\'s club pass'}</span>!
-              </p>
-            </div>
-          </section>
-
-          {/* Checkout Steps */}
-          {paymentComplete || isPaid ? (
-            <GlassCard className="p-8 text-center space-y-6 border border-emerald-500/40 relative overflow-hidden">
-              <div className="w-16 h-16 bg-emerald-500/10 border border-emerald-500/30 rounded-full flex items-center justify-center mx-auto">
-                <Check className="w-8 h-8 text-emerald-400" />
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-xl font-display font-bold text-white">Payment Confirmed</h3>
-                <p className="text-xs text-[var(--text-secondary)]">
-                  You have successfully paid your share of ₹{pricing.totalToPay}. Your entry ticket will be generated once all squad members pay.
-                </p>
-              </div>
-              <GlowButton onClick={() => navigate('/events')} className="w-full py-3">
-                Explore More Events
-              </GlowButton>
-            </GlassCard>
-          ) : !isAlreadyMember ? (
-            <GlassCard className="p-6 border-white/5 space-y-5 text-center">
-              <h3 className="text-sm font-black text-white uppercase tracking-widest">Reserve Your Spot</h3>
-              <p className="text-xs text-[var(--text-secondary)]">
-                Click join below to lock one of the {sq.size} available slots in this squad. You will have a 10-minute hold to complete payment.
-              </p>
-              <GlowButton onClick={handleJoinSquadSlot} className="w-full py-4">
-                Lock Spot & Join Squad
-              </GlowButton>
-            </GlassCard>
-          ) : (
-            <div className="space-y-5">
-              {/* Countdown timer hold clock */}
-              {secondsLeft !== null && (
-                <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center gap-4 justify-between animate-pulse">
-                  <div className="flex items-center gap-3">
-                    <Clock className="w-6 h-6 text-amber-500 animate-spin" />
-                    <div className="text-left">
-                      <p className="text-xs font-black text-amber-200">Spot Reserved (Hold Timer)</p>
-                      <p className="text-[9px] text-amber-200/70 mt-0.5">Pay before it expires!</p>
-                    </div>
-                  </div>
-                  <span className="font-mono text-2xl font-black text-amber-500">
-                    {secondsLeft > 0 ? formatTime(secondsLeft) : 'Expired'}
-                  </span>
-                </div>
-              )}
-
-              {/* Transparent Cost Breakdown Card */}
-              <GlassCard className="p-6 border-white/5 space-y-4">
-                <h3 className="text-xs font-black text-slate-300 uppercase tracking-widest flex items-center gap-2">
-                  <CreditCard className="w-4 h-4 text-[var(--violet-bright)]" />
-                  <span>Split Bill Breakdown</span>
-                </h3>
-
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between text-[var(--text-secondary)]">
-                    <span>Base Pass Share (1 of {sq.size} slots)</span>
-                    <span className="text-white font-bold">₹{pricing.perHeadShare}</span>
-                  </div>
-                  <div className="flex justify-between text-[var(--text-secondary)]">
-                    <span>VHOP Platform Service Fee</span>
-                    <span className="text-white font-bold">₹{pricing.serviceFee}</span>
-                  </div>
-                  <div className="h-px bg-white/5 my-2" />
-                  <div className="flex justify-between text-base font-extrabold">
-                    <span>Total Amount to Pay</span>
-                    <span className="text-[var(--accent-green)] font-display text-lg">₹{pricing.totalToPay}</span>
-                  </div>
-                </div>
-
-                {/* Checkout Trigger */}
-                <GlowButton 
-                  onClick={handlePaySplit}
-                  disabled={isPaying || (secondsLeft !== null && secondsLeft <= 0)}
-                  className="w-full py-4 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2"
-                >
-                  {isPaying ? (
-                    <>Processing UPI/Card Checkout...</>
-                  ) : (
-                    <>Pay ₹{pricing.totalToPay} via UPI / Card</>
-                  )}
-                </GlowButton>
-
-                {/* KYC compliance disclaimer */}
-                <p className="text-[10px] text-[var(--text-muted)] text-center leading-relaxed">
-                  *Aadhaar KYC verification is mandatory during onboarding to generate your secure, untransferable QR pass at the door. No Aadhaar numbers are stored.
-                </p>
-              </GlassCard>
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    return null;
+    return name.slice(0, 2).toUpperCase();
   };
+
+  const activeView = devStateOverride !== 'none' 
+    ? devStateOverride 
+    : (isNew ? 'creator_flow' : (user && squad && squad.organiser_id === user.id ? 'host_dashboard' : 'invitee_checkout'));
 
   if (isLoading) {
     return (
@@ -746,10 +433,9 @@ export const SquadView: React.FC = () => {
     return (
       <PageWrapper className="flex items-center justify-center py-24">
         <GlassCard className="p-8 text-center max-w-sm border-red-500/20">
-          <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
           <h2 className="text-lg font-bold mb-2">Error Loading Squad</h2>
           <p className="text-xs text-[var(--text-secondary)] mb-6">{errorMessage}</p>
-          <GlowButton onClick={() => navigate('/events')}>Back to Discovery</GlowButton>
+          <GlowButton onClick={() => navigate('/squads')}>Back to Discovery</GlowButton>
         </GlassCard>
       </PageWrapper>
     );
@@ -757,7 +443,7 @@ export const SquadView: React.FC = () => {
 
   return (
     <PageWrapper className="relative px-4 pb-24 overflow-x-hidden">
-      {/* Dynamic Ambient Orbs */}
+      {/* Dynamic Ambient Glassmorphic Orbs */}
       <FloatingOrb className="top-1/4 -left-20 pointer-events-none" color="pink" size={300} />
       <FloatingOrb className="bottom-1/4 -right-20 pointer-events-none" color="violet" size={400} delay={1} />
       
@@ -765,41 +451,66 @@ export const SquadView: React.FC = () => {
       <div className="max-w-xl mx-auto mb-6 bg-slate-900/90 border border-white/10 rounded-2xl p-2.5 flex flex-col items-center gap-2 relative z-[110] backdrop-blur-xl">
         <div className="flex items-center gap-1.5 text-[9px] uppercase font-black text-amber-500">
           <Info className="w-3.5 h-3.5 shrink-0" />
-          <span>Demo Toolbar (Force UI states for review)</span>
+          <span>Dev Toggle (Review Specific Figma Screens)</span>
         </div>
         <div className="flex flex-wrap justify-center gap-1.5 w-full">
           <button
-            onClick={() => setDevStateOverride('state1')}
+            onClick={() => {
+              setDevStateOverride('creator_flow');
+              setCreationStep(1);
+            }}
             className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-colors ${
-              devStateOverride === 'state1' ? 'bg-[var(--violet-bright)] text-white' : 'bg-white/5 text-slate-400 hover:text-white'
+              activeView === 'creator_flow' && creationStep === 1 ? 'bg-[var(--violet-bright)] text-white' : 'bg-white/5 text-slate-400 hover:text-white'
             }`}
           >
-            State 1: Creator Setup
+            Figma 2: Create Details
           </button>
           <button
-            onClick={() => setDevStateOverride('state2')}
+            onClick={() => {
+              setDevStateOverride('creator_flow');
+              setCreationStep(2);
+            }}
             className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-colors ${
-              devStateOverride === 'state2' ? 'bg-[var(--violet-bright)] text-white' : 'bg-white/5 text-slate-400 hover:text-white'
+              activeView === 'creator_flow' && creationStep === 2 ? 'bg-[var(--violet-bright)] text-white' : 'bg-white/5 text-slate-400 hover:text-white'
             }`}
           >
-            State 2: Creator Live Dashboard
+            Figma 3: Create Pricing
           </button>
           <button
-            onClick={() => setDevStateOverride('state3')}
+            onClick={() => {
+              setDevStateOverride('creator_flow');
+              setCreationStep(3);
+              setCreatedSquadId('sq_trilogy');
+            }}
             className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-colors ${
-              devStateOverride === 'state3' ? 'bg-[var(--violet-bright)] text-white' : 'bg-white/5 text-slate-400 hover:text-white'
+              activeView === 'creator_flow' && creationStep === 3 ? 'bg-[var(--violet-bright)] text-white' : 'bg-white/5 text-slate-400 hover:text-white'
             }`}
           >
-            State 3: Invitee Landing
+            Figma 5: Success Share
+          </button>
+          <button
+            onClick={() => setDevStateOverride('invitee_checkout')}
+            className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-colors ${
+              activeView === 'invitee_checkout' ? 'bg-[var(--violet-bright)] text-white' : 'bg-white/5 text-slate-400 hover:text-white'
+            }`}
+          >
+            Figma 4: Member Checkout
+          </button>
+          <button
+            onClick={() => setDevStateOverride('host_dashboard')}
+            className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-colors ${
+              activeView === 'host_dashboard' ? 'bg-[var(--violet-bright)] text-white' : 'bg-white/5 text-slate-400 hover:text-white'
+            }`}
+          >
+            Figma 6: Host Dashboard
           </button>
           <button
             onClick={() => setDevStateOverride('none')}
             className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-colors ${
               devStateOverride === 'none' ? 'bg-emerald-600 text-white' : 'bg-white/5 text-slate-400 hover:text-white'
             }`}
-            title="Follow current user dynamic status"
           >
-            Dynamic: {isNew ? 'Setup' : (user && squad && squad.organiser_id === user.id ? 'Dashboard' : 'Landing')}
+            Reset Dynamic
           </button>
         </div>
       </div>
@@ -808,16 +519,777 @@ export const SquadView: React.FC = () => {
         
         {/* Real-time notification toast */}
         {notification && (
-          <div className="p-4 bg-[var(--violet-primary)]/95 border border-[var(--violet-bright)]/40 rounded-2xl text-xs text-white flex items-center gap-3 backdrop-blur-xl shadow-glow">
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] w-[90%] max-w-sm p-4 bg-[var(--violet-primary)]/95 border border-[var(--violet-bright)]/40 rounded-2xl text-xs text-white flex items-center gap-3 backdrop-blur-xl shadow-glow">
             <Sparkles className="w-5 h-5 text-[var(--accent-gold)] shrink-0 animate-bounce" />
-            <span className="font-semibold">{notification}</span>
+            <span className="font-semibold text-left">{notification}</span>
           </div>
         )}
 
-        {/* State Renderer */}
-        {renderCurrentState()}
+        {/* ---------------- FIGMA SCREEN 2 & 3 & 5: CREATOR FLOW ---------------- */}
+        {activeView === 'creator_flow' && (
+          <div className="space-y-6">
+            
+            {/* Header with Back */}
+            <header className="flex justify-between items-center py-2">
+              <button 
+                onClick={() => creationStep > 1 ? setCreationStep((creationStep - 1) as any) : navigate('/squads')}
+                className="flex items-center gap-1.5 text-sm font-bold text-[var(--text-secondary)] hover:text-white transition-colors bg-transparent border-none cursor-pointer p-0"
+              >
+                <ChevronLeft className="w-5 h-5" /> Back
+              </button>
+              <h2 className="text-lg font-display font-bold text-white">
+                {creationStep === 1 ? 'Create Squad' : creationStep === 2 ? 'Pricing' : 'Share Squad'}
+              </h2>
+              <div className="w-12" /> {/* alignment spacer */}
+            </header>
+
+            {/* Steps Progress Bar Indicator (Screenshot 2) */}
+            <div className="flex items-center gap-1.5 px-2">
+              <div className="flex-1 flex flex-col items-center">
+                <div className="h-1 w-full bg-[var(--violet-bright)] rounded-full" />
+                <span className="text-[9px] font-black uppercase tracking-wider text-[var(--violet-bright)] mt-1.5">Event</span>
+              </div>
+              <div className="flex-1 flex flex-col items-center">
+                <div className={`h-1 w-full rounded-full ${creationStep >= 1 ? 'bg-[var(--violet-bright)]' : 'bg-slate-800'}`} />
+                <span className={`text-[9px] font-black uppercase tracking-wider mt-1.5 ${creationStep >= 1 ? 'text-[var(--violet-bright)]' : 'text-slate-500'}`}>Details</span>
+              </div>
+              <div className="flex-1 flex flex-col items-center">
+                <div className={`h-1 w-full rounded-full ${creationStep >= 2 ? 'bg-[var(--violet-bright)]' : 'bg-slate-800'}`} />
+                <span className={`text-[9px] font-black uppercase tracking-wider mt-1.5 ${creationStep >= 2 ? 'text-[var(--violet-bright)]' : 'text-slate-500'}`}>Size</span>
+              </div>
+              <div className="flex-1 flex flex-col items-center">
+                <div className={`h-1 w-full rounded-full ${creationStep >= 3 ? 'bg-[var(--violet-bright)]' : 'bg-slate-800'}`} />
+                <span className={`text-[9px] font-black uppercase tracking-wider mt-1.5 ${creationStep >= 3 ? 'text-[var(--violet-bright)]' : 'text-slate-500'}`}>Pricing</span>
+              </div>
+            </div>
+
+            {/* STEP 1: DETAILS STEP */}
+            {creationStep === 1 && (
+              <GlassCard className="p-6 border-white/5 space-y-6 text-left">
+                {/* Squad Name */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Squad Name</label>
+                  <input 
+                    type="text"
+                    value={squadName}
+                    onChange={(e) => setSquadName(e.target.value)}
+                    placeholder="e.g. VIP Table - Friday Night"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3.5 text-sm text-white focus:border-[var(--violet-bright)] outline-none transition-colors"
+                  />
+                </div>
+
+                {/* Linked Event / Search Venue */}
+                <div className="space-y-2 relative">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Linked Event / Venue</label>
+                  <div className="relative">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input 
+                      type="text"
+                      value={eventSearch}
+                      onChange={(e) => {
+                        setEventSearch(e.target.value);
+                        setShowEventDropdown(true);
+                      }}
+                      onFocus={() => setShowEventDropdown(true)}
+                      placeholder="Search venues or events..."
+                      className="w-full bg-white/5 border border-white/10 rounded-xl pl-11 pr-4 py-3.5 text-sm text-white focus:border-[var(--violet-bright)] outline-none transition-colors"
+                    />
+                  </div>
+
+                  {/* Dropdown Suggestions */}
+                  {showEventDropdown && eventSearch.trim() !== '' && (
+                    <div className="absolute top-full left-0 right-0 mt-2 z-50 bg-[#13111F] border border-white/10 rounded-xl max-h-56 overflow-y-auto divide-y divide-white/5 shadow-2xl">
+                      {filteredEvents.length === 0 ? (
+                        <p className="p-4 text-xs text-[var(--text-muted)] text-center">No events found matching search.</p>
+                      ) : (
+                        filteredEvents.map(ev => (
+                          <div 
+                            key={ev.id} 
+                            onClick={() => selectEventFromSearch(ev)}
+                            className="p-3.5 flex items-center gap-3 cursor-pointer hover:bg-white/5 transition-colors"
+                          >
+                            <img src={ev.cover_image} className="w-10 h-10 rounded-lg object-cover bg-slate-900 shrink-0" alt="" />
+                            <div className="min-w-0 text-left">
+                              <h4 className="text-xs font-bold text-white truncate">{ev.title}</h4>
+                              <p className="text-[9px] text-[var(--text-muted)] mt-1 truncate">{ev.venue_name} • {ev.city}</p>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Squad Size Buttons selector */}
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Squad Size</label>
+                  <div className="grid grid-cols-3 gap-3">
+                    {([5, 10, 20] as const).map(sz => (
+                      <button
+                        key={sz}
+                        type="button"
+                        onClick={() => setSquadSize(sz)}
+                        className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-1 cursor-pointer transition-all active:scale-95 ${
+                          squadSize === sz 
+                            ? 'bg-[var(--violet-primary)]/10 border-[var(--violet-bright)] ring-1 ring-[var(--violet-bright)]/30' 
+                            : 'bg-white/5 border-white/5 hover:bg-white/10'
+                        }`}
+                      >
+                        <span className="text-base font-extrabold text-white">{sz}</span>
+                        <span className="text-[9px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+                          {sz === 5 ? 'Intimate' : sz === 10 ? 'Standard' : 'Big Squad'}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Switch Toggles */}
+                <div className="space-y-4 pt-2">
+                  {/* Anyone can join */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-sm font-bold text-white leading-none">Anyone can join</h4>
+                      <p className="text-[10px] text-[var(--text-muted)] mt-1.5">Public link, open to all</p>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setAnyoneCanJoin(!anyoneCanJoin)}
+                      className={`w-11 h-6 rounded-full p-1 transition-colors duration-300 relative focus:outline-none cursor-pointer ${
+                        anyoneCanJoin ? 'bg-[var(--violet-bright)]' : 'bg-slate-800'
+                      }`}
+                    >
+                      <div className={`w-4 h-4 bg-white rounded-full transition-transform duration-300 ${anyoneCanJoin ? 'translate-x-5' : 'translate-x-0'}`} />
+                    </button>
+                  </div>
+
+                  {/* Require approval */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-sm font-bold text-white leading-none">Require approval</h4>
+                      <p className="text-[10px] text-[var(--text-muted)] mt-1.5">You approve each member</p>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setRequireApproval(!requireApproval)}
+                      className={`w-11 h-6 rounded-full p-1 transition-colors duration-300 relative focus:outline-none cursor-pointer ${
+                        requireApproval ? 'bg-[var(--violet-bright)]' : 'bg-slate-800'
+                      }`}
+                    >
+                      <div className={`w-4 h-4 bg-white rounded-full transition-transform duration-300 ${requireApproval ? 'translate-x-5' : 'translate-x-0'}`} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Continue button */}
+                <GlowButton 
+                  onClick={() => {
+                    if (!selectedEvent) {
+                      showToast('Please select a linked event/venue.');
+                      return;
+                    }
+                    setCreationStep(2);
+                  }}
+                  className="w-full py-4 text-xs font-black uppercase tracking-wider mt-4"
+                >
+                  Continue to Pricing
+                </GlowButton>
+              </GlassCard>
+            )}
+
+            {/* STEP 2: PRICING STEP */}
+            {creationStep === 2 && (
+              <div className="space-y-4">
+                <GlassCard className="p-6 border-white/5 space-y-6 text-left">
+                  
+                  {/* Price input */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Entry Price Per Person</label>
+                    <div className="relative">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lg font-black text-white">₹</span>
+                      <input 
+                        type="number"
+                        value={entryPrice}
+                        onChange={(e) => setEntryPrice(parseInt(e.target.value) || 0)}
+                        placeholder="1,200"
+                        className="w-full bg-white/5 border border-white/10 rounded-xl pl-9 pr-4 py-3.5 text-lg font-black text-white focus:border-[var(--violet-bright)] outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Payout breakdown panel */}
+                  <div className="p-5 bg-white/[0.02] border border-white/5 rounded-2xl space-y-4">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Payout Breakdown</span>
+                    <div className="space-y-1 text-left">
+                      <h3 className="text-3xl font-display font-black text-white">
+                        ₹{payoutToReceive.toLocaleString('en-IN')}
+                      </h3>
+                      <p className="text-[10px] text-[var(--text-muted)]">you earn if all {squadSize} spots fill</p>
+                    </div>
+
+                    <div className="h-px bg-white/5" />
+
+                    <div className="space-y-2.5 text-xs">
+                      <div className="flex justify-between text-[var(--text-secondary)]">
+                        <span>Total collected ({squadSize} × ₹{entryPrice.toLocaleString('en-IN')})</span>
+                        <span className="text-white font-bold">₹{totalCollected.toLocaleString('en-IN')}</span>
+                      </div>
+                      <div className="flex justify-between text-[var(--text-secondary)]">
+                        <span>vhop commission (15%)</span>
+                        <span className="text-red-400 font-bold">- ₹{commission.toLocaleString('en-IN')}</span>
+                      </div>
+                      <div className="h-px bg-white/5 my-1" />
+                      <div className="flex justify-between text-sm font-extrabold">
+                        <span>You receive</span>
+                        <span className="text-[var(--accent-green)] font-black">₹{payoutToReceive.toLocaleString('en-IN')}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Information card */}
+                  <div className="p-4 bg-white/5 border border-white/5 rounded-2xl flex gap-3 text-left">
+                    <Info className="w-5 h-5 text-[var(--violet-bright)] shrink-0 mt-0.5 animate-pulse" />
+                    <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
+                      Payout is released to your bank account once the event starts. Members get a full refund if the squad is cancelled.
+                    </p>
+                  </div>
+
+                  {/* Submit Button */}
+                  <div className="space-y-3 pt-2">
+                    <GlowButton 
+                      onClick={handleCreateSquad}
+                      className="w-full py-4 text-xs font-black uppercase tracking-wider"
+                    >
+                      Create & Get Link
+                    </GlowButton>
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        showToast('Squad saved as draft successfully!');
+                        navigate('/squads');
+                      }}
+                      className="w-full py-3 bg-transparent hover:bg-white/5 border border-white/10 rounded-xl text-xs font-black uppercase tracking-wider text-slate-300 hover:text-white transition-colors cursor-pointer"
+                    >
+                      Save as Draft
+                    </button>
+                  </div>
+
+                </GlassCard>
+              </div>
+            )}
+
+            {/* STEP 3: SUCCESS / SHARE STEP */}
+            {creationStep === 3 && (
+              <GlassCard className="p-6 border-white/5 space-y-6 text-center">
+                {/* Visual Checkmark */}
+                <div className="w-16 h-16 bg-[var(--violet-primary)]/10 border border-[var(--violet-bright)]/20 rounded-2xl flex items-center justify-center mx-auto shadow-glow">
+                  <CheckCircle className="w-8 h-8 text-[var(--violet-bright)]" />
+                </div>
+
+                <div className="space-y-2">
+                  <h1 className="text-2xl font-display font-black text-white">Squad is live!</h1>
+                  <p className="text-xs text-[var(--text-secondary)]">Share the link to fill your spots</p>
+                </div>
+
+                {/* Share URL Box */}
+                <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl p-1.5 pl-4">
+                  <span className="text-[10px] font-mono text-[var(--accent-cyan)] truncate flex-1 text-left">
+                    vhop.app/squad/{createdSquadId || 'sq_trilogy'}
+                  </span>
+                  <button 
+                    onClick={() => copySquadLink(createdSquadId || 'sq_trilogy')}
+                    className="px-4 py-2.5 bg-white/5 hover:bg-white/10 rounded-lg text-[10px] font-black uppercase tracking-wider text-white border border-white/10 transition-colors cursor-pointer"
+                  >
+                    Copy
+                  </button>
+                </div>
+
+                {/* Share list grid */}
+                <div className="space-y-2.5 text-left">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Share to</span>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Instagram Story */}
+                    <div 
+                      onClick={() => showToast('Redirecting to Instagram Stories split share...')}
+                      className="p-3 bg-white/5 border border-white/5 hover:border-white/15 rounded-xl flex items-center gap-2.5 cursor-pointer transition-all active:scale-95"
+                    >
+                      <Smartphone className="w-5 h-5 text-[var(--accent-pink)] shrink-0" />
+                      <div className="min-w-0 text-left">
+                        <h4 className="text-[11px] font-bold text-white">Story</h4>
+                        <p className="text-[8px] text-[var(--text-muted)] mt-0.5 truncate">Instagram</p>
+                      </div>
+                    </div>
+
+                    {/* WhatsApp */}
+                    <div 
+                      onClick={() => {
+                        const messageText = `Hey! Join my squad for tonight's VIP booth split: ${window.location.origin}/squad/${createdSquadId || 'sq_trilogy'}`;
+                        window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(messageText)}`, '_blank');
+                      }}
+                      className="p-3 bg-white/5 border border-white/5 hover:border-white/15 rounded-xl flex items-center gap-2.5 cursor-pointer transition-all active:scale-95"
+                    >
+                      <MessageSquare className="w-5 h-5 text-emerald-400 shrink-0" />
+                      <div className="min-w-0 text-left">
+                        <h4 className="text-[11px] font-bold text-white">WhatsApp</h4>
+                        <p className="text-[8px] text-[var(--text-muted)] mt-0.5 truncate">Groups or DM</p>
+                      </div>
+                    </div>
+
+                    {/* Snapchat */}
+                    <div 
+                      onClick={() => showToast('Redirecting to Snapchat Share...')}
+                      className="p-3 bg-white/5 border border-white/5 hover:border-white/15 rounded-xl flex items-center gap-2.5 cursor-pointer transition-all active:scale-95"
+                    >
+                      <Smartphone className="w-5 h-5 text-yellow-400 shrink-0" />
+                      <div className="min-w-0 text-left">
+                        <h4 className="text-[11px] font-bold text-white">Snapchat</h4>
+                        <p className="text-[8px] text-[var(--text-muted)] mt-0.5 truncate">Story or chat</p>
+                      </div>
+                    </div>
+
+                    {/* More */}
+                    <div 
+                      onClick={() => showToast('Opening system share dialog...')}
+                      className="p-3 bg-white/5 border border-white/5 hover:border-white/15 rounded-xl flex items-center gap-2.5 cursor-pointer transition-all active:scale-95"
+                    >
+                      <Share2 className="w-5 h-5 text-white shrink-0" />
+                      <div className="min-w-0 text-left">
+                        <h4 className="text-[11px] font-bold text-white">More</h4>
+                        <p className="text-[8px] text-[var(--text-muted)] mt-0.5 truncate">All apps</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Potential Earnings badge */}
+                <div className="p-3 bg-emerald-500/15 border border-emerald-500/20 rounded-xl flex items-center justify-center gap-2">
+                  <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider">
+                    Earn ₹{payoutToReceive.toLocaleString('en-IN')} when all {squadSize} spots fill
+                  </span>
+                </div>
+
+                {/* View My Squad button */}
+                <GlowButton 
+                  onClick={() => navigate(`/squad/${createdSquadId || 'sq_trilogy'}`)}
+                  className="w-full py-4 text-xs font-black uppercase tracking-wider mt-4"
+                >
+                  View My Squad
+                </GlowButton>
+              </GlassCard>
+            )}
+
+          </div>
+        )}
+
+        {/* ---------------- FIGMA SCREEN 6: HOST DASHBOARD ---------------- */}
+        {activeView === 'host_dashboard' && (
+          <div className="space-y-6">
+            
+            {/* Header with gear settings and squads list back */}
+            <header className="flex justify-between items-center py-2">
+              <button 
+                onClick={() => navigate('/squads')}
+                className="flex items-center gap-1 text-sm font-bold text-[var(--text-secondary)] hover:text-white transition-colors bg-transparent border-none cursor-pointer p-0"
+              >
+                <ChevronLeft className="w-5 h-5" /> Squads
+              </button>
+              <h2 className="text-base font-display font-black text-white">My Squad</h2>
+              <button 
+                onClick={() => handleCancelSquad()}
+                className="w-9 h-9 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center hover:bg-white/10 transition-colors cursor-pointer text-white"
+                title="Cancel Squad Settings"
+              >
+                <Settings className="w-4.5 h-4.5" />
+              </button>
+            </header>
+
+            {/* Title Block */}
+            <div className="text-left space-y-1">
+              <h1 className="text-2xl font-display font-black text-white">{squad?.name || 'VIP Booth — Trilogy'}</h1>
+              <p className="text-[10px] text-[var(--text-muted)] flex items-center gap-1">
+                <MapPin className="w-3.5 h-3.5 text-[var(--accent-pink)]" />
+                {squad?.venue_name || 'Trilogy Club'} • {squad?.start_date ? new Date(squad.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Sat 25 Jan'}
+              </p>
+            </div>
+
+            {/* Stats row: Members & Earned so far cards */}
+            <div className="grid grid-cols-2 gap-4">
+              {/* Members card */}
+              <GlassCard className="p-4 flex flex-col items-start gap-1 border-white/5 text-left bg-gradient-to-br from-[var(--violet-primary)]/5 to-transparent">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Members</span>
+                <span className="text-3xl font-display font-black text-white">
+                  {members.filter(m => m.payment_status === 'paid').length} / {squad?.size || 10}
+                </span>
+              </GlassCard>
+
+              {/* Earned so far card */}
+              <GlassCard className="p-4 flex flex-col items-start gap-1 border-white/5 text-left bg-gradient-to-br from-emerald-500/5 to-transparent">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Earned so far</span>
+                <span className="text-3xl font-display font-black text-[var(--violet-glow)]">
+                  ₹{((members.filter(m => m.payment_status === 'paid').length * (squad?.entry_price || 1200)) * 0.85 / 1000).toFixed(1)}k
+                </span>
+              </GlassCard>
+            </div>
+
+            {/* Progress bar: Squad capacity */}
+            <GlassCard className="p-4 border-white/5 space-y-2 text-left">
+              <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-wider text-slate-300">
+                <span>Squad capacity</span>
+                <span>{members.filter(m => m.payment_status === 'paid').length} of {squad?.size || 10}</span>
+              </div>
+              <div className="w-full bg-slate-800/80 h-2 rounded-full overflow-hidden border border-white/5">
+                <div 
+                  className="bg-gradient-to-r from-[var(--violet-bright)] to-[var(--accent-pink)] h-full transition-all duration-700" 
+                  style={{ width: `${(members.filter(m => m.payment_status === 'paid').length / (squad?.size || 10)) * 100}%` }}
+                />
+              </div>
+            </GlassCard>
+
+            {/* Add Member manually via search or scanner */}
+            <GlassCard className="p-4 border-white/5 space-y-3.5 text-left">
+              <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest flex items-center gap-1.5">
+                <PlusCircle className="w-4 h-4 text-[var(--violet-bright)] animate-pulse" />
+                Add Members to Squad
+              </span>
+
+              <div className="flex gap-2">
+                <input 
+                  type="text"
+                  value={usernameInput}
+                  onChange={(e) => setUsernameInput(e.target.value)}
+                  placeholder="Enter username (e.g. kabir, riya, aarav)"
+                  className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:border-[var(--violet-bright)] outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddByUsername}
+                  className="px-4 py-2.5 bg-[var(--violet-primary)] hover:bg-[var(--violet-bright)] transition-colors text-white text-xs font-black uppercase tracking-wider rounded-xl cursor-pointer"
+                >
+                  Add
+                </button>
+              </div>
+
+              {/* QR Code Scan simulation button */}
+              <button
+                type="button"
+                onClick={() => setShowScannerModal(true)}
+                className="w-full py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-2"
+              >
+                <QrCode className="w-4 h-4 text-emerald-400 shrink-0" />
+                Scan Friend's QR Code
+              </button>
+            </GlassCard>
+
+            {/* MEMBERS ROSTER LIST */}
+            <div className="space-y-3.5 text-left">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Members</span>
+              
+              <div className="space-y-2.5">
+                {members.map((m) => {
+                  const isHost = m.id === squad?.organiser_id;
+                  const mbInit = getHostInitials(m.full_name);
+                  const isUserHost = user?.id === squad?.organiser_id;
+
+                  return (
+                    <GlassCard key={m.id} className="p-3.5 border-white/5 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        {/* Circle Avatar badge */}
+                        <div className="w-9 h-9 rounded-xl bg-[var(--violet-primary)]/10 border border-[var(--violet-bright)]/20 flex items-center justify-center font-display font-black text-xs text-white shrink-0">
+                          {mbInit}
+                        </div>
+                        <div className="text-left leading-none">
+                          <h4 className="text-xs font-black text-white">{m.full_name}</h4>
+                          <span className="text-[8px] text-[var(--text-muted)] font-bold uppercase tracking-wider block mt-1.5">
+                            {isHost ? 'Host' : 'Member'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {m.payment_status === 'paid' ? (
+                          <span className="text-[9px] font-black uppercase tracking-wider bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2.5 py-1 rounded-lg">
+                            Paid
+                          </span>
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[9px] font-black uppercase tracking-wider bg-amber-500/10 border border-amber-500/20 text-amber-500 px-2.5 py-1 rounded-lg">
+                              Pending
+                            </span>
+                            {isUserHost && (
+                              <button 
+                                onClick={() => handleNudgeMember(m.id)}
+                                className="px-2 py-1 bg-green-600 hover:bg-green-500 border border-green-500 text-white rounded text-[8px] font-black uppercase tracking-widest cursor-pointer"
+                              >
+                                Nudge
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </GlassCard>
+                  );
+                })}
+
+                {/* Empty spots invitation container */}
+                {squad && members.length < squad.size && (
+                  <div className="p-4 border border-dashed border-white/10 rounded-2xl flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl border border-dashed border-white/10 flex items-center justify-center text-slate-400 shrink-0">
+                        +
+                      </div>
+                      <span className="text-xs font-extrabold text-slate-400">
+                        {squad.size - members.length} spots available
+                      </span>
+                    </div>
+
+                    <button 
+                      onClick={() => copySquadLink(squad.id)}
+                      className="px-3.5 py-2 bg-[var(--violet-primary)]/10 hover:bg-[var(--violet-primary)]/20 border border-[var(--violet-bright)]/20 text-[10px] font-black uppercase tracking-wider rounded-lg text-white transition-colors cursor-pointer"
+                    >
+                      Share
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {/* ---------------- FIGMA SCREEN 4: INVITEE CHECKOUT ---------------- */}
+        {activeView === 'invitee_checkout' && (
+          <div className="space-y-6">
+            
+            {/* Header back */}
+            <header className="flex justify-between items-center py-2">
+              <button 
+                onClick={() => navigate('/squads')}
+                className="flex items-center gap-1 text-sm font-bold text-[var(--text-secondary)] hover:text-white transition-colors bg-transparent border-none cursor-pointer p-0"
+              >
+                <ChevronLeft className="w-5 h-5" /> Squads
+              </button>
+              <button className="relative w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-white active:scale-95 transition-all">
+                <Share2 className="w-4 h-4" />
+              </button>
+            </header>
+
+            {/* Status pill badge */}
+            <div className="text-left">
+              <span className="px-3 py-1 bg-[var(--violet-primary)]/10 border border-[var(--violet-bright)]/20 text-[10px] font-black uppercase tracking-wider text-[var(--violet-bright)] rounded-full">
+                Squad • {squad ? squad.size - members.filter(m => m.payment_status === 'paid').length : 3} spots left
+              </span>
+            </div>
+
+            {/* Roster Title Block */}
+            <div className="text-left space-y-1">
+              <h1 className="text-3xl font-display font-black text-white">{squad?.name || 'VIP Booth — Trilogy'}</h1>
+              <p className="text-[11px] text-[var(--text-muted)] flex items-center gap-1">
+                <MapPin className="w-3.5 h-3.5 text-[var(--accent-pink)] shrink-0" />
+                {squad?.venue_name || 'Trilogy Club'} • Bandra, Mumbai
+              </p>
+              
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5 pt-2 text-[10px] text-slate-300">
+                <div className="flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5 text-[var(--violet-bright)]" />
+                  {squad?.start_date ? new Date(squad.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Sat 25 Jan'}
+                </div>
+                <div className="flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5 text-[var(--accent-cyan)]" />
+                  {squad?.start_date ? new Date(squad.start_date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '11:00 PM'}
+                </div>
+                <div className="flex items-center gap-1">
+                  <Crown className="w-3.5 h-3.5 text-[var(--accent-gold)]" />
+                  {squad?.organiser_name || 'Rahul K'}
+                </div>
+              </div>
+            </div>
+
+            {/* Member avatar group stack */}
+            <div className="flex items-center gap-3 text-left">
+              <div className="flex -space-x-2.5">
+                {members.slice(0, 4).map((m) => {
+                  const mbInit = getHostInitials(m.full_name);
+                  const isHost = m.id === squad?.organiser_id;
+                  const bg = isHost ? 'bg-indigo-600/30 text-indigo-400' : 'bg-purple-600/30 text-purple-400';
+                  return (
+                    <div 
+                      key={m.id} 
+                      className={`w-7.5 h-7.5 rounded-xl border-2 border-[#13111F] flex items-center justify-center font-display font-black text-[9px] text-white shrink-0 ${bg}`}
+                    >
+                      {mbInit}
+                    </div>
+                  );
+                })}
+                {members.length > 4 && (
+                  <div className="w-7.5 h-7.5 rounded-xl border-2 border-[#13111F] bg-slate-800 flex items-center justify-center font-display font-black text-[9px] text-slate-400 shrink-0">
+                    +{members.length - 4}
+                  </div>
+                )}
+              </div>
+              <span className="text-[10px] font-bold text-[var(--text-secondary)]">
+                {members.filter(m => m.payment_status === 'paid').length} / {squad?.size || 10} joined
+              </span>
+            </div>
+
+            {/* Roster detail rows */}
+            <div className="space-y-4 text-left">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block border-b border-white/5 pb-2">Details</span>
+              
+              {/* Row 1: Entry fee */}
+              <div className="flex justify-between items-center py-1">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center shrink-0">
+                    <CreditCard className="w-4.5 h-4.5 text-[var(--violet-bright)]" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-white">Entry fee</h4>
+                  </div>
+                </div>
+                <span className="text-sm font-extrabold text-white">
+                  ₹{squad?.entry_price ? squad.entry_price.toLocaleString('en-IN') : '1,200'}
+                </span>
+              </div>
+
+              {/* Row 2: Includes info */}
+              <div className="flex justify-between items-center py-1">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center shrink-0">
+                    <GlassWater className="w-4.5 h-4.5 text-[var(--accent-pink)]" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-white">Includes</h4>
+                    <p className="text-[9px] text-[var(--text-muted)] mt-1">Welcome drinks + table access</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Row 3: Secure Payment */}
+              <div className="flex justify-between items-center py-1">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center shrink-0">
+                    <Shield className="w-4.5 h-4.5 text-emerald-400" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-white">Secure payment</h4>
+                    <p className="text-[9px] text-[var(--text-muted)] mt-1">Held by vhop until event day</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Bill checkout card */}
+            {paymentComplete || (user && members.find(m => m.id === user.id)?.payment_status === 'paid') ? (
+              <GlassCard className="p-8 text-center space-y-4 border border-emerald-500/40">
+                <div className="w-12 h-12 bg-emerald-500/10 border border-emerald-500/30 rounded-full flex items-center justify-center mx-auto text-emerald-400">
+                  <Check className="w-6 h-6 animate-pulse" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-base font-bold text-white">Payment Verified</h3>
+                  <p className="text-[10px] text-[var(--text-muted)]">Spot locked! Your pass will generate when all spots are filled.</p>
+                </div>
+                <GlowButton onClick={() => navigate('/squads')} className="w-full py-3 text-xs">
+                  Discover More Squads
+                </GlowButton>
+              </GlassCard>
+            ) : (
+              <GlassCard className="p-5 border-white/5 space-y-4 text-left">
+                <div className="space-y-3.5 text-xs">
+                  <div className="flex justify-between text-[var(--text-secondary)]">
+                    <span>Entry fee</span>
+                    <span className="text-white font-bold">₹{squad?.entry_price ? squad.entry_price.toLocaleString('en-IN') : '1,200'}</span>
+                  </div>
+                  <div className="flex justify-between text-[var(--text-secondary)]">
+                    <span>vhop convenience fee</span>
+                    <span className="text-emerald-400 font-bold">₹0</span>
+                  </div>
+                  
+                  <div className="h-px bg-white/5 my-1" />
+
+                  <div className="flex justify-between text-sm font-black">
+                    <span>Total</span>
+                    <span className="text-[var(--accent-green)] font-display text-base">₹{squad?.entry_price ? squad.entry_price.toLocaleString('en-IN') : '1,200'}</span>
+                  </div>
+                </div>
+
+                {/* Checkout CTA */}
+                <GlowButton 
+                  onClick={handleJoinSquadSlot}
+                  disabled={isPaying}
+                  className="w-full py-4 text-xs font-black uppercase tracking-wider text-center flex items-center justify-center gap-1.5"
+                >
+                  {isPaying ? (
+                    <>Processing UPI Split...</>
+                  ) : (
+                    <>Pay & Join Squad</>
+                  )}
+                </GlowButton>
+              </GlassCard>
+            )}
+
+          </div>
+        )}
 
       </div>
+
+      {/* ---------------- SCANNER MODAL (SIMULATOR OVERLAY) ---------------- */}
+      {showScannerModal && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+          <div 
+            onClick={() => setShowScannerModal(false)}
+            className="absolute inset-0 bg-black/80 backdrop-blur-md cursor-pointer"
+          />
+          <div className="relative w-full max-w-sm z-10">
+            <GlassCard className="p-6 text-center space-y-5 border border-emerald-500/35 shadow-glow relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 blur-3xl -z-10" />
+
+              <span className="text-[9px] font-black uppercase text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-1 rounded-full">
+                QR Simulator Scanner
+              </span>
+
+              {/* simulated view finder */}
+              <div className="relative w-40 h-40 border-2 border-emerald-500/35 rounded-2xl flex flex-col items-center justify-center bg-black/60 overflow-hidden mx-auto">
+                <div className="absolute left-0 right-0 h-0.5 bg-emerald-400 opacity-60 shadow-[0_0_8px_#10b981] animate-bounce" style={{ top: '15%' }} />
+                <Camera className="w-8 h-8 text-emerald-500/40 animate-pulse" />
+                <span className="text-[8px] text-emerald-400/60 uppercase tracking-widest font-black mt-2">Simulated Camera Feed</span>
+              </div>
+
+              {/* simulator dropdown target list */}
+              <div className="space-y-2 text-left">
+                <label className="text-[9px] font-black text-amber-500 uppercase tracking-wider block text-center">Simulator: Choose friend QR to scan</label>
+                <select 
+                  value={selectedScannerUserId}
+                  onChange={(e) => {
+                    setSelectedScannerUserId(e.target.value);
+                    if (e.target.value) {
+                      handleScanQRUser(e.target.value);
+                    }
+                  }}
+                  className="w-full bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3 text-xs text-white focus:border-emerald-500 outline-none cursor-pointer"
+                >
+                  <option value="">-- Choose User QR --</option>
+                  {scannerUsersList.map(u => (
+                    <option key={u.id} value={u.id}>{u.full_name} (@{u.username})</option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowScannerModal(false);
+                  setSelectedScannerUserId('');
+                }}
+                className="text-[10px] font-bold text-slate-400 hover:text-white uppercase tracking-wider transition-colors bg-transparent border-none cursor-pointer"
+              >
+                Close Camera
+              </button>
+            </GlassCard>
+          </div>
+        </div>
+      )}
+
     </PageWrapper>
   );
 };

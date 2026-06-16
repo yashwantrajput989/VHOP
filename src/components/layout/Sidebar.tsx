@@ -19,7 +19,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isAdmin = false }) => {
 
   const userNavItems = [
     { label: 'Events', path: '/events', icon: Home },
-    { label: 'Social', path: '/social', icon: Users },
+    { label: 'Squad', path: '/squads', icon: Users },
     { label: 'Community', path: '/community', icon: Map },
     { label: 'Profile', path: '/profile', icon: User },
   ];

@@ -375,12 +375,36 @@ const pool = mysql.createPool({
                 organiser_id VARCHAR(255) NOT NULL,
                 size INT NOT NULL,
                 tier VARCHAR(50) NOT NULL,
+                anyone_can_join BOOLEAN DEFAULT TRUE,
+                require_approval BOOLEAN DEFAULT FALSE,
+                entry_price DECIMAL(10, 2) DEFAULT 0.00,
+                status VARCHAR(50) DEFAULT 'open',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
                 FOREIGN KEY (organiser_id) REFERENCES profiles(id) ON DELETE CASCADE
             )
         `);
         console.log('🟢 Squads table verified/created.');
+
+        // Verify required columns in squads
+        try {
+            const [squadCols] = await pool.execute('DESCRIBE squads');
+            const existingSquadCols = squadCols.map(c => c.Field.toLowerCase());
+
+            const addSquadColumnIfNeeded = async (columnName, columnDefinition) => {
+                if (!existingSquadCols.includes(columnName.toLowerCase())) {
+                    await pool.execute(`ALTER TABLE squads ADD COLUMN ${columnName} ${columnDefinition}`);
+                    console.log(`🟢 Added missing column: squads.${columnName}`);
+                }
+            };
+
+            await addSquadColumnIfNeeded('anyone_can_join', 'BOOLEAN DEFAULT TRUE');
+            await addSquadColumnIfNeeded('require_approval', 'BOOLEAN DEFAULT FALSE');
+            await addSquadColumnIfNeeded('entry_price', 'DECIMAL(10, 2) DEFAULT 0.00');
+            await addSquadColumnIfNeeded('status', 'VARCHAR(50) DEFAULT "open"');
+        } catch (err) {
+            console.error('🔴 Error verifying squads columns:', err);
+        }
 
         // Create squad_members table
         await pool.execute(`
@@ -466,7 +490,11 @@ const pool = mysql.createPool({
         const mockUsers = [
             { id: 'usr_demo_1', name: 'Kabir Sharma', username: 'kabir', email: 'kabir@gmail.com', phone: '+91 98765 43210', age: 24, address: 'Bandra West, Mumbai, MH' },
             { id: 'usr_demo_2', name: 'Riya Sen', username: 'riya', email: 'riya@yahoo.com', phone: '+91 98123 45678', age: 22, address: 'Jubilee Hills, Hyderabad, TS' },
-            { id: 'usr_demo_3', name: 'Aarav Rajput', username: 'aarav', email: 'aarav@vhop.in', phone: '+91 99887 76655', age: 26, address: 'Gachibowli, Hyderabad, TS' }
+            { id: 'usr_demo_3', name: 'Aarav Rajput', username: 'aarav', email: 'aarav@vhop.in', phone: '+91 99887 76655', age: 26, address: 'Gachibowli, Hyderabad, TS' },
+            { id: 'usr_rahulk', name: 'Rahul Kumar', username: 'rahulk', email: 'rahul@gmail.com', phone: '+91 99999 88888', age: 25, address: 'Bandra West, Mumbai, MH' },
+            { id: 'usr_ananyap', name: 'Ananya P', username: 'ananyap', email: 'ananya@gmail.com', phone: '+91 99999 77777', age: 23, address: 'Andheri East, Mumbai, MH' },
+            { id: 'usr_siddharthk', name: 'Siddharth K', username: 'siddharthk', email: 'siddharth@gmail.com', phone: '+91 99999 66666', age: 26, address: 'Colaba, Mumbai, MH' },
+            { id: 'usr_snehap', name: 'Sneha P', username: 'snehap', email: 'sneha@gmail.com', phone: '+91 99999 55555', age: 24, address: 'Juhu, Mumbai, MH' }
         ];
 
         for (const u of mockUsers) {
@@ -535,6 +563,40 @@ const pool = mysql.createPool({
                     { name: "adukonodu", price: 9, benefits: ["bayita nuchoni chud", "lopalki oste tanesta", "dengey "], id: "t-219dvfs" },
                     { name: "super Vip ", price: 1000000, benefits: ["dj ni dengochu ", "waitress ochi notlo petkuntadi", "last lo happy ending "], id: "t-y7xm7c1" }
                 ])
+            },
+            {
+                id: 'ev_trilogy',
+                company_id: 'vhop_official',
+                title: 'VIP Booth — Trilogy',
+                short_description: 'An exclusive night at Trilogy Club.',
+                description: 'Experience premium luxury and high energy beats at Trilogy Club Bandra.',
+                venue_name: 'Trilogy Club',
+                city: 'Mumbai',
+                category: 'Clubbing',
+                price: 1200.00,
+                cover_image: 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?q=80&w=1000',
+                start_date: '2026-12-25 23:00:00',
+                status: 'published',
+                ticket_types: JSON.stringify([
+                    { name: "vip", price: 1200, benefits: ["Welcome drinks", "table access"], id: "t-trilogy-vip" }
+                ])
+            },
+            {
+                id: 'ev_trance',
+                company_id: 'vhop_official',
+                title: 'Table for 20 — Trance Night',
+                short_description: 'A deep progressive trance experience.',
+                description: 'Unwind at Aer Lounge for a high demand progressive trance night.',
+                venue_name: 'Aer Lounge',
+                city: 'Mumbai',
+                category: 'Trance',
+                price: 800.00,
+                cover_image: 'https://images.unsplash.com/photo-1506157786151-b8491531f063?q=80&w=1000',
+                start_date: '2026-12-24 22:00:00',
+                status: 'published',
+                ticket_types: JSON.stringify([
+                    { name: "standard", price: 800, benefits: ["entry fee"], id: "t-trance-std" }
+                ])
             }
         ];
 
@@ -545,6 +607,73 @@ const pool = mysql.createPool({
             `, [e.id, e.company_id, e.title, e.short_description, e.description, e.venue_name, e.city, e.category, e.price, e.cover_image, e.start_date, e.status, e.ticket_types]);
         }
         console.log('🟢 Demo events seeded/verified.');
+
+        // 11. Seed default squads
+        const mockSquads = [
+            {
+                id: 'sq_trilogy',
+                event_id: 'ev_trilogy',
+                name: 'VIP Booth — Trilogy',
+                organiser_id: 'usr_rahulk',
+                size: 10,
+                tier: 'vip_silver',
+                anyone_can_join: true,
+                require_approval: false,
+                entry_price: 1200.00,
+                status: 'open'
+            },
+            {
+                id: 'sq_trance',
+                event_id: 'ev_trance',
+                name: 'Table for 20 — Trance Night',
+                organiser_id: 'usr_snehap',
+                size: 20,
+                tier: 'regular',
+                anyone_can_join: true,
+                require_approval: false,
+                entry_price: 800.00,
+                status: 'open'
+            }
+        ];
+
+        for (const s of mockSquads) {
+            await pool.execute(`
+                INSERT IGNORE INTO squads (id, event_id, name, organiser_id, size, tier, anyone_can_join, require_approval, entry_price, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `, [s.id, s.event_id, s.name, s.organiser_id, s.size, s.tier, s.anyone_can_join, s.require_approval, s.entry_price, s.status]);
+        }
+
+        // Seed squad members for sq_trilogy
+        const trilogyMembers = [
+            { squad_id: 'sq_trilogy', user_id: 'usr_rahulk', payment_status: 'paid' },
+            { squad_id: 'sq_trilogy', user_id: 'usr_ananyap', payment_status: 'paid' },
+            { squad_id: 'sq_trilogy', user_id: 'usr_siddharthk', payment_status: 'paid' },
+            { squad_id: 'sq_trilogy', user_id: 'usr_demo_1', payment_status: 'paid' },
+            { squad_id: 'sq_trilogy', user_id: 'usr_demo_2', payment_status: 'paid' },
+            { squad_id: 'sq_trilogy', user_id: 'usr_demo_3', payment_status: 'paid' },
+            { squad_id: 'sq_trilogy', user_id: 'usr_snehap', payment_status: 'paid' }
+        ];
+
+        for (const m of trilogyMembers) {
+            await pool.execute(`
+                INSERT IGNORE INTO squad_members (squad_id, user_id, payment_status)
+                VALUES (?, ?, ?)
+            `, [m.squad_id, m.user_id, m.payment_status]);
+        }
+
+        // Seed squad members for sq_trance
+        const tranceMembers = [
+            { squad_id: 'sq_trance', user_id: 'usr_snehap', payment_status: 'paid' },
+            { squad_id: 'sq_trance', user_id: 'usr_demo_2', payment_status: 'paid' }
+        ];
+
+        for (const m of tranceMembers) {
+            await pool.execute(`
+                INSERT IGNORE INTO squad_members (squad_id, user_id, payment_status)
+                VALUES (?, ?, ?)
+            `, [m.squad_id, m.user_id, m.payment_status]);
+        }
+        console.log('🟢 Demo squads and members seeded/verified.');
 
     } catch (err) {
         console.error('🔴 Database initialization error:', err);
@@ -1717,7 +1846,7 @@ app.post('/api/social/friends/add', async (req, res) => {
 
 // Initialize / Create Squad
 app.post('/api/squads/create', async (req, res) => {
-    const { eventId, name, organiserId, size, tier } = req.body;
+    const { eventId, name, organiserId, size, tier, anyoneCanJoin, requireApproval, entryPrice } = req.body;
     try {
         if (!eventId || !organiserId || !size || !tier) {
             return res.status(400).json({ error: 'Missing required parameters.' });
@@ -1726,10 +1855,14 @@ app.post('/api/squads/create', async (req, res) => {
         const squadId = `sq_${Math.random().toString(36).substring(2, 11)}`;
         const squadName = name || `Squad ${squadId.slice(-4)}`;
         
+        const isPublic = anyoneCanJoin !== undefined ? !!anyoneCanJoin : true;
+        const reqAppr = requireApproval !== undefined ? !!requireApproval : false;
+        const price = entryPrice !== undefined ? parseFloat(entryPrice) : 0.00;
+
         // Insert squad
         await pool.execute(
-            'INSERT INTO squads (id, event_id, name, organiser_id, size, tier) VALUES (?, ?, ?, ?, ?, ?)',
-            [squadId, eventId, squadName, organiserId, parseInt(size, 10), tier]
+            'INSERT INTO squads (id, event_id, name, organiser_id, size, tier, anyone_can_join, require_approval, entry_price, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, "open")',
+            [squadId, eventId, squadName, organiserId, parseInt(size, 10), tier, isPublic, reqAppr, price]
         );
         
         // Insert organiser as first squad member (paid automatically)
@@ -1741,6 +1874,63 @@ app.post('/api/squads/create', async (req, res) => {
         res.status(201).json({ squadId, name: squadName, message: 'Squad successfully created.' });
     } catch (error) {
         console.error('Error creating squad:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Retrieve all squads with filters
+app.get('/api/squads', async (req, res) => {
+    const { city, tab, userId } = req.query;
+    try {
+        let sql = `
+            SELECT s.*, e.title AS event_title, e.venue_name, e.start_date, e.cover_image, p.full_name AS organiser_name, p.avatar_url AS organiser_avatar
+            FROM squads s
+            JOIN events e ON s.event_id = e.id
+            JOIN profiles p ON s.organiser_id = p.id
+        `;
+        let params = [];
+        let conditions = [];
+
+        if (city) {
+            conditions.push('e.city = ?');
+            params.push(city);
+        }
+
+        if (tab === 'joined' && userId) {
+            conditions.push('s.id IN (SELECT squad_id FROM squad_members WHERE user_id = ?) AND s.organiser_id != ?');
+            params.push(userId, userId);
+        } else if (tab === 'hosting' && userId) {
+            conditions.push('s.organiser_id = ?');
+            params.push(userId);
+        } else if (tab === 'open') {
+            conditions.push('s.anyone_can_join = true AND s.status = "open"');
+        }
+
+        if (conditions.length > 0) {
+            sql += ' WHERE ' + conditions.join(' AND ');
+        }
+
+        sql += ' ORDER BY s.created_at DESC';
+
+        const [squads] = await pool.execute(sql, params);
+
+        const squadsWithMembers = await Promise.all(squads.map(async (squad) => {
+            const [members] = await pool.execute(`
+                SELECT sm.payment_status, p.id, p.full_name, p.username, p.avatar_url
+                FROM squad_members sm
+                JOIN profiles p ON sm.user_id = p.id
+                WHERE sm.squad_id = ?
+                ORDER BY sm.joined_at ASC
+            `, [squad.id]);
+            return {
+                ...squad,
+                members
+            };
+        }));
+
+        res.status(200).json(squadsWithMembers);
+    } catch (error) {
+        console.error('Error fetching squads list:', error);
         res.status(500).json({ error: error.message });
     }
 });

@@ -23,6 +23,7 @@ import { ContactUs } from './pages/user/ContactUs';
 import { TermsConditions } from './pages/user/TermsConditions';
 import { RefundsCancellations } from './pages/user/RefundsCancellations';
 import { SquadView } from './pages/user/SquadView';
+import { SquadsFeed } from './pages/user/SquadsFeed';
 
 import { useAuthStore } from './store/authStore';
 import { useUIStore } from './store/uiStore';
@@ -122,6 +123,7 @@ function App() {
             <Route path="/events/:id" element={<EventDetails />} />
             <Route path="/social" element={<Social />} />
             <Route path="/community" element={<Community />} />
+            <Route path="/squads" element={<SquadsFeed />} />
             <Route path="/squad/:id" element={<SquadView />} />
             <Route path="/profile" element={
               <ProtectedRoute>
