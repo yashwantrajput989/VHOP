@@ -52,6 +52,17 @@ export const Profile: React.FC = () => {
   const [verificationError, setVerificationError] = useState('');
   const [devOtpHelp, setDevOtpHelp] = useState('');
 
+  // Inline Add/Verify states for profile page
+  const [inlineEmail, setInlineEmail] = useState('');
+  const [inlinePhone, setInlinePhone] = useState('');
+  const [inlineOtp, setInlineOtp] = useState('');
+  const [inlineStep, setInlineStep] = useState<'idle' | 'verifying_email' | 'verifying_phone'>('idle');
+  const [inlineError, setInlineError] = useState('');
+  const [inlineSuccess, setInlineSuccess] = useState('');
+  const [inlineCountdown, setInlineCountdown] = useState(0);
+  const [inlineDevOtp, setInlineDevOtp] = useState('');
+  const [isInlineSubmitting, setIsInlineSubmitting] = useState(false);
+
   useEffect(() => {
     if (verificationCountdown <= 0) return;
     const timer = setInterval(() => {
@@ -59,6 +70,14 @@ export const Profile: React.FC = () => {
     }, 1000);
     return () => clearInterval(timer);
   }, [verificationCountdown]);
+
+  useEffect(() => {
+    if (inlineCountdown <= 0) return;
+    const timer = setInterval(() => {
+      setInlineCountdown((prev) => prev - 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [inlineCountdown]);
 
   // Cropper and file upload states
   const [selectedImageSrc, setSelectedImageSrc] = useState<string | null>(null);
@@ -327,6 +346,170 @@ export const Profile: React.FC = () => {
     }
   };
 
+  // Helper to send email verification for inline form
+  const sendInlineEmailVerification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setInlineError('');
+    setInlineSuccess('');
+    
+    if (!inlineEmail.trim()) {
+      setInlineError('Email address is required.');
+      return;
+    }
+    
+    setIsInlineSubmitting(true);
+    try {
+      const checkRes = await fetch(`${API_BASE_URL}/api/auth/check-exists?email=${encodeURIComponent(inlineEmail.trim())}`);
+      const checkData = await checkRes.json();
+      if (checkData.exists) {
+        setInlineError('This email address is already registered to another account.');
+        setIsInlineSubmitting(false);
+        return;
+      }
+      
+      const otpRes = await sendEmailOtp(inlineEmail.trim(), true);
+      setInlineStep('verifying_email');
+      setInlineOtp('');
+      setInlineCountdown(60);
+      setInlineDevOtp(otpRes.devOtp || '');
+    } catch (err: any) {
+      setInlineError(err.message || 'Failed to send email verification OTP.');
+    } finally {
+      setIsInlineSubmitting(false);
+    }
+  };
+
+  // Helper to verify and link email for inline form
+  const verifyAndLinkEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setInlineError('');
+    setIsInlineSubmitting(true);
+    try {
+      await verifyEmailOtp(inlineEmail.trim(), inlineOtp);
+      
+      // Update database profile
+      const response = await fetch(`${API_BASE_URL}/api/auth/profile/update`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user?.id,
+          fullName: user?.full_name || 'User',
+          username: user?.username || 'user',
+          city: user?.city || 'Mumbai',
+          phone: user?.phone || '',
+          age: user?.age || null,
+          gender: user?.gender || null,
+          address: user?.address || '',
+          avatarUrl: user?.avatar_url || '',
+          birthday: user?.birthday || '',
+          email: inlineEmail.toLowerCase().trim()
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to update email in profile database.');
+      }
+
+      const data = await response.json();
+      setUser(data.user);
+      setInlineSuccess('Email address verified and linked successfully! 🎉');
+      setTimeout(() => {
+        setInlineStep('idle');
+        setInlineEmail('');
+        setInlineOtp('');
+        setInlineSuccess('');
+      }, 2000);
+    } catch (err: any) {
+      setInlineError(err.message || 'Invalid or expired OTP code.');
+    } finally {
+      setIsInlineSubmitting(false);
+    }
+  };
+
+  // Helper to send phone verification for inline form
+  const sendInlinePhoneVerification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setInlineError('');
+    setInlineSuccess('');
+    
+    const cleanPhone = inlinePhone.replace(/\D/g, '');
+    if (cleanPhone.length < 10) {
+      setInlineError('Please enter a valid 10-digit phone number.');
+      return;
+    }
+    
+    setIsInlineSubmitting(true);
+    try {
+      const checkRes = await fetch(`${API_BASE_URL}/api/auth/check-exists?phone=${encodeURIComponent(inlinePhone.trim())}`);
+      const checkData = await checkRes.json();
+      if (checkData.exists) {
+        setInlineError('This phone number is already registered to another account.');
+        setIsInlineSubmitting(false);
+        return;
+      }
+      
+      const otpRes = await sendOtp(inlinePhone.trim(), true);
+      setInlineStep('verifying_phone');
+      setInlineOtp('');
+      setInlineCountdown(60);
+      setInlineDevOtp(otpRes.devOtp || '');
+    } catch (err: any) {
+      setInlineError(err.message || 'Failed to send phone verification OTP.');
+    } finally {
+      setIsInlineSubmitting(false);
+    }
+  };
+
+  // Helper to verify and link phone for inline form
+  const verifyAndLinkPhone = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setInlineError('');
+    setIsInlineSubmitting(true);
+    try {
+      await verifyOtp(inlinePhone.trim(), inlineOtp, undefined, true);
+      
+      const cleanPhone = inlinePhone.replace(/\D/g, '').slice(-10);
+      // Update database profile
+      const response = await fetch(`${API_BASE_URL}/api/auth/profile/update`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user?.id,
+          fullName: user?.full_name || 'User',
+          username: user?.username || 'user',
+          city: user?.city || 'Mumbai',
+          phone: cleanPhone,
+          age: user?.age || null,
+          gender: user?.gender || null,
+          address: user?.address || '',
+          avatarUrl: user?.avatar_url || '',
+          birthday: user?.birthday || '',
+          email: user?.email || ''
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to update phone in profile database.');
+      }
+
+      const data = await response.json();
+      setUser(data.user);
+      setInlineSuccess('Phone number verified and linked successfully! 🎉');
+      setTimeout(() => {
+        setInlineStep('idle');
+        setInlinePhone('');
+        setInlineOtp('');
+        setInlineSuccess('');
+      }, 2000);
+    } catch (err: any) {
+      setInlineError(err.message || 'Invalid or expired OTP code.');
+    } finally {
+      setIsInlineSubmitting(false);
+    }
+  };
+
 
 
 
@@ -548,6 +731,243 @@ export const Profile: React.FC = () => {
         <section className="mb-6">
           <VCardPass />
         </section>
+
+        {/* ================= INLINE CONTACT INFORMATION LINKING (OTP VERIFICATION) ================= */}
+        {((!user.email || user.email.trim() === '') || (!user.phone || user.phone.trim() === '')) && (
+          <section className="mb-6 relative overflow-hidden">
+            <GlassCard className="p-5 md:p-6 border border-[var(--violet-bright)]/30 shadow-glow relative space-y-4">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-[var(--violet-primary)]/10 blur-2xl rounded-full pointer-events-none animate-pulse" />
+              
+              {/* If missing email */}
+              {!user.email || user.email.trim() === '' ? (
+                inlineStep === 'verifying_email' ? (
+                  // OTP entry form
+                  <form onSubmit={verifyAndLinkEmail} className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-[var(--violet-primary)]/10 border border-[var(--violet-bright)]/20 flex items-center justify-center shrink-0">
+                        <ShieldCheck className="w-5 h-5 text-[var(--violet-bright)]" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-white">Verify Your Email</h4>
+                        <p className="text-[10px] text-[var(--text-secondary)]">
+                          OTP code sent to <span className="text-white font-semibold">{inlineEmail}</span>
+                        </p>
+                      </div>
+                    </div>
+
+                    {inlineError && (
+                      <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-200">
+                        {inlineError}
+                      </div>
+                    )}
+
+                    {inlineSuccess && (
+                      <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-200">
+                        {inlineSuccess}
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      <input 
+                        type="text" 
+                        required
+                        maxLength={6}
+                        value={inlineOtp}
+                        onChange={(e) => setInlineOtp(e.target.value.replace(/\D/g, ''))}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl py-3 tracking-[0.5em] text-center text-sm font-extrabold focus:border-[var(--violet-bright)] outline-none text-white font-mono"
+                        placeholder="123456"
+                      />
+                      {inlineDevOtp && (
+                        <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[9px] text-emerald-400 font-bold text-center mt-1">
+                          [SANDBOX OTP]: {inlineDevOtp}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex justify-between items-center text-[10px]">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setInlineStep('idle');
+                          setInlineOtp('');
+                          setInlineError('');
+                          setInlineDevOtp('');
+                        }}
+                        className="text-[var(--text-secondary)] hover:text-white hover:underline bg-transparent border-none cursor-pointer"
+                      >
+                        Change Email
+                      </button>
+                      
+                      {inlineCountdown > 0 ? (
+                        <span className="text-[var(--text-muted)]">Resend in {inlineCountdown}s</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={sendInlineEmailVerification}
+                          className="text-[var(--violet-bright)] font-bold hover:underline bg-transparent border-none cursor-pointer"
+                        >
+                          Resend OTP
+                        </button>
+                      )}
+                    </div>
+
+                    <GlowButton type="submit" isLoading={isInlineSubmitting} className="w-full py-3 text-xs">
+                      Verify & Add Email
+                    </GlowButton>
+                  </form>
+                ) : (
+                  // Email entry form
+                  <form onSubmit={sendInlineEmailVerification} className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-[var(--violet-primary)]/10 border border-[var(--violet-bright)]/20 flex items-center justify-center shrink-0">
+                        <Sparkles className="w-5 h-5 text-[var(--violet-bright)]" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-white">Add Email Address</h4>
+                        <p className="text-[10px] text-[var(--text-secondary)]">
+                          Link your email to receive tickets, billing statements, and VIP receipts.
+                        </p>
+                      </div>
+                    </div>
+
+                    {inlineError && (
+                      <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/25 text-xs text-red-200">
+                        {inlineError}
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <input
+                        type="email"
+                        value={inlineEmail}
+                        onChange={(e) => setInlineEmail(e.target.value)}
+                        placeholder="enter@email.com"
+                        className="flex-1 px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-xs focus:border-[var(--violet-bright)] focus:outline-none transition-colors"
+                        required
+                      />
+                      <GlowButton type="submit" isLoading={isInlineSubmitting} className="py-3 px-5 text-xs font-bold shrink-0">
+                        Verify & Add
+                      </GlowButton>
+                    </div>
+                  </form>
+                )
+              ) : (
+                /* Missing phone */
+                inlineStep === 'verifying_phone' ? (
+                  // OTP entry form
+                  <form onSubmit={verifyAndLinkPhone} className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-[var(--violet-primary)]/10 border border-[var(--violet-bright)]/20 flex items-center justify-center shrink-0">
+                        <ShieldCheck className="w-5 h-5 text-[var(--violet-bright)]" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-white">Verify Phone Number</h4>
+                        <p className="text-[10px] text-[var(--text-secondary)]">
+                          OTP code sent to <span className="text-white font-semibold">{inlinePhone}</span>
+                        </p>
+                      </div>
+                    </div>
+
+                    {inlineError && (
+                      <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-200">
+                        {inlineError}
+                      </div>
+                    )}
+
+                    {inlineSuccess && (
+                      <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-200">
+                        {inlineSuccess}
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      <input 
+                        type="text" 
+                        required
+                        maxLength={4}
+                        value={inlineOtp}
+                        onChange={(e) => setInlineOtp(e.target.value.replace(/\D/g, ''))}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl py-3 tracking-[0.5em] text-center text-sm font-extrabold focus:border-[var(--violet-bright)] outline-none text-white font-mono"
+                        placeholder="1234"
+                      />
+                      {inlineDevOtp && (
+                        <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[9px] text-emerald-400 font-bold text-center mt-1">
+                          [SANDBOX OTP]: {inlineDevOtp}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex justify-between items-center text-[10px]">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setInlineStep('idle');
+                          setInlineOtp('');
+                          setInlineError('');
+                          setInlineDevOtp('');
+                        }}
+                        className="text-[var(--text-secondary)] hover:text-white hover:underline bg-transparent border-none cursor-pointer"
+                      >
+                        Change Number
+                      </button>
+                      
+                      {inlineCountdown > 0 ? (
+                        <span className="text-[var(--text-muted)]">Resend in {inlineCountdown}s</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={sendInlinePhoneVerification}
+                          className="text-[var(--violet-bright)] font-bold hover:underline bg-transparent border-none cursor-pointer"
+                        >
+                          Resend OTP
+                        </button>
+                      )}
+                    </div>
+
+                    <GlowButton type="submit" isLoading={isInlineSubmitting} className="w-full py-3 text-xs">
+                      Verify & Add Phone
+                    </GlowButton>
+                  </form>
+                ) : (
+                  // Phone entry form
+                  <form onSubmit={sendInlinePhoneVerification} className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-[var(--violet-primary)]/10 border border-[var(--violet-bright)]/20 flex items-center justify-center shrink-0">
+                        <Sparkles className="w-5 h-5 text-[var(--violet-bright)]" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-white">Add Phone Number</h4>
+                        <p className="text-[10px] text-[var(--text-secondary)]">
+                          Link a mobile number to secure your account and receive instant SMS tickets.
+                        </p>
+                      </div>
+                    </div>
+
+                    {inlineError && (
+                      <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/25 text-xs text-red-200">
+                        {inlineError}
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <input
+                        type="tel"
+                        value={inlinePhone}
+                        onChange={(e) => setInlinePhone(e.target.value)}
+                        placeholder="+91 XXXXX XXXXX"
+                        className="flex-1 px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-xs focus:border-[var(--violet-bright)] focus:outline-none transition-colors"
+                        required
+                      />
+                      <GlowButton type="submit" isLoading={isInlineSubmitting} className="py-3 px-5 text-xs font-bold shrink-0">
+                        Verify & Add
+                      </GlowButton>
+                    </div>
+                  </form>
+                )
+              )}
+            </GlassCard>
+          </section>
+        )}
 
         {/* ================= THREE STATS COUNTERS (Image 1 Reference) ================= */}
         <section className="grid grid-cols-3 gap-3">
