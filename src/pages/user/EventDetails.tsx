@@ -253,14 +253,10 @@ export const EventDetails: React.FC = () => {
             </div>
 
             <div className="space-y-4">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-[var(--text-secondary)]">Platform Fee</span>
-                <span className="text-white font-medium">₹49</span>
-              </div>
-              <div className="flex items-center justify-between text-lg font-bold pt-4 border-t border-white/5">
-                <span>Total</span>
-                <span className="text-gradient">
-                  ₹{selectedTicket ? (event.ticket_types?.find((t: any) => t.id === selectedTicket)?.price || 0) + 49 : 0}
+              <div className="flex items-center justify-between text-xs text-[var(--text-muted)] pt-2">
+                <span className="flex items-center gap-1">
+                  <Info className="w-3.5 h-3.5" />
+                  Taxes & convenience fees apply at checkout
                 </span>
               </div>
 

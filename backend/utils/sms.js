@@ -141,7 +141,7 @@ async function validateOTP(verificationId, code) {
         const options = {
             hostname: MC_HOST,
             path,
-            method: 'POST',
+            method: 'GET',
             headers: {
                 'authToken':     AUTH_TOKEN,
                 'Content-Type':  'application/json',
@@ -157,7 +157,15 @@ async function validateOTP(verificationId, code) {
                     const data = JSON.parse(body);
                     if (res.statusCode >= 200 && res.statusCode < 300) {
                         // Message Central V3 response format checks
-                        if (data.status === 200 || data.responseCode === 200 || data.message === 'Verification Success' || data.message === 'Approved') {
+                        if (
+                            data.responseCode === 200 ||
+                            data.responseCode === '200' ||
+                            data.status === 200 ||
+                            data.message === 'SUCCESS' ||
+                            data.message === 'Verification Success' ||
+                            data.message === 'Approved' ||
+                            (data.data && (data.data.status === 'VERIFICATION_COMPLETED' || data.data.responseCode === '200' || data.data.responseCode === 200))
+                        ) {
                             resolve({ success: true, data });
                         } else {
                             resolve({ success: false, error: data.message || 'OTP verification failed' });

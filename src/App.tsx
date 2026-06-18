@@ -25,6 +25,7 @@ import { RefundsCancellations } from './pages/user/RefundsCancellations';
 import { SquadView } from './pages/user/SquadView';
 import { SquadsFeed } from './pages/user/SquadsFeed';
 import { BookedTickets } from './pages/user/BookedTickets';
+import { WelcomeOnboarding } from './pages/user/WelcomeOnboarding';
 
 import { useAuthStore } from './store/authStore';
 import { useUIStore } from './store/uiStore';
@@ -65,6 +66,41 @@ function App() {
     }
   }, [location]);
 
+  // Android payment return handler:
+  // On native Capacitor, Cashfree uses _self redirect mode.
+  // After returning from the payment gateway, verify any pending booking.
+  useEffect(() => {
+    const pendingBookingId = sessionStorage.getItem('pending_booking_id');
+    if (!pendingBookingId || !Capacitor.isNativePlatform()) return;
+
+    const verifyPendingPayment = async () => {
+      try {
+        console.log('[Android Payment] Verifying pending booking:', pendingBookingId);
+        const { API_BASE_URL } = await import('./config');
+        const res = await fetch(`${API_BASE_URL}/api/payments/verify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ order_id: pendingBookingId })
+        });
+        if (res.ok) {
+          console.log('[Android Payment] Payment verified successfully for', pendingBookingId);
+          sessionStorage.removeItem('pending_booking_id');
+          sessionStorage.removeItem('pending_booking_event_id');
+          // Navigate to tickets page to show confirmed booking
+          navigate('/tickets', { replace: true });
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          console.warn('[Android Payment] Verification failed:', errData.message || res.status);
+          // Keep pending_booking_id so next reload can retry
+        }
+      } catch (err) {
+        console.error('[Android Payment] Network error during verify:', err);
+      }
+    };
+
+    verifyPendingPayment();
+  }, [location.pathname, navigate]);
+
   // Global redirect when user logs in
   const isTargetAdmin = import.meta.env.VITE_APP_TARGET === 'admin';
 
@@ -83,6 +119,24 @@ function App() {
       }
     }
   }, [user, location.pathname, navigate, isTargetAdmin]);
+
+  // Redirect to welcome onboarding if not completed and visiting standard user pages
+  useEffect(() => {
+    const isTargetAdmin = import.meta.env.VITE_APP_TARGET === 'admin';
+    if (isTargetAdmin) return;
+
+    const isWelcomePath = location.pathname === '/welcome';
+    const isAdminPath = location.pathname.startsWith('/admin') || location.pathname.startsWith('/superadmin');
+
+    if (!isAdminPath) {
+      const welcomeCompleted = localStorage.getItem('vhop_welcome_completed') === 'true';
+      if (!welcomeCompleted && !isWelcomePath) {
+        navigate('/welcome', { replace: true });
+      } else if (welcomeCompleted && isWelcomePath) {
+        navigate('/events', { replace: true });
+      }
+    }
+  }, [location.pathname, navigate]);
 
   const isNative = Capacitor.isNativePlatform();
   const isAdminPath = isTargetAdmin ? location.pathname.startsWith('/admin') : (!isNative && location.pathname.startsWith('/admin'));
@@ -120,6 +174,7 @@ function App() {
                 <Dashboard />
               </ProtectedRoute>
             } />
+            <Route path="/welcome" element={<WelcomeOnboarding />} />
             <Route path="/events" element={<Events />} />
             <Route path="/events/:id" element={<EventDetails />} />
             <Route path="/social" element={<Social />} />

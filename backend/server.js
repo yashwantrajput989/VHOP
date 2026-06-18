@@ -421,6 +421,32 @@ const pool = mysql.createPool({
         `);
         console.log('🟢 Squad members table verified/created.');
 
+        // Create squad_messages table for squad group chat
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS squad_messages (
+                id VARCHAR(255) PRIMARY KEY,
+                squad_id VARCHAR(255) NOT NULL,
+                user_id VARCHAR(255) NOT NULL,
+                message TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (squad_id) REFERENCES squads(id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+            )
+        `);
+        console.log('🟢 Squad messages table verified/created.');
+
+        // Add payout_released_at column to squads if missing
+        try {
+            const [squadCols2] = await pool.execute('DESCRIBE squads');
+            const existingSquadCols2 = squadCols2.map(c => c.Field.toLowerCase());
+            if (!existingSquadCols2.includes('payout_released_at')) {
+                await pool.execute('ALTER TABLE squads ADD COLUMN payout_released_at TIMESTAMP NULL DEFAULT NULL');
+                console.log('🟢 Added missing column: squads.payout_released_at');
+            }
+        } catch (err) {
+            console.error('🔴 Error checking/adding squads.payout_released_at:', err);
+        }
+
         // Verify required columns in events
         const [eventColumns] = await pool.execute('DESCRIBE events');
         const existingEventColumns = eventColumns.map(c => c.Field.toLowerCase());
@@ -981,11 +1007,61 @@ app.post('/api/auth/sync', async (req, res) => {
 // Get user profile by ID to verify active session
 app.get('/api/auth/profile/:id', async (req, res) => {
     try {
-        const [rows] = await pool.execute('SELECT * FROM profiles WHERE id = ?', [req.params.id]);
+        const userId = req.params.id;
+        const [rows] = await pool.execute('SELECT * FROM profiles WHERE id = ?', [userId]);
         if (rows.length === 0) {
             return res.status(404).json({ error: 'User profile not found' });
         }
-        res.status(200).json(formatProfile(rows[0]));
+
+        let profile = rows[0];
+
+        // Recalculate Music DNA dynamically on the fly based on bookings
+        const [bookings] = await pool.execute(
+            'SELECT b.*, e.category, e.title FROM bookings b JOIN events e ON b.event_id = e.id WHERE b.user_id = ? AND b.booking_status IN (\'confirmed\', \'checked_in\')',
+            [userId]
+        );
+
+        if (bookings.length > 0) {
+            let edmCount = 0;
+            let bollywoodCount = 0;
+            let liveCount = 0;
+
+            bookings.forEach(b => {
+                const cat = (b.category || '').toLowerCase();
+                const title = (b.title || '').toLowerCase();
+
+                if (cat.includes('edm') || cat.includes('trance') || cat.includes('techno') || cat.includes('house') || cat.includes('clubbing') || cat.includes('rave') || cat.includes('music') ||
+                    title.includes('rave') || title.includes('techno') || title.includes('trance') || title.includes('house') || title.includes('edm') || title.includes('dj')) {
+                    edmCount++;
+                } else if (cat.includes('bollywood') || cat.includes('desi') || cat.includes('commercial') || cat.includes('punjabi') ||
+                           title.includes('bollywood') || title.includes('desi') || title.includes('punjabi') || title.includes('night show')) {
+                    bollywoodCount++;
+                } else if (cat.includes('live') || cat.includes('acoustic') || cat.includes('band') || cat.includes('concert') ||
+                           title.includes('live') || title.includes('acoustic') || title.includes('band') || title.includes('concert') || title.includes('unplugged')) {
+                    liveCount++;
+                } else {
+                    edmCount++; // default fallback
+                }
+            });
+
+            const total = edmCount + bollywoodCount + liveCount;
+            if (total > 0) {
+                const edmPercent = Math.round((edmCount / total) * 100);
+                const bollywoodPercent = Math.round((bollywoodCount / total) * 100);
+                const livePercent = 100 - (edmPercent + bollywoodPercent);
+
+                await pool.execute(
+                    'UPDATE profiles SET music_dna_edm = ?, music_dna_bollywood = ?, music_dna_live = ? WHERE id = ?',
+                    [edmPercent, bollywoodPercent, livePercent, userId]
+                );
+
+                profile.music_dna_edm = edmPercent;
+                profile.music_dna_bollywood = bollywoodPercent;
+                profile.music_dna_live = livePercent;
+            }
+        }
+
+        res.status(200).json(formatProfile(profile));
     } catch (error) {
         console.error('Error fetching profile:', error);
         res.status(500).json({ error: error.message });
@@ -2114,6 +2190,157 @@ app.post('/api/squads/:id/cancel', async (req, res) => {
     }
 });
 
+// GET Squad Chat Messages (only for paid members or organiser)
+app.get('/api/squads/:id/messages', async (req, res) => {
+    const { id } = req.params;
+    const { userId } = req.query;
+    try {
+        if (!userId) {
+            return res.status(400).json({ error: 'userId is required.' });
+        }
+
+        // Verify user is paid member or organiser
+        const [squadRows] = await pool.execute('SELECT organiser_id FROM squads WHERE id = ?', [id]);
+        if (squadRows.length === 0) {
+            return res.status(404).json({ error: 'Squad not found.' });
+        }
+
+        const isOrganiser = squadRows[0].organiser_id === userId;
+        const [memberRows] = await pool.execute(
+            'SELECT payment_status FROM squad_members WHERE squad_id = ? AND user_id = ?',
+            [id, userId]
+        );
+        const isPaidMember = memberRows.length > 0 && memberRows[0].payment_status === 'paid';
+
+        if (!isOrganiser && !isPaidMember) {
+            return res.status(403).json({ error: 'Pay for your ticket first to access squad chat.' });
+        }
+
+        const [messages] = await pool.execute(`
+            SELECT sm.id, sm.squad_id, sm.user_id, sm.message, sm.created_at,
+                   p.full_name, p.username, p.avatar_url
+            FROM squad_messages sm
+            JOIN profiles p ON sm.user_id = p.id
+            WHERE sm.squad_id = ?
+            ORDER BY sm.created_at ASC
+            LIMIT 100
+        `, [id]);
+
+        res.status(200).json(messages);
+    } catch (error) {
+        console.error('Error fetching squad messages:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST Send Squad Chat Message (only for paid members or organiser)
+app.post('/api/squads/:id/messages', async (req, res) => {
+    const { id } = req.params;
+    const { userId, message } = req.body;
+    try {
+        if (!userId || !message || !message.trim()) {
+            return res.status(400).json({ error: 'userId and message are required.' });
+        }
+
+        // Verify user is paid member or organiser
+        const [squadRows] = await pool.execute('SELECT organiser_id FROM squads WHERE id = ?', [id]);
+        if (squadRows.length === 0) {
+            return res.status(404).json({ error: 'Squad not found.' });
+        }
+
+        const isOrganiser = squadRows[0].organiser_id === userId;
+        const [memberRows] = await pool.execute(
+            'SELECT payment_status FROM squad_members WHERE squad_id = ? AND user_id = ?',
+            [id, userId]
+        );
+        const isPaidMember = memberRows.length > 0 && memberRows[0].payment_status === 'paid';
+
+        if (!isOrganiser && !isPaidMember) {
+            return res.status(403).json({ error: 'You must be a paid member to chat.' });
+        }
+
+        const msgId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+        await pool.execute(
+            'INSERT INTO squad_messages (id, squad_id, user_id, message) VALUES (?, ?, ?, ?)',
+            [msgId, id, userId, message.trim()]
+        );
+
+        // Return the newly created message with user info
+        const [newMsg] = await pool.execute(`
+            SELECT sm.id, sm.squad_id, sm.user_id, sm.message, sm.created_at,
+                   p.full_name, p.username, p.avatar_url
+            FROM squad_messages sm
+            JOIN profiles p ON sm.user_id = p.id
+            WHERE sm.id = ?
+        `, [msgId]);
+
+        res.status(201).json(newMsg[0]);
+    } catch (error) {
+        console.error('Error sending squad message:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// GET Squad Payout Status (check if 24h post-event and payout released)
+app.get('/api/squads/:id/payout-status', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const [rows] = await pool.execute(`
+            SELECT s.id, s.entry_price, s.size, s.organiser_id, s.status, s.payout_released_at,
+                   e.start_date, e.title as event_title,
+                   (SELECT COUNT(*) FROM squad_members WHERE squad_id = s.id AND payment_status = 'paid') as paid_count
+            FROM squads s
+            JOIN events e ON s.event_id = e.id
+            WHERE s.id = ?
+        `, [id]);
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Squad not found.' });
+        }
+
+        const squad = rows[0];
+        const eventStart = new Date(squad.start_date);
+        const payoutTime = new Date(eventStart.getTime() + 24 * 60 * 60 * 1000); // 24h after event
+        const now = new Date();
+        const totalCollected = parseFloat(squad.entry_price) * parseInt(squad.paid_count);
+        const commission = Math.round(totalCollected * 0.10); // 10% commission
+        const hostPayout = totalCollected - commission;
+
+        let payoutStatus = 'pending';
+        let hoursRemaining = null;
+
+        if (squad.payout_released_at) {
+            payoutStatus = 'released';
+        } else if (now >= payoutTime) {
+            // Auto-release payout (mark as released)
+            await pool.execute(
+                'UPDATE squads SET payout_released_at = NOW() WHERE id = ?',
+                [id]
+            );
+            payoutStatus = 'released';
+            logActivity({ type: 'squad_payout_released', squadId: id, organiserId: squad.organiser_id, amount: hostPayout });
+        } else {
+            const msRemaining = payoutTime.getTime() - now.getTime();
+            hoursRemaining = Math.ceil(msRemaining / (1000 * 60 * 60));
+            payoutStatus = 'pending';
+        }
+
+        res.status(200).json({
+            squadId: id,
+            payoutStatus,
+            hoursRemaining,
+            totalCollected,
+            commission,
+            hostPayout,
+            paidMembers: parseInt(squad.paid_count),
+            payoutReleasedAt: squad.payout_released_at
+        });
+    } catch (error) {
+        console.error('Error fetching squad payout status:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Retrieve Active Squads Organised by User
 app.get('/api/squads/organiser/:userId', async (req, res) => {
     try {
@@ -2335,7 +2562,7 @@ app.post('/api/bookings', async (req, res) => {
 app.get('/api/bookings/user/:userId', async (req, res) => {
     try {
         const [rows] = await pool.execute(
-            'SELECT b.*, e.title as event_title, e.cover_image, e.venue_name, e.city, e.start_date, e.google_maps_url FROM bookings b JOIN events e ON b.event_id = e.id WHERE b.user_id = ? AND b.booking_status IN (\'confirmed\', \'checked_in\')',
+            'SELECT b.*, e.title as event_title, e.cover_image, e.venue_name, e.city, e.start_date, e.google_maps_url, e.category FROM bookings b JOIN events e ON b.event_id = e.id WHERE b.user_id = ? AND b.booking_status IN (\'confirmed\', \'checked_in\')',
             [req.params.userId]
         );
         res.json(rows);

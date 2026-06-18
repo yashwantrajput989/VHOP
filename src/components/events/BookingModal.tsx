@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { X, Minus, Plus, CreditCard, CheckCircle2, Loader2, Mail, Users, ArrowRight, User } from 'lucide-react';
+import { X, Minus, Plus, CreditCard, CheckCircle2, Loader2, Mail, Users, ArrowRight, User, AlertCircle } from 'lucide-react';
 import { GlassCard } from '../ui/GlassCard';
 import { GlowButton } from '../ui/GlowButton';
 import { useAuthStore } from '../../store/authStore';
@@ -9,6 +9,7 @@ import { useTicketStore } from '../../store/ticketStore';
 import { useUIStore } from '../../store/uiStore';
 import { API_BASE_URL, getImageUrl } from '../../config';
 import { useCashfree } from '../../hooks/useCashfree';
+import { Capacitor } from '@capacitor/core';
 
 
 interface BookingModalProps {
@@ -39,6 +40,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, eve
   const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
   const [isApplying, setIsApplying] = useState(false);
   const [couponError, setCouponError] = useState('');
+  const [paymentError, setPaymentError] = useState('');
 
   const [feeSettings, setFeeSettings] = useState<{
     platform_fee: number;
@@ -76,6 +78,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, eve
       setCouponCode('');
       setAppliedCoupon(null);
       setCouponError('');
+      setPaymentError('');
     } else {
       // Fetch dynamic settings on modal open
       fetch(`${API_BASE_URL}/api/settings/fees`)
@@ -164,6 +167,8 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, eve
 
     setStep('processing');
     
+    const isNative = Capacitor.isNativePlatform();
+
     try {
       const bookingId = `VH-${Math.random().toString(36).substring(2, 11).toUpperCase()}`;
       const qrCode = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${bookingId}`;
@@ -208,20 +213,35 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, eve
       if (!resultData.payment_session_id) {
         throw new Error('Payment session was not created. Please ensure the backend server is updated and configured with valid Cashfree credentials.');
       }
+
+      // On Android native, Cashfree redirects to the payment page within the WebView (_self).
+      // Store the pending booking ID so we can verify it when the user returns.
+      if (isNative) {
+        sessionStorage.setItem('pending_booking_id', bookingId);
+        sessionStorage.setItem('pending_booking_event_id', event.id);
+      }
       
-      // Trigger Cashfree Modal Checkout
+      // Trigger Cashfree Checkout
+      // On web: opens a modal overlay
+      // On Android/iOS: redirects within the WebView tab (useCashfree auto-detects)
       try {
         await openCheckout({
           paymentSessionId: resultData.payment_session_id,
           paymentEnv: resultData.payment_env,
           redirectTarget: '_modal'
         });
-      } catch (sdkErr) {
-        console.error('Cashfree SDK Error:', sdkErr);
-        throw new Error('Checkout cancelled or failed to initialize.');
+      } catch (sdkErr: any) {
+        console.error('[Cashfree] SDK Error:', sdkErr);
+        // On Android, a redirect happens so the promise may never fully resolve the modal.
+        // The Cashfree webhook will handle confirmation in that case.
+        if (isNative) {
+          // Let the redirect happen — do not throw
+          return;
+        }
+        throw new Error(sdkErr?.message || 'Checkout was cancelled or failed to initialize.');
       }
       
-      // Verify payment status on backend
+      // Verify payment status on backend (web modal flow)
       const verifyResponse = await fetch(`${API_BASE_URL}/api/payments/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -230,7 +250,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, eve
 
       if (!verifyResponse.ok) {
         const verifyErr = await verifyResponse.json().catch(() => ({}));
-        throw new Error(verifyErr.message || 'Payment verification failed.');
+        throw new Error(verifyErr.message || 'Payment verification failed. Please check your tickets — your booking may have been confirmed.');
       }
 
       const verifyData = await verifyResponse.json();
@@ -252,11 +272,14 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, eve
         guests: guests
       });
 
+      sessionStorage.removeItem('pending_booking_id');
+      sessionStorage.removeItem('pending_booking_event_id');
       setStep('success');
     } catch (error: any) {
-      console.error('Error during booking payment:', error);
-      alert(error.message || 'Failed to complete booking. Please try again.');
+      console.error('[BookingModal] Payment error:', error);
       setStep('details');
+      // Show error inline instead of alert() for better UX
+      setPaymentError(error.message || 'Failed to complete booking. Please try again.');
     }
   };
 
@@ -428,6 +451,13 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, eve
                       </div>
                     </div>
                   </div>
+
+                  {paymentError && (
+                    <div className="flex items-start gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20">
+                      <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                      <p className="text-xs text-red-400 font-medium">{paymentError}</p>
+                    </div>
+                  )}
 
                   <GlowButton onClick={handleNextStep} className="w-full py-4 text-lg">
                     Next: Guest Details <ArrowRight className="w-5 h-5 ml-2 inline" />

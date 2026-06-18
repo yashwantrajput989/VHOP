@@ -158,20 +158,20 @@ export const EventCard: React.FC<EventCardProps> = ({ event }) => {
       {/* Details Container */}
       <div className="p-4 flex flex-col space-y-2.5 flex-1 text-left">
         {/* Title */}
-        <h3 className="text-xs md:text-sm font-display font-bold text-white leading-tight line-clamp-1 group-hover:text-[var(--violet-bright)] transition-colors">
+        <h3 className="text-xs md:text-sm font-display font-bold text-white leading-tight line-clamp-2 group-hover:text-[var(--violet-bright)] transition-colors min-h-[2.5rem] flex items-center">
           {event.title}
         </h3>
 
         {/* Date Row */}
-        <div className="flex items-center gap-2 text-[var(--text-secondary)] text-[10px] md:text-xs font-medium">
-          <Calendar className="w-3.5 h-3.5 text-[var(--accent-cyan)] shrink-0" />
-          <span className="truncate">{formattedDate}</span>
+        <div className="flex items-start gap-2 text-[var(--text-secondary)] text-[10px] md:text-xs font-medium">
+          <Calendar className="w-3.5 h-3.5 text-[var(--accent-cyan)] shrink-0 mt-0.5" />
+          <span className="break-words line-clamp-2">{formattedDate}</span>
         </div>
 
         {/* Location Row */}
-        <div className="flex items-center gap-2 text-[var(--text-secondary)] text-[10px] md:text-xs font-medium">
-          <MapPin className="w-3.5 h-3.5 text-[var(--accent-pink)] shrink-0" />
-          <span className="truncate">{event.venue_name}</span>
+        <div className="flex items-start gap-2 text-[var(--text-secondary)] text-[10px] md:text-xs font-medium">
+          <MapPin className="w-3.5 h-3.5 text-[var(--accent-pink)] shrink-0 mt-0.5" />
+          <span className="break-words line-clamp-2">{event.venue_name}</span>
         </div>
 
         {/* Attending Row */}
