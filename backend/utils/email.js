@@ -435,6 +435,79 @@ const sendVerificationEmail = async (userEmail, otp) => {
     }
 };
 
+/**
+ * Sends a squad join confirmation email to a user
+ * @param {Object} memberData - Details of the member joining (full_name)
+ * @param {Object} squadData - Details of the squad (name, entry_price)
+ * @param {Object} eventData - Details of the event (title, start_date, venue_name, city)
+ * @param {string} userEmail - Recipient email
+ * @param {string} paymentId - Transaction or payment ID
+ */
+const sendSquadJoinEmail = async (memberData, squadData, eventData, userEmail, paymentId) => {
+    try {
+        if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+            console.warn('Email credentials not configured. Skipping email.');
+            return;
+        }
+
+        const date = new Date(eventData.start_date).toLocaleDateString('en-IN', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+
+        const entryPrice = Number(squadData.entry_price);
+        const entryPriceText = entryPrice > 0 ? `₹${entryPrice.toLocaleString('en-IN')}` : 'Free';
+
+        const mailOptions = {
+            from: `"VHOP Squads" <${process.env.EMAIL_USER}>`,
+            to: userEmail,
+            subject: `Squad Joined: Welcome to ${squadData.name}! 🚀`,
+            html: `
+                <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background-color: #0a0a0b; color: #ffffff; border-radius: 20px; overflow: hidden; border: 1px solid #1f1f23;">
+                    <div style="background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%); padding: 40px 20px; text-align: center;">
+                        <h1 style="margin: 0; font-size: 32px; letter-spacing: 2px; color: #ffffff;">VHOP SQUADS</h1>
+                        <p style="margin-top: 10px; font-weight: 500; opacity: 0.9; color: #ffffff;">You are in the squad!</p>
+                    </div>
+                    
+                    <div style="padding: 30px;">
+                        <h2 style="color: #ffffff; margin-bottom: 20px;">Hey ${memberData.full_name || 'Vibester'},</h2>
+                        <p style="color: #a1a1aa; font-size: 15px; line-height: 1.6;">
+                            Your payment was received, and you have successfully joined the squad <strong>${squadData.name}</strong>! Get ready for an epic night.
+                        </p>
+                        
+                        <div style="background-color: #161618; border-radius: 15px; padding: 20px; margin-bottom: 30px; border: 1px solid #27272a;">
+                            <h3 style="color: #a855f7; margin-top: 0; margin-bottom: 15px;">Squad & Event Details</h3>
+                            <p style="margin: 8px 0; color: #ffffff;"><strong>Squad Name:</strong> ${squadData.name}</p>
+                            <p style="margin: 8px 0; color: #ffffff;"><strong>Event:</strong> ${eventData.title}</p>
+                            <p style="margin: 8px 0; color: #ffffff;"><strong>Date:</strong> ${date}</p>
+                            <p style="margin: 8px 0; color: #ffffff;"><strong>Venue:</strong> ${eventData.venue_name}, ${eventData.city}</p>
+                            <p style="margin: 8px 0; color: #ffffff;"><strong>Entry Price:</strong> ${entryPriceText}</p>
+                            ${paymentId ? `<p style="margin: 8px 0; color: #ffffff;"><strong>Payment ID:</strong> <span style="font-family: monospace; background: #000; padding: 2px 6px; border-radius: 4px;">${paymentId}</span></p>` : ''}
+                        </div>
+
+                        <div style="text-align: center; color: #a1a1aa; font-size: 14px;">
+                            <p>Coordinate with your squad members inside the app chat and make the night unforgettable!</p>
+                            <hr style="border: 0; border-top: 1px solid #27272a; margin: 25px 0;">
+                            <p style="font-size: 12px; color: #71717a;">VHOP - The Ultimate Live Experience Platform</p>
+                        </div>
+                    </div>
+                </div>
+            `
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Squad join email sent: %s', info.messageId);
+        return info;
+    } catch (error) {
+        console.error('Error sending squad join email:', error);
+        throw error;
+    }
+};
+
 module.exports = { 
     sendBookingEmail, 
     sendResetEmail,
@@ -442,5 +515,6 @@ module.exports = {
     sendPartnerNotificationToSuperEmail,
     sendPartnerApprovalCredentialsEmail,
     sendContactFormDetailsToSuperEmail,
-    sendVerificationEmail
+    sendVerificationEmail,
+    sendSquadJoinEmail
 };

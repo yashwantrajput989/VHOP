@@ -13,7 +13,8 @@ const {
     sendPartnerNotificationToSuperEmail, 
     sendPartnerApprovalCredentialsEmail,
     sendContactFormDetailsToSuperEmail,
-    sendVerificationEmail
+    sendVerificationEmail,
+    sendSquadJoinEmail
 } = require('./utils/email');
 const { sendSMS, sendBulkSMS, buildBookingConfirmationSMS, validateOTP } = require('./utils/sms');
 // Razorpay import removed - using Cashfree now
@@ -420,6 +421,19 @@ const pool = mysql.createPool({
             )
         `);
         console.log('🟢 Squad members table verified/created.');
+
+        // Verify required columns in squad_members
+        try {
+            const [squadMemberCols] = await pool.execute('DESCRIBE squad_members');
+            const existingSquadMemberCols = squadMemberCols.map(c => c.Field.toLowerCase());
+
+            if (!existingSquadMemberCols.includes('order_id')) {
+                await pool.execute('ALTER TABLE squad_members ADD COLUMN order_id VARCHAR(255) NULL');
+                console.log('🟢 Added missing column: squad_members.order_id');
+            }
+        } catch (err) {
+            console.error('🔴 Error verifying squad_members columns:', err);
+        }
 
         // Create squad_messages table for squad group chat
         await pool.execute(`
@@ -2144,6 +2158,198 @@ app.post('/api/squads/:id/pay', async (req, res) => {
     }
 });
 
+// Create Cashfree Payment Session for joining a squad
+app.post('/api/squads/:id/create-payment-session', async (req, res) => {
+    const { id } = req.params; // squad_id
+    const { userId } = req.body;
+    try {
+        if (!userId) {
+            return res.status(400).json({ error: 'User ID is required.' });
+        }
+        
+        // Fetch user info for Cashfree customer_details
+        const [userRows] = await pool.execute('SELECT email, full_name, phone FROM profiles WHERE id = ?', [userId]);
+        if (userRows.length === 0) {
+            return res.status(404).json({ error: 'User profile not found' });
+        }
+        
+        const userEmail = userRows[0].email || 'guest@vhop.in';
+        const userName = userRows[0].full_name || 'Guest User';
+        let userPhone = userRows[0].phone || '9999999999';
+        
+        // Clean phone number
+        userPhone = userPhone.replace(/\D/g, '');
+        if (userPhone.length < 10) {
+            userPhone = '9999999999';
+        }
+
+        // Fetch squad entry price
+        const [squadRows] = await pool.execute('SELECT entry_price, name FROM squads WHERE id = ?', [id]);
+        if (squadRows.length === 0) {
+            return res.status(404).json({ error: 'Squad not found' });
+        }
+
+        const squad = squadRows[0];
+        const entryPrice = Number(squad.entry_price);
+
+        // If price is 0, bypass Cashfree
+        if (entryPrice <= 0) {
+            await pool.execute(
+                'UPDATE squad_members SET order_id = "free" WHERE squad_id = ? AND user_id = ?',
+                [id, userId]
+            );
+            return res.status(200).json({ 
+                payment_session_id: null,
+                is_free: true,
+                status: 'pending'
+            });
+        }
+
+        // Generate unique order ID
+        const cleanSquadId = id.replace('sq_', '');
+        const cleanUserId = userId.slice(-5);
+        const randStr = Math.random().toString(36).substring(2, 6).toUpperCase();
+        const orderId = `SQ-${cleanSquadId}-${cleanUserId}-${randStr}`;
+
+        // Update squad member record with order_id
+        await pool.execute(
+            'UPDATE squad_members SET order_id = ? WHERE squad_id = ? AND user_id = ?',
+            [orderId, id, userId]
+        );
+
+        if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
+            return res.status(500).json({ error: 'Cashfree is not configured on this server.' });
+        }
+
+        const cfOrderOptions = {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-client-id': CASHFREE_APP_ID,
+                'x-client-secret': CASHFREE_SECRET_KEY,
+                'x-api-version': '2023-08-01'
+            }
+        };
+
+        const cfOrderBody = {
+            order_id: orderId,
+            order_amount: entryPrice,
+            order_currency: 'INR',
+            customer_details: {
+                customer_id: userId,
+                customer_phone: userPhone,
+                customer_email: userEmail,
+                customer_name: userName
+            },
+            order_meta: {
+                return_url: `${(req.headers.origin && req.headers.origin.startsWith('https://')) ? req.headers.origin : 'https://vhop.in'}/squad/${id}?payment_status=completed&order_id={order_id}`
+            }
+        };
+
+        const cfResponse = await makeHttpsRequest(`${CASHFREE_BASE_URL}/orders`, cfOrderOptions, cfOrderBody);
+        
+        if (!cfResponse.ok) {
+            const cfErr = await cfResponse.text();
+            console.error('Squad Cashfree order creation error:', cfErr);
+            return res.status(500).json({ error: `Failed to create payment session with Cashfree: ${cfErr}` });
+        }
+
+        const cfOrderData = await cfResponse.json();
+        
+        res.status(200).json({ 
+            payment_session_id: cfOrderData.payment_session_id,
+            payment_env: CASHFREE_ENV,
+            order_id: orderId,
+            status: 'pending'
+        });
+    } catch (error) {
+        console.error('Error in create-payment-session:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Verify Cashfree Payment for Squad
+app.post('/api/squads/:id/verify-payment', async (req, res) => {
+    const { id } = req.params; // squad_id
+    const { order_id, userId } = req.body;
+    try {
+        if (!order_id) {
+            return res.status(400).json({ error: 'order_id is required' });
+        }
+
+        // If it's a free squad
+        if (order_id === 'free') {
+            await pool.execute(
+                'UPDATE squad_members SET payment_status = "paid", reserved_until = NULL, order_id = "free" WHERE squad_id = ? AND user_id = ?',
+                [id, userId]
+            );
+
+            // Fetch details for email
+            const [squadRows] = await pool.execute('SELECT name, entry_price, event_id FROM squads WHERE id = ?', [id]);
+            if (squadRows.length > 0) {
+                const { name, entry_price, event_id } = squadRows[0];
+                (async () => {
+                    try {
+                        const [userRows] = await pool.execute('SELECT email, full_name FROM profiles WHERE id = ?', [userId]);
+                        const [eventRows] = await pool.execute('SELECT * FROM events WHERE id = ?', [event_id]);
+                        
+                        if (userRows.length > 0 && eventRows.length > 0) {
+                            await sendSquadJoinEmail(
+                                { full_name: userRows[0].full_name },
+                                { name, entry_price },
+                                eventRows[0],
+                                userRows[0].email,
+                                'FREE_SQUAD'
+                            );
+                        }
+                    } catch (emailErr) {
+                        console.error('Background Email Error in free verify-payment:', emailErr);
+                    }
+                })();
+            }
+
+            return res.status(200).json({ status: 'success', message: 'Joined free squad successfully.' });
+        }
+        
+        if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
+            return res.status(500).json({ error: 'Cashfree is not configured on this server.' });
+        }
+
+        const options = {
+            method: 'GET',
+            headers: {
+                'x-client-id': CASHFREE_APP_ID,
+                'x-client-secret': CASHFREE_SECRET_KEY,
+                'x-api-version': '2023-08-01'
+            }
+        };
+
+        const response = await makeHttpsRequest(`${CASHFREE_BASE_URL}/orders/${order_id}`, options);
+        
+        if (!response.ok) {
+            const err = await response.text();
+            console.error(`Error fetching order status from Cashfree for ${order_id}:`, err);
+            return res.status(400).json({ error: 'Failed to fetch order status from Cashfree.' });
+        }
+
+        const order = await response.json();
+        
+        if (order.order_status === 'PAID') {
+            const result = await confirmSquadPayment(order_id, order.order_id);
+            if (result.success) {
+                res.status(200).json({ status: 'success', message: 'Squad payment verified successfully.', member: result.member });
+            } else {
+                res.status(500).json({ error: result.error });
+            }
+        } else {
+            res.status(400).json({ status: 'failure', message: `Order status is ${order.order_status}` });
+        }
+    } catch (error) {
+        console.error('Error verifying squad payment:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Nudge Squad Member
 app.post('/api/squads/:id/nudge', async (req, res) => {
     const { id } = req.params;
@@ -3302,6 +3508,89 @@ async function confirmBooking(bookingId, paymentId) {
     }
 }
 
+// Helper function to confirm squad payment
+async function confirmSquadPayment(orderId, paymentId) {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+        
+        // Find squad member by orderId
+        const [members] = await connection.execute(
+            'SELECT * FROM squad_members WHERE order_id = ? FOR UPDATE',
+            [orderId]
+        );
+        
+        if (members.length === 0) {
+            await connection.rollback();
+            return { success: false, error: 'Squad member not found for this order' };
+        }
+        
+        const member = members[0];
+        
+        // If already paid, return success (idempotent helper)
+        if (member.payment_status === 'paid') {
+            await connection.rollback();
+            return { success: true, alreadyConfirmed: true, member };
+        }
+        
+        // Update squad_members to paid
+        await connection.execute(
+            'UPDATE squad_members SET payment_status = "paid", reserved_until = NULL WHERE squad_id = ? AND user_id = ?',
+            [member.squad_id, member.user_id]
+        );
+        
+        // Check if squad is completely paid and active
+        const [squadRows] = await connection.execute('SELECT organiser_id, size, name, entry_price, event_id FROM squads WHERE id = ?', [member.squad_id]);
+        if (squadRows.length > 0) {
+            const { organiser_id, size, name, entry_price, event_id } = squadRows[0];
+            
+            const [paidRows] = await connection.execute(
+                'SELECT COUNT(*) AS paid_count FROM squad_members WHERE squad_id = ? AND payment_status = "paid"',
+                [member.squad_id]
+            );
+            
+            const paidCount = paidRows[0].paid_count;
+            if (paidCount === size) {
+                // Award 50 V Coins to organiser
+                await connection.execute('UPDATE profiles SET v_coins = v_coins + 50 WHERE id = ?', [organiser_id]);
+                console.log(`[Squad Complete] Squad ${member.squad_id} fully paid! Credited +50 V-Coins to organiser ${organiser_id}.`);
+            }
+
+            // Send email in background (non-blocking)
+            (async () => {
+                try {
+                    const [userRows] = await pool.execute('SELECT email, full_name FROM profiles WHERE id = ?', [member.user_id]);
+                    const [eventRows] = await pool.execute('SELECT * FROM events WHERE id = ?', [event_id]);
+                    
+                    if (userRows.length > 0 && eventRows.length > 0) {
+                        const userInfo = userRows[0];
+                        const eventInfo = eventRows[0];
+                        
+                        await sendSquadJoinEmail(
+                            { full_name: userInfo.full_name },
+                            { name, entry_price },
+                            eventInfo,
+                            userInfo.email,
+                            paymentId
+                        );
+                    }
+                } catch (emailErr) {
+                    console.error('Background Email Error in confirmSquadPayment:', emailErr);
+                }
+            })();
+        }
+        
+        await connection.commit();
+        return { success: true, alreadyConfirmed: false, member };
+    } catch (err) {
+        await connection.rollback();
+        console.error('Error in confirmSquadPayment:', err);
+        return { success: false, error: err.message };
+    } finally {
+        connection.release();
+    }
+}
+
 // Create Order (kept for backwards-compatibility or direct integration if needed)
 app.post('/api/payments/order', async (req, res) => {
     const { amount, currency, customer_id, customer_phone, customer_email, customer_name, order_id } = req.body;
@@ -3422,11 +3711,22 @@ app.post('/api/payments/webhook', async (req, res) => {
             const orderId = payload.data.order.order_id;
             const paymentId = payload.data.payment ? payload.data.payment.cf_payment_id : orderId;
             
-            const result = await confirmBooking(orderId, paymentId.toString());
-            if (result.success) {
-                console.log(`✅ Webhook successfully confirmed booking ${orderId}`);
+            if (orderId.startsWith('VH-')) {
+                const result = await confirmBooking(orderId, paymentId.toString());
+                if (result.success) {
+                    console.log(`✅ Webhook successfully confirmed booking ${orderId}`);
+                } else {
+                    console.error(`❌ Webhook failed to confirm booking ${orderId}:`, result.error);
+                }
+            } else if (orderId.startsWith('SQ-')) {
+                const result = await confirmSquadPayment(orderId, paymentId.toString());
+                if (result.success) {
+                    console.log(`✅ Webhook successfully confirmed squad payment ${orderId}`);
+                } else {
+                    console.error(`❌ Webhook failed to confirm squad payment ${orderId}:`, result.error);
+                }
             } else {
-                console.error(`❌ Webhook failed to confirm booking ${orderId}:`, result.error);
+                console.warn(`⚠️ Webhook received unknown order ID prefix: ${orderId}`);
             }
         }
 

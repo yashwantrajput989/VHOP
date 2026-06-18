@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { API_BASE_URL } from '../../config';
+import { useCashfree } from '../../hooks/useCashfree';
 
 interface SquadDetails {
   id: string;
@@ -89,6 +90,7 @@ export const SquadView: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user } = useAuthStore();
+  const { openCheckout } = useCashfree();
   
   // Dev State Switcher (Overrides backend state for visual validation)
   const [devStateOverride, setDevStateOverride] = useState<'none' | 'creator_flow' | 'host_dashboard' | 'invitee_checkout'>('none');
@@ -151,6 +153,29 @@ export const SquadView: React.FC = () => {
     setIsLoading(true);
     setErrorMessage('');
     try {
+      // Check query parameters for completed redirect payment
+      const payStatus = searchParams.get('payment_status');
+      const orderId = searchParams.get('order_id');
+      if (!isNew && id && user && payStatus === 'completed' && orderId) {
+        try {
+          const verifyRes = await fetch(`${API_BASE_URL}/api/squads/${id}/verify-payment`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ order_id: orderId, userId: user.id })
+          });
+          if (verifyRes.ok) {
+            showToast('Payment verified successfully! Welcome to the squad 🎉');
+            setPaymentComplete(true);
+            navigate(`/squad/${id}`, { replace: true });
+            return;
+          } else {
+            showToast('Failed to verify squad payment.');
+          }
+        } catch (verifyErr) {
+          console.error('Error auto-verifying squad payment:', verifyErr);
+        }
+      }
+
       // Load events list for the creation dropdown search
       const eventsRes = await fetch(`${API_BASE_URL}/api/events`);
       if (eventsRes.ok) {
@@ -458,30 +483,69 @@ export const SquadView: React.FC = () => {
     if (!user || !squad) return;
     setIsPaying(true);
     
-    setTimeout(async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/squads/${squad.id}/pay`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: user.id })
-        });
-        
-        if (response.ok) {
-          setPaymentComplete(true);
-          setShowChat(true);
-          showToast('Ticket secured! You\'re in the squad 🎉');
-          await fetchData();
-          // Start fetching chat
-          fetchChatMessages(squad.id, user.id);
-        } else {
-          showToast('Payment verification failed.');
-        }
-      } catch (err) {
-        showToast('Network error.');
-      } finally {
-        setIsPaying(false);
+    try {
+      // 1. Create Cashfree Payment Session
+      const response = await fetch(`${API_BASE_URL}/api/squads/${squad.id}/create-payment-session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id })
+      });
+      
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to initialize payment session.');
       }
-    }, 2000);
+      
+      const resultData = await response.json();
+      let orderId = resultData.order_id;
+      
+      if (resultData.is_free) {
+        orderId = 'free';
+      } else {
+        if (!resultData.payment_session_id) {
+          throw new Error('Payment session was not created. Please ensure backend config is correct.');
+        }
+        
+        // 2. Open Cashfree Checkout
+        try {
+          await openCheckout({
+            paymentSessionId: resultData.payment_session_id,
+            paymentEnv: resultData.payment_env,
+            redirectTarget: '_modal'
+          });
+        } catch (sdkErr: any) {
+          console.error('[Cashfree Squad Checkout] SDK Error:', sdkErr);
+          const isNative = window.hasOwnProperty('Capacitor');
+          if (isNative) {
+            // Native redirect is happening, don't show cancel error
+            return;
+          }
+          throw new Error(sdkErr?.message || 'Checkout was cancelled or failed.');
+        }
+      }
+      
+      // 3. Verify Payment
+      const verifyResponse = await fetch(`${API_BASE_URL}/api/squads/${squad.id}/verify-payment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_id: orderId, userId: user.id })
+      });
+      
+      if (!verifyResponse.ok) {
+        const verifyErr = await verifyResponse.json().catch(() => ({}));
+        throw new Error(verifyErr.message || 'Payment verification failed.');
+      }
+      
+      setPaymentComplete(true);
+      setShowChat(true);
+      showToast('Ticket secured! You\'re in the squad 🎉');
+      await fetchData();
+      fetchChatMessages(squad.id, user.id);
+    } catch (err: any) {
+      showToast(err.message || 'Payment processing failed.');
+    } finally {
+      setIsPaying(false);
+    }
   };
 
   // Send chat message
