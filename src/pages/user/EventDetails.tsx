@@ -185,15 +185,45 @@ export const EventDetails: React.FC = () => {
           {/* Artists Section */}
           {event.artists && event.artists.length > 0 && (
             <GlassCard className="p-6 md:p-8">
-              <h3 className="text-xl font-display font-bold mb-4">Lineup</h3>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <h3 className="text-xl font-display font-bold mb-6">Lineup</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {event.artists.map((artist: any, index: number) => (
-                  <div key={index} className="p-4 rounded-xl bg-white/5 border border-white/10 text-center">
-                    <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-[var(--violet-primary)]/20 flex items-center justify-center">
-                      <span className="text-xl font-bold text-[var(--violet-bright)]">{artist.name.charAt(0)}</span>
+                  <div 
+                    key={index} 
+                    className="p-5 rounded-3xl bg-white/[0.02] border border-white/5 hover:border-[var(--violet-bright)]/30 hover:bg-white/[0.05] transition-all duration-300 flex flex-col xs:flex-row items-center xs:items-start gap-4 text-center xs:text-left relative overflow-hidden group"
+                  >
+                    {/* Glowing background hint */}
+                    <div className="absolute top-0 right-0 w-20 h-20 bg-[var(--violet-primary)]/5 blur-2xl rounded-full pointer-events-none group-hover:bg-[var(--violet-primary)]/10 transition-colors" />
+                    
+                    {/* Artist Photo */}
+                    {artist.image ? (
+                      <img 
+                        src={getImageUrl(artist.image)} 
+                        className="w-18 h-18 rounded-2xl object-cover border border-white/10 shadow-md shrink-0 transition-transform duration-500 group-hover:scale-105 animate-fade-in" 
+                        alt={artist.name} 
+                      />
+                    ) : (
+                      <div className="w-18 h-18 rounded-2xl bg-[var(--violet-primary)]/10 border border-[var(--violet-bright)]/20 flex items-center justify-center shrink-0 text-[var(--violet-bright)] font-bold text-2xl shadow-md">
+                        {artist.name.charAt(0)}
+                      </div>
+                    )}
+                    
+                    {/* Artist Details */}
+                    <div className="space-y-1 flex-1 min-w-0">
+                      <div className="flex flex-col xs:flex-row xs:items-center gap-1.5 xs:gap-2">
+                        <h4 className="font-extrabold text-white text-base truncate">{artist.name}</h4>
+                        {artist.role && (
+                          <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-[var(--violet-bright)]/10 border border-[var(--violet-bright)]/20 text-[var(--violet-bright)] w-fit mx-auto xs:mx-0 shrink-0">
+                            {artist.role}
+                          </span>
+                        )}
+                      </div>
+                      {artist.description && (
+                        <p className="text-xs text-[var(--text-secondary)] leading-relaxed mt-1 line-clamp-3">
+                          {artist.description}
+                        </p>
+                      )}
                     </div>
-                    <p className="font-bold text-white text-sm truncate">{artist.name}</p>
-                    {artist.role && <p className="text-[10px] text-[var(--text-secondary)] mt-1">{artist.role}</p>}
                   </div>
                 ))}
               </div>

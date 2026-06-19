@@ -2,15 +2,26 @@ const nodemailer = require('nodemailer');
 const QRCode = require('qrcode');
 const path = require('path');
 
-// Configure the transporter
-// Note: For Gmail, you need to use an "App Password" if you have 2FA enabled.
-const transporter = nodemailer.createTransport({
-    service: process.env.EMAIL_SERVICE || 'gmail',
-    auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-    }
-});
+// Configure the transporter dynamically (supports custom SMTP hosts like Hostinger or defaults to Gmail service)
+const transporterConfig = process.env.EMAIL_HOST 
+    ? {
+        host: process.env.EMAIL_HOST,
+        port: parseInt(process.env.EMAIL_PORT || '465', 10),
+        secure: process.env.EMAIL_SECURE !== 'false', // true for port 465 (SSL)
+        auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS
+        }
+      }
+    : {
+        service: process.env.EMAIL_SERVICE || 'gmail',
+        auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS
+        }
+      };
+
+const transporter = nodemailer.createTransport(transporterConfig);
 
 /**
  * Sends a booking confirmation email with a QR code

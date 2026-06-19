@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { PageWrapper } from '../../components/layout/PageWrapper';
 import { GlassCard } from '../../components/ui/GlassCard';
 import { GlowButton } from '../../components/ui/GlowButton';
-import { Sparkles, Image as ImageIcon, ArrowLeft, X } from 'lucide-react';
+import { Sparkles, Image as ImageIcon, ArrowLeft, X, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
@@ -59,6 +59,8 @@ export const CreateEvent: React.FC = () => {
   const [newArtist, setNewArtist] = useState({
     name: '',
     role: '',
+    description: '',
+    image: '',
   });
 
   const [newTicketType, setNewTicketType] = useState({
@@ -489,6 +491,48 @@ export const CreateEvent: React.FC = () => {
                     />
                   </div>
                 </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider block">Artist Photo</label>
+                    <div className="relative border border-dashed border-white/10 rounded-xl p-3 flex flex-col items-center justify-center bg-white/5 hover:bg-white/10 transition-colors min-h-[50px] cursor-pointer">
+                      <input 
+                        type="file" 
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                              setNewArtist(prev => ({ ...prev, image: reader.result as string }));
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                      />
+                      {newArtist.image ? (
+                        <div className="flex items-center gap-2">
+                          <img src={newArtist.image} alt="Artist Preview" className="w-8 h-8 rounded-full object-cover" />
+                          <span className="text-[10px] text-[var(--violet-bright)] font-bold">Change Photo</span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-slate-300">Upload Photo</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">Artist Bio / Description</label>
+                    <textarea 
+                      rows={2}
+                      value={newArtist.description}
+                      onChange={(e) => setNewArtist({...newArtist, description: e.target.value})}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:border-[var(--violet-bright)] outline-none resize-none"
+                      placeholder="Short description or social links"
+                    />
+                  </div>
+                </div>
+
                 <GlowButton 
                   type="button"
                   onClick={() => {
@@ -497,7 +541,7 @@ export const CreateEvent: React.FC = () => {
                       ...formData,
                       artists: [...formData.artists, newArtist]
                     });
-                    setNewArtist({ name: '', role: '' });
+                    setNewArtist({ name: '', role: '', description: '', image: '' });
                   }}
                   className="w-full py-2.5 text-sm"
                 >
@@ -508,10 +552,22 @@ export const CreateEvent: React.FC = () => {
               {/* List of Added Artists */}
               <div className="space-y-3">
                 {formData.artists.map((artist: any, index: number) => (
-                  <div key={index} className="p-4 rounded-xl bg-[var(--violet-bright)]/5 border border-[var(--violet-bright)]/20 flex items-center justify-between">
-                    <div>
-                      <span className="font-bold text-white">{artist.name}</span>
-                      {artist.role && <span className="text-[10px] text-[var(--text-secondary)] ml-2 bg-white/10 px-2 py-0.5 rounded-full">{artist.role}</span>}
+                  <div key={index} className="p-4 rounded-xl bg-[var(--violet-bright)]/5 border border-[var(--violet-bright)]/20 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3 min-w-0">
+                      {artist.image ? (
+                        <img src={artist.image} className="w-12 h-12 rounded-full object-cover shrink-0" alt={artist.name} />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center shrink-0">
+                          <Users className="w-6 h-6 text-slate-400" />
+                        </div>
+                      )}
+                      <div className="text-left min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-white truncate">{artist.name}</span>
+                          {artist.role && <span className="text-[9px] text-[var(--text-secondary)] bg-white/10 px-2 py-0.5 rounded-full shrink-0">{artist.role}</span>}
+                        </div>
+                        {artist.description && <p className="text-[10px] text-[var(--text-muted)] mt-1 line-clamp-1">{artist.description}</p>}
+                      </div>
                     </div>
                     <button 
                       type="button"
@@ -520,7 +576,7 @@ export const CreateEvent: React.FC = () => {
                         updated.splice(index, 1);
                         setFormData({...formData, artists: updated});
                       }}
-                      className="p-2 text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                      className="p-2 text-red-400 hover:bg-red-400/10 rounded-lg transition-colors shrink-0"
                     >
                       <X className="w-4 h-4" />
                     </button>

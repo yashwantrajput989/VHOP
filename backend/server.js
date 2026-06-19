@@ -380,6 +380,8 @@ const pool = mysql.createPool({
                 require_approval BOOLEAN DEFAULT FALSE,
                 entry_price DECIMAL(10, 2) DEFAULT 0.00,
                 status VARCHAR(50) DEFAULT 'open',
+                upi_id VARCHAR(255) NULL,
+                qr_image MEDIUMTEXT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
                 FOREIGN KEY (organiser_id) REFERENCES profiles(id) ON DELETE CASCADE
@@ -403,6 +405,8 @@ const pool = mysql.createPool({
             await addSquadColumnIfNeeded('require_approval', 'BOOLEAN DEFAULT FALSE');
             await addSquadColumnIfNeeded('entry_price', 'DECIMAL(10, 2) DEFAULT 0.00');
             await addSquadColumnIfNeeded('status', 'VARCHAR(50) DEFAULT "open"');
+            await addSquadColumnIfNeeded('upi_id', 'VARCHAR(255) NULL');
+            await addSquadColumnIfNeeded('qr_image', 'MEDIUMTEXT NULL');
         } catch (err) {
             console.error('🔴 Error verifying squads columns:', err);
         }
@@ -1936,7 +1940,7 @@ app.post('/api/social/friends/add', async (req, res) => {
 
 // Initialize / Create Squad
 app.post('/api/squads/create', async (req, res) => {
-    const { eventId, name, organiserId, size, tier, anyoneCanJoin, requireApproval, entryPrice } = req.body;
+    const { eventId, name, organiserId, size, tier, anyoneCanJoin, requireApproval, entryPrice, upiId, qrImage } = req.body;
     try {
         if (!eventId || !organiserId || !size || !tier) {
             return res.status(400).json({ error: 'Missing required parameters.' });
@@ -1951,8 +1955,8 @@ app.post('/api/squads/create', async (req, res) => {
 
         // Insert squad
         await pool.execute(
-            'INSERT INTO squads (id, event_id, name, organiser_id, size, tier, anyone_can_join, require_approval, entry_price, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, "open")',
-            [squadId, eventId, squadName, organiserId, parseInt(size, 10), tier, isPublic, reqAppr, price]
+            'INSERT INTO squads (id, event_id, name, organiser_id, size, tier, anyone_can_join, require_approval, entry_price, status, upi_id, qr_image) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, "open", ?, ?)',
+            [squadId, eventId, squadName, organiserId, parseInt(size, 10), tier, isPublic, reqAppr, price, upiId || null, qrImage || null]
         );
         
         // Insert organiser as first squad member (paid automatically)
@@ -4351,6 +4355,41 @@ app.post('/api/superadmin/partners/reject', async (req, res) => {
         res.status(200).json({ message: 'Application rejected successfully.' });
     } catch (error) {
         console.error('Error rejecting partner application:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// GET /api/superadmin/squads - Fetch all created squads with join status and payout details
+app.get('/api/superadmin/squads', async (req, res) => {
+    try {
+        const query = `
+            SELECT 
+                s.id, 
+                s.name, 
+                s.size, 
+                s.tier, 
+                s.entry_price, 
+                s.status, 
+                s.upi_id, 
+                s.qr_image, 
+                s.created_at,
+                e.title AS event_title, 
+                e.venue_name, 
+                e.city,
+                p.full_name AS host_name, 
+                p.email AS host_email, 
+                p.phone AS host_phone,
+                (SELECT COUNT(*) FROM squad_members sm WHERE sm.squad_id = s.id AND sm.payment_status = 'paid') AS paid_members_count,
+                (SELECT COUNT(*) FROM squad_members sm WHERE sm.squad_id = s.id) AS joined_count
+            FROM squads s
+            LEFT JOIN events e ON s.event_id = e.id
+            LEFT JOIN profiles p ON s.organiser_id = p.id
+            ORDER BY s.created_at DESC
+        `;
+        const [rows] = await pool.execute(query);
+        res.status(200).json(rows);
+    } catch (error) {
+        console.error('Error fetching superadmin squads:', error);
         res.status(500).json({ error: error.message });
     }
 });

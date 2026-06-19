@@ -29,7 +29,7 @@ import { AdminLogin } from '../admin/AdminLogin';
 import { API_BASE_URL } from '../../config';
 import { useLocation, useNavigate } from 'react-router-dom';
 
-type TabType = 'dashboard' | 'events' | 'partners' | 'issues' | 'coupons' | 'fees' | 'sms';
+type TabType = 'dashboard' | 'events' | 'partners' | 'issues' | 'coupons' | 'fees' | 'sms' | 'squads';
 
 export const SuperDashboard: React.FC = () => {
   const location = useLocation();
@@ -43,6 +43,9 @@ export const SuperDashboard: React.FC = () => {
   });
   const [events, setEvents] = useState<any[]>([]);
   const [partners, setPartners] = useState<any[]>([]);
+  const [squads, setSquads] = useState<any[]>([]);
+  const [isLoadingSquads, setIsLoadingSquads] = useState(false);
+  const [selectedQrCode, setSelectedQrCode] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { user } = useAuthStore();
 
@@ -417,6 +420,9 @@ export const SuperDashboard: React.FC = () => {
       fetchSmsTemplates();
       fetchSmsUserCount();
     }
+    if (activeTab === 'squads' && user && user.role === 'superadmin') {
+      fetchSquads();
+    }
   }, [activeTab, user]);
 
   useEffect(() => {
@@ -486,6 +492,22 @@ export const SuperDashboard: React.FC = () => {
       console.error('Error fetching superadmin stats:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Fetch all squads
+  const fetchSquads = async () => {
+    setIsLoadingSquads(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/superadmin/squads`);
+      if (response.ok) {
+        const data = await response.json();
+        setSquads(data);
+      }
+    } catch (err) {
+      console.error('Error fetching squads:', err);
+    } finally {
+      setIsLoadingSquads(false);
     }
   };
 
@@ -569,6 +591,8 @@ export const SuperDashboard: React.FC = () => {
       setActiveTab('fees');
     } else if (location.pathname.endsWith('/sms')) {
       setActiveTab('sms');
+    } else if (location.pathname.endsWith('/squads')) {
+      setActiveTab('squads');
     } else {
       setActiveTab('dashboard');
     }
@@ -727,6 +751,7 @@ export const SuperDashboard: React.FC = () => {
             { id: 'dashboard', label: 'Overview', icon: Users },
             { id: 'events', label: `Events (${pendingEvents.length} Pending)`, icon: Calendar },
             { id: 'partners', label: 'Partners', icon: Building },
+            { id: 'squads', label: 'Squads Overview', icon: UserCheck },
             { id: 'issues', label: 'Issues & Status', icon: AlertCircle },
             { id: 'coupons', label: 'Coupons', icon: Ticket },
             { id: 'fees', label: 'Fees Configurator', icon: IndianRupee },
@@ -1567,6 +1592,95 @@ export const SuperDashboard: React.FC = () => {
               </div>
             </motion.div>
           )}
+
+          {activeTab === 'squads' && (
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              className="space-y-8"
+            >
+              <GlassCard className="p-8">
+                <div className="flex items-center justify-between mb-8">
+                  <div>
+                    <h3 className="text-xl font-bold font-display text-white">Squads Overview</h3>
+                    <p className="text-xs text-[var(--text-muted)] mt-1">
+                      Monitor created squads, organiser details, joining users, and host payout settings.
+                    </p>
+                  </div>
+                  <button
+                    onClick={fetchSquads}
+                    className="p-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-[var(--text-muted)] hover:text-white transition-all text-xs"
+                    title="Refresh squads"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {isLoadingSquads ? (
+                  <div className="py-12 flex justify-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[var(--violet-bright)]" />
+                  </div>
+                ) : squads.length === 0 ? (
+                  <div className="py-12 text-center text-[var(--text-muted)] text-sm">
+                    No squads have been created yet.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="text-[var(--text-muted)] text-xs uppercase tracking-wider border-b border-[var(--border-subtle)]">
+                          <th className="pb-4 font-bold">Squad Name & Event</th>
+                          <th className="pb-4 font-bold">Host / Organiser</th>
+                          <th className="pb-4 font-bold">Joined / Capacity</th>
+                          <th className="pb-4 font-bold">UPI ID</th>
+                          <th className="pb-4 font-bold">QR Code</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-sm">
+                        {squads.map((squad) => (
+                          <tr key={squad.id} className="border-b border-[var(--border-subtle)]/50 hover:bg-white/5 transition-colors">
+                            <td className="py-4">
+                              <p className="font-bold text-white">{squad.name}</p>
+                              <p className="text-xs text-[var(--text-secondary)] mt-0.5">{squad.event_title || 'N/A'}</p>
+                            </td>
+                            <td className="py-4">
+                              <p className="font-semibold text-white">{squad.host_name || 'N/A'}</p>
+                              <p className="text-xs text-[var(--text-muted)]">{squad.host_email || 'N/A'}</p>
+                              {squad.host_phone && (
+                                <p className="text-xs text-[var(--violet-bright)] mt-0.5">{squad.host_phone}</p>
+                              )}
+                            </td>
+                            <td className="py-4 font-medium text-white">
+                              {squad.joined_count || 0} / {squad.size || 'N/A'}
+                              <span className="text-xs text-[var(--text-muted)] ml-2">
+                                ({squad.paid_members_count || 0} paid)
+                              </span>
+                            </td>
+                            <td className="py-4 font-mono text-[var(--violet-bright)] font-semibold">
+                              {squad.upi_id || <span className="text-[var(--text-muted)] italic text-xs font-normal">Not provided</span>}
+                            </td>
+                            <td className="py-4">
+                              {squad.qr_image ? (
+                                <button
+                                  onClick={() => setSelectedQrCode(squad.qr_image)}
+                                  className="px-3 py-1.5 rounded-lg bg-[var(--violet-primary)]/20 text-[var(--violet-bright)] border border-[var(--violet-primary)]/30 text-xs font-bold hover:bg-[var(--violet-primary)] hover:text-white transition-all cursor-pointer"
+                                >
+                                  View QR
+                                </button>
+                              ) : (
+                                <span className="text-[var(--text-muted)] italic text-xs">No Image</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </GlassCard>
+            </motion.div>
+          )}
         </AnimatePresence>
 
         {/* ──── SMS BROADCAST TAB ──────────────────────────────────────────── */}
@@ -2166,6 +2280,45 @@ export const SuperDashboard: React.FC = () => {
                       </button>
                     </form>
                   )}
+                </GlassCard>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* MODAL: Host Payout QR Code Lightbox */}
+        <AnimatePresence>
+          {selectedQrCode && (
+            <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setSelectedQrCode(null)}
+                className="absolute inset-0 bg-black/80 backdrop-blur-md"
+              />
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                className="relative max-w-sm w-full z-10"
+              >
+                <GlassCard className="p-6 border-[var(--violet-primary)]/30 text-center space-y-4">
+                  <header className="flex justify-between items-center">
+                    <h3 className="font-bold text-white font-display text-base">Host QR Code</h3>
+                    <button onClick={() => setSelectedQrCode(null)} className="text-white hover:text-red-400 font-bold">
+                      ✕
+                    </button>
+                  </header>
+                  <div className="flex justify-center bg-white p-3 rounded-2xl">
+                    <img src={selectedQrCode} alt="Host Payout QR Code" className="max-w-full h-auto max-h-[300px] rounded-lg" />
+                  </div>
+                  <button
+                    onClick={() => setSelectedQrCode(null)}
+                    className="w-full py-2.5 rounded-xl bg-white/5 border border-white/10 font-bold text-xs hover:bg-white/10 transition-all text-white cursor-pointer"
+                  >
+                    Close
+                  </button>
                 </GlassCard>
               </motion.div>
             </div>

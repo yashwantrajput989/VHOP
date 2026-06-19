@@ -13,7 +13,6 @@ import {
   Calendar, 
   MapPin, 
   Sparkles, 
-  Info,
   ChevronLeft,
   Search,
   CheckCircle,
@@ -92,8 +91,7 @@ export const SquadView: React.FC = () => {
   const { user } = useAuthStore();
   const { openCheckout } = useCashfree();
   
-  // Dev State Switcher (Overrides backend state for visual validation)
-  const [devStateOverride, setDevStateOverride] = useState<'none' | 'creator_flow' | 'host_dashboard' | 'invitee_checkout'>('none');
+
 
   // Core Data States
   const [squad, setSquad] = useState<SquadDetails | null>(null);
@@ -109,6 +107,8 @@ export const SquadView: React.FC = () => {
   const [anyoneCanJoin, setAnyoneCanJoin] = useState(true);
   const [requireApproval, setRequireApproval] = useState(false);
   const [entryPrice, setEntryPrice] = useState<number>(1200);
+  const [upiId, setUpiId] = useState('');
+  const [qrImage, setQrImage] = useState('');
 
   // Search linked events states
   const [allEvents, setAllEvents] = useState<any[]>([]);
@@ -320,7 +320,9 @@ export const SquadView: React.FC = () => {
           tier: squadSize === 5 ? 'intimate' : squadSize === 20 ? 'big_squad' : 'standard',
           anyoneCanJoin,
           requireApproval,
-          entryPrice
+          entryPrice,
+          upiId,
+          qrImage
         })
       });
 
@@ -609,9 +611,7 @@ export const SquadView: React.FC = () => {
     return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
   };
 
-  const activeView = devStateOverride !== 'none' 
-    ? devStateOverride 
-    : (isNew ? 'creator_flow' : (user && squad && squad.organiser_id === user.id ? 'host_dashboard' : 'invitee_checkout'));
+  const activeView = isNew ? 'creator_flow' : (user && squad && squad.organiser_id === user.id ? 'host_dashboard' : 'invitee_checkout');
 
   const isUserHost = squad && user && squad.organiser_id === user.id;
   const isUserPaidMember = members.find(m => m.id === user?.id)?.payment_status === 'paid';
@@ -729,73 +729,7 @@ export const SquadView: React.FC = () => {
       <FloatingOrb className="top-1/4 -left-20 pointer-events-none" color="pink" size={300} />
       <FloatingOrb className="bottom-1/4 -right-20 pointer-events-none" color="violet" size={400} delay={1} />
       
-      {/* Dev Switcher Toolbar */}
-      <div className="max-w-xl mx-auto mb-6 bg-slate-900/90 border border-white/10 rounded-2xl p-2.5 flex flex-col items-center gap-2 relative z-[110] backdrop-blur-xl">
-        <div className="flex items-center gap-1.5 text-[9px] uppercase font-black text-amber-500">
-          <Info className="w-3.5 h-3.5 shrink-0" />
-          <span>Dev Toggle (Review Specific Figma Screens)</span>
-        </div>
-        <div className="flex flex-wrap justify-center gap-1.5 w-full">
-          <button
-            onClick={() => {
-              setDevStateOverride('creator_flow');
-              setCreationStep(1);
-            }}
-            className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-colors ${
-              activeView === 'creator_flow' && creationStep === 1 ? 'bg-[var(--violet-bright)] text-white' : 'bg-white/5 text-slate-400 hover:text-white'
-            }`}
-          >
-            Figma 2: Create Details
-          </button>
-          <button
-            onClick={() => {
-              setDevStateOverride('creator_flow');
-              setCreationStep(2);
-            }}
-            className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-colors ${
-              activeView === 'creator_flow' && creationStep === 2 ? 'bg-[var(--violet-bright)] text-white' : 'bg-white/5 text-slate-400 hover:text-white'
-            }`}
-          >
-            Figma 3: Create Pricing
-          </button>
-          <button
-            onClick={() => {
-              setDevStateOverride('creator_flow');
-              setCreationStep(3);
-              setCreatedSquadId('sq_trilogy');
-            }}
-            className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-colors ${
-              activeView === 'creator_flow' && creationStep === 3 ? 'bg-[var(--violet-bright)] text-white' : 'bg-white/5 text-slate-400 hover:text-white'
-            }`}
-          >
-            Figma 5: Success Share
-          </button>
-          <button
-            onClick={() => setDevStateOverride('invitee_checkout')}
-            className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-colors ${
-              activeView === 'invitee_checkout' ? 'bg-[var(--violet-bright)] text-white' : 'bg-white/5 text-slate-400 hover:text-white'
-            }`}
-          >
-            Figma 4: Member Checkout
-          </button>
-          <button
-            onClick={() => setDevStateOverride('host_dashboard')}
-            className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-colors ${
-              activeView === 'host_dashboard' ? 'bg-[var(--violet-bright)] text-white' : 'bg-white/5 text-slate-400 hover:text-white'
-            }`}
-          >
-            Figma 6: Host Dashboard
-          </button>
-          <button
-            onClick={() => setDevStateOverride('none')}
-            className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-colors ${
-              devStateOverride === 'none' ? 'bg-emerald-600 text-white' : 'bg-white/5 text-slate-400 hover:text-white'
-            }`}
-          >
-            Reset Dynamic
-          </button>
-        </div>
-      </div>
+
 
       <div className="max-w-xl mx-auto relative z-10 space-y-6">
         
@@ -1040,6 +974,58 @@ export const SquadView: React.FC = () => {
                     </p>
                   </div>
 
+                  {/* Organiser Payout details */}
+                  <div className="space-y-4 pt-2">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Organiser Payout Details</span>
+                    <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
+                      Add your UPI ID and upload a QR image so we can pay you back once the event finishes.
+                    </p>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">UPI ID</label>
+                      <input 
+                        type="text"
+                        value={upiId}
+                        onChange={(e) => setUpiId(e.target.value)}
+                        placeholder="e.g. name@upi"
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-[var(--violet-bright)] outline-none transition-colors"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">QR Code (Payout Destination)</label>
+                      <div className="relative border border-dashed border-white/10 rounded-2xl p-4 flex flex-col items-center justify-center bg-white/5 hover:bg-white/10 transition-colors cursor-pointer">
+                        <input 
+                          type="file" 
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onload = () => {
+                                setQrImage(reader.result as string);
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                        />
+                        {qrImage ? (
+                          <div className="flex flex-col items-center">
+                            <img src={qrImage} alt="QR Preview" className="w-24 h-24 object-contain rounded-lg mb-2 animate-pulse" />
+                            <span className="text-[10px] text-[var(--violet-bright)] font-bold">Change QR Code Image</span>
+                          </div>
+                        ) : (
+                          <>
+                            <QrCode className="w-8 h-8 text-slate-400 mb-2" />
+                            <span className="text-xs text-slate-300">Upload QR Code</span>
+                            <span className="text-[9px] text-[var(--text-muted)] mt-1">PNG, JPG or WebP</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Submit Button */}
                   <div className="space-y-3 pt-2">
                     <GlowButton 
@@ -1064,7 +1050,7 @@ export const SquadView: React.FC = () => {
               </div>
             )}
 
-            {/* STEP 3: SUCCESS / SHARE STEP */}
+            {/* SUCCESS / SHARE STEP */}
             {creationStep === 3 && (
               <GlassCard className="p-6 border-white/5 space-y-6 text-center">
                 <div className="w-16 h-16 bg-[var(--violet-primary)]/10 border border-[var(--violet-bright)]/20 rounded-2xl flex items-center justify-center mx-auto shadow-glow">
@@ -1079,10 +1065,10 @@ export const SquadView: React.FC = () => {
                 {/* Share URL Box */}
                 <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl p-1.5 pl-4">
                   <span className="text-[10px] font-mono text-[var(--accent-cyan)] truncate flex-1 text-left">
-                    vhop.app/squad/{createdSquadId || 'sq_trilogy'}
+                    vhop.app/squad/{createdSquadId}
                   </span>
                   <button 
-                    onClick={() => copySquadLink(createdSquadId || 'sq_trilogy')}
+                    onClick={() => copySquadLink(createdSquadId)}
                     className="px-4 py-2.5 bg-white/5 hover:bg-white/10 rounded-lg text-[10px] font-black uppercase tracking-wider text-white border border-white/10 transition-colors cursor-pointer"
                   >
                     Copy
@@ -1107,7 +1093,7 @@ export const SquadView: React.FC = () => {
 
                     <div 
                       onClick={() => {
-                        const messageText = `Hey! Join my squad — buy your ticket here: ${window.location.origin}/squad/${createdSquadId || 'sq_trilogy'}`;
+                        const messageText = `Hey! Join my squad — buy your ticket here: ${window.location.origin}/squad/${createdSquadId}`;
                         window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(messageText)}`, '_blank');
                       }}
                       className="p-3 bg-white/5 border border-white/5 hover:border-white/15 rounded-xl flex items-center gap-2.5 cursor-pointer transition-all active:scale-95"
@@ -1152,7 +1138,7 @@ export const SquadView: React.FC = () => {
                 </div>
 
                 <GlowButton 
-                  onClick={() => navigate(`/squad/${createdSquadId || 'sq_trilogy'}`)}
+                  onClick={() => navigate(`/squad/${createdSquadId}`)}
                   className="w-full py-4 text-xs font-black uppercase tracking-wider mt-4"
                 >
                   View My Squad
@@ -1379,7 +1365,7 @@ export const SquadView: React.FC = () => {
                 <span className="text-[8px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full font-black uppercase">Live</span>
               </div>
               <SquadChatPanel 
-                squadId={squad?.id || 'sq_trilogy'} 
+                squadId={squad?.id || ''} 
                 squadOrganiserId={squad?.organiser_id || ''} 
               />
             </div>
@@ -1544,7 +1530,7 @@ export const SquadView: React.FC = () => {
                     <span className="text-[8px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full font-black uppercase">Unlocked</span>
                   </div>
                   <SquadChatPanel 
-                    squadId={squad?.id || 'sq_trilogy'} 
+                    squadId={squad?.id || ''} 
                     squadOrganiserId={squad?.organiser_id || ''} 
                   />
                 </div>
