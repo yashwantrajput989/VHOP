@@ -141,17 +141,21 @@ export const SquadsFeed: React.FC = () => {
 
         {/* Tab Controls */}
         <div className="grid grid-cols-3 bg-slate-900/60 p-1 border border-white/5 rounded-2xl">
-          {(['open', 'joined', 'hosting'] as const).map((tab) => (
+          {[
+            { id: 'open', label: 'Open' },
+            { id: 'joined', label: 'Joined' },
+            { id: 'hosting', label: 'Hosted' }
+          ].map((tab) => (
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
               className={`py-3 text-xs font-black uppercase tracking-wider rounded-xl transition-all ${
-                activeTab === tab
+                activeTab === tab.id
                   ? 'bg-[var(--violet-primary)] text-white shadow-glow'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              {tab}
+              {tab.label}
             </button>
           ))}
         </div>
@@ -300,7 +304,9 @@ export const SquadsFeed: React.FC = () => {
                       onClick={() => navigate(`/squad/${squad.id}`)}
                       className="px-5 py-2.5 text-[10px] font-black uppercase tracking-wider flex items-center gap-1"
                     >
-                      {user && squad.organiser_id === user.id ? 'Manage' : 'Join Squad'}
+                      {user && squad.organiser_id === user.id 
+                        ? 'Manage' 
+                        : (user && squad.members.some(m => m.id === user.id) ? 'Show Squad' : 'Join Squad')}
                       <ArrowRight className="w-3.5 h-3.5" />
                     </GlowButton>
                   </div>
