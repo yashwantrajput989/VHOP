@@ -116,6 +116,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isAdmin = false }) => {
         <NavLink to="/terms-conditions" className={({ isActive }) => cn("hover:text-white hover:underline transition-colors", isActive && "text-[var(--violet-bright)] font-bold")}>Terms & Conditions</NavLink>
         <span>•</span>
         <NavLink to="/refunds-cancellations" className={({ isActive }) => cn("hover:text-white hover:underline transition-colors", isActive && "text-[var(--violet-bright)] font-bold")}>Refunds & Cancellations</NavLink>
+        <span>•</span>
+        <NavLink to="/privacy-policy" className={({ isActive }) => cn("hover:text-white hover:underline transition-colors", isActive && "text-[var(--violet-bright)] font-bold")}>Privacy Policy</NavLink>
       </div>
     </aside>
   );

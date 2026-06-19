@@ -32,6 +32,7 @@ export const PageWrapper: React.FC<PageWrapperProps> = ({ children, className })
             <NavLink to="/contact-us" className={({ isActive }) => isActive ? "text-[var(--violet-bright)]" : "hover:text-white transition-colors"}>Contact Us</NavLink>
             <NavLink to="/terms-conditions" className={({ isActive }) => isActive ? "text-[var(--violet-bright)]" : "hover:text-white transition-colors"}>Terms & Conditions</NavLink>
             <NavLink to="/refunds-cancellations" className={({ isActive }) => isActive ? "text-[var(--violet-bright)]" : "hover:text-white transition-colors"}>Refunds & Cancellations</NavLink>
+            <NavLink to="/privacy-policy" className={({ isActive }) => isActive ? "text-[var(--violet-bright)]" : "hover:text-white transition-colors"}>Privacy Policy</NavLink>
           </div>
           
           <p className="text-[10px] text-[var(--text-muted)] font-medium">

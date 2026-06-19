@@ -22,6 +22,7 @@ import { Dashboard } from './pages/user/Dashboard';
 import { ContactUs } from './pages/user/ContactUs';
 import { TermsConditions } from './pages/user/TermsConditions';
 import { RefundsCancellations } from './pages/user/RefundsCancellations';
+import { PrivacyPolicy } from './pages/user/PrivacyPolicy';
 import { SquadView } from './pages/user/SquadView';
 import { SquadsFeed } from './pages/user/SquadsFeed';
 import { BookedTickets } from './pages/user/BookedTickets';
@@ -194,6 +195,7 @@ function App() {
             <Route path="/contact-us" element={<ContactUs />} />
             <Route path="/terms-conditions" element={<TermsConditions />} />
             <Route path="/refunds-cancellations" element={<RefundsCancellations />} />
+            <Route path="/privacy-policy" element={<PrivacyPolicy />} />
 
             {/* Admin Routes */}
             {(isTargetAdmin || !isNative) && (
