@@ -84,6 +84,120 @@ interface PayoutStatus {
   paidMembers: number;
 }
 
+interface SquadChatPanelProps {
+  squadId: string;
+  squadOrganiserId: string;
+  chatMessages: ChatMessage[];
+  chatInput: string;
+  setChatInput: (val: string) => void;
+  handleSendMessage: () => void;
+  isSendingMessage: boolean;
+  chatContainerRef: React.RefObject<HTMLDivElement | null>;
+  membersPaidCount: number;
+  currentUser: any;
+  getHostInitials: (name: string) => string;
+  formatChatTime: (dateStr: string) => string;
+}
+
+const SquadChatPanel: React.FC<SquadChatPanelProps> = ({
+  squadOrganiserId,
+  chatMessages,
+  chatInput,
+  setChatInput,
+  handleSendMessage,
+  isSendingMessage,
+  chatContainerRef,
+  membersPaidCount,
+  currentUser,
+  getHostInitials,
+  formatChatTime
+}) => {
+  return (
+    <GlassCard className="border-white/5 overflow-hidden flex flex-col" style={{ height: '420px' }}>
+      {/* Chat Header */}
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-white/5 bg-[var(--violet-primary)]/10 shrink-0">
+        <div className="w-8 h-8 rounded-xl bg-[var(--violet-primary)]/20 border border-[var(--violet-bright)]/30 flex items-center justify-center">
+          <MessageSquare className="w-4 h-4 text-[var(--violet-bright)]" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-xs font-black text-white">Squad Chat</h3>
+          <p className="text-[9px] text-[var(--text-muted)]">{membersPaidCount} paid members • live</p>
+        </div>
+        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+      </div>
+
+      {/* Messages List */}
+      <div 
+        ref={chatContainerRef}
+        className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0"
+      >
+        {chatMessages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
+            <div className="w-10 h-10 rounded-xl bg-[var(--violet-primary)]/10 border border-[var(--violet-bright)]/20 flex items-center justify-center">
+              <MessageSquare className="w-5 h-5 text-[var(--violet-bright)] opacity-50" />
+            </div>
+            <p className="text-[10px] text-[var(--text-muted)]">No messages yet. Say hi to your squad! 👋</p>
+          </div>
+        ) : (
+          chatMessages.map((msg) => {
+            const isMine = msg.user_id === currentUser?.id;
+            const isHost = msg.user_id === squadOrganiserId;
+            const initials = getHostInitials(msg.full_name);
+            return (
+              <div key={msg.id} className={`flex gap-2 ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
+                {/* Avatar */}
+                <div className={`w-7 h-7 rounded-xl flex items-center justify-center font-display font-black text-[9px] shrink-0 ${
+                  isHost 
+                    ? 'bg-[var(--accent-gold)]/20 border border-[var(--accent-gold)]/40 text-[var(--accent-gold)]' 
+                    : 'bg-[var(--violet-primary)]/20 border border-[var(--violet-bright)]/20 text-[var(--violet-bright)]'
+                }`}>
+                  {initials}
+                </div>
+                <div className={`max-w-[70%] ${isMine ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
+                  {/* Name + crown for host */}
+                  <div className={`flex items-center gap-1 ${isMine ? 'flex-row-reverse' : ''}`}>
+                    <span className="text-[8px] font-bold text-[var(--text-muted)]">{msg.full_name}</span>
+                    {isHost && <Crown className="w-2.5 h-2.5 text-[var(--accent-gold)]" />}
+                  </div>
+                  {/* Bubble */}
+                  <div className={`px-3 py-2 rounded-2xl text-[11px] leading-relaxed ${
+                    isMine 
+                      ? 'bg-[var(--violet-primary)] text-white rounded-tr-sm'
+                      : 'bg-white/5 border border-white/8 text-[var(--text-secondary)] rounded-tl-sm'
+                  }`}>
+                    {msg.message}
+                  </div>
+                  {/* Timestamp */}
+                  <span className="text-[7px] text-[var(--text-muted)]">{formatChatTime(msg.created_at)}</span>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Message Input */}
+      <div className="flex gap-2 px-3 py-3 border-t border-white/5 bg-black/20 shrink-0">
+        <input
+          type="text"
+          value={chatInput}
+          onChange={(e) => setChatInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
+          placeholder="Message your squad..."
+          className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-[var(--violet-bright)] outline-none transition-colors"
+        />
+        <button
+          onClick={handleSendMessage}
+          disabled={!chatInput.trim() || isSendingMessage}
+          className="w-9 h-9 rounded-xl bg-[var(--violet-primary)] hover:bg-[var(--violet-bright)] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors cursor-pointer shrink-0"
+        >
+          <Send className="w-3.5 h-3.5 text-white" />
+        </button>
+      </div>
+    </GlassCard>
+  );
+};
+
 export const SquadView: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -135,7 +249,7 @@ export const SquadView: React.FC = () => {
   const [chatInput, setChatInput] = useState('');
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [showChat, setShowChat] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
   const chatPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Payout status
@@ -274,7 +388,9 @@ export const SquadView: React.FC = () => {
 
   // Auto-scroll chat to bottom
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
   }, [chatMessages]);
 
   // Poll for new chat messages every 5 seconds when chat is visible
@@ -305,6 +421,10 @@ export const SquadView: React.FC = () => {
     }
     if (!selectedEvent) {
       showToast('Please search and select a linked event/venue first.');
+      return;
+    }
+    if (!upiId.trim()) {
+      showToast('Please add your UPI ID so that we can pay you back.');
       return;
     }
     setIsLoading(true);
@@ -638,90 +758,8 @@ export const SquadView: React.FC = () => {
   }
 
   // ============================================================
-  // SHARED SQUAD CHAT COMPONENT
+  // SHARED SQUAD CHAT COMPONENT (MOVED OUTSIDE FOR PROPER REACT RENDER & FOCUS CONTROL)
   // ============================================================
-  const SquadChatPanel = ({ squadId: _squadId, squadOrganiserId }: { squadId: string; squadOrganiserId: string }) => (
-    <GlassCard className="border-white/5 overflow-hidden flex flex-col" style={{ height: '420px' }}>
-      {/* Chat Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-white/5 bg-[var(--violet-primary)]/10 shrink-0">
-        <div className="w-8 h-8 rounded-xl bg-[var(--violet-primary)]/20 border border-[var(--violet-bright)]/30 flex items-center justify-center">
-          <MessageSquare className="w-4 h-4 text-[var(--violet-bright)]" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <h3 className="text-xs font-black text-white">Squad Chat</h3>
-          <p className="text-[9px] text-[var(--text-muted)]">{members.filter(m => m.payment_status === 'paid').length} paid members • live</p>
-        </div>
-        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-      </div>
-
-      {/* Messages List */}
-      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0">
-        {chatMessages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
-            <div className="w-10 h-10 rounded-xl bg-[var(--violet-primary)]/10 border border-[var(--violet-bright)]/20 flex items-center justify-center">
-              <MessageSquare className="w-5 h-5 text-[var(--violet-bright)] opacity-50" />
-            </div>
-            <p className="text-[10px] text-[var(--text-muted)]">No messages yet. Say hi to your squad! 👋</p>
-          </div>
-        ) : (
-          chatMessages.map((msg) => {
-            const isMine = msg.user_id === user?.id;
-            const isHost = msg.user_id === squadOrganiserId;
-            const initials = getHostInitials(msg.full_name);
-            return (
-              <div key={msg.id} className={`flex gap-2 ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
-                {/* Avatar */}
-                <div className={`w-7 h-7 rounded-xl flex items-center justify-center font-display font-black text-[9px] shrink-0 ${
-                  isHost 
-                    ? 'bg-[var(--accent-gold)]/20 border border-[var(--accent-gold)]/40 text-[var(--accent-gold)]' 
-                    : 'bg-[var(--violet-primary)]/20 border border-[var(--violet-bright)]/20 text-[var(--violet-bright)]'
-                }`}>
-                  {initials}
-                </div>
-                <div className={`max-w-[70%] ${isMine ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
-                  {/* Name + crown for host */}
-                  <div className={`flex items-center gap-1 ${isMine ? 'flex-row-reverse' : ''}`}>
-                    <span className="text-[8px] font-bold text-[var(--text-muted)]">{msg.full_name}</span>
-                    {isHost && <Crown className="w-2.5 h-2.5 text-[var(--accent-gold)]" />}
-                  </div>
-                  {/* Bubble */}
-                  <div className={`px-3 py-2 rounded-2xl text-[11px] leading-relaxed ${
-                    isMine 
-                      ? 'bg-[var(--violet-primary)] text-white rounded-tr-sm'
-                      : 'bg-white/5 border border-white/8 text-[var(--text-secondary)] rounded-tl-sm'
-                  }`}>
-                    {msg.message}
-                  </div>
-                  {/* Timestamp */}
-                  <span className="text-[7px] text-[var(--text-muted)]">{formatChatTime(msg.created_at)}</span>
-                </div>
-              </div>
-            );
-          })
-        )}
-        <div ref={chatEndRef} />
-      </div>
-
-      {/* Message Input */}
-      <div className="flex gap-2 px-3 py-3 border-t border-white/5 bg-black/20 shrink-0">
-        <input
-          type="text"
-          value={chatInput}
-          onChange={(e) => setChatInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
-          placeholder="Message your squad..."
-          className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-[var(--violet-bright)] outline-none transition-colors"
-        />
-        <button
-          onClick={handleSendMessage}
-          disabled={!chatInput.trim() || isSendingMessage}
-          className="w-9 h-9 rounded-xl bg-[var(--violet-primary)] hover:bg-[var(--violet-bright)] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors cursor-pointer shrink-0"
-        >
-          <Send className="w-3.5 h-3.5 text-white" />
-        </button>
-      </div>
-    </GlassCard>
-  );
 
   return (
     <PageWrapper className="relative px-4 pb-24 overflow-x-hidden">
@@ -1367,6 +1405,16 @@ export const SquadView: React.FC = () => {
               <SquadChatPanel 
                 squadId={squad?.id || ''} 
                 squadOrganiserId={squad?.organiser_id || ''} 
+                chatMessages={chatMessages}
+                chatInput={chatInput}
+                setChatInput={setChatInput}
+                handleSendMessage={handleSendMessage}
+                isSendingMessage={isSendingMessage}
+                chatContainerRef={chatContainerRef}
+                membersPaidCount={members.filter(m => m.payment_status === 'paid').length}
+                currentUser={user}
+                getHostInitials={getHostInitials}
+                formatChatTime={formatChatTime}
               />
             </div>
 
@@ -1532,6 +1580,16 @@ export const SquadView: React.FC = () => {
                   <SquadChatPanel 
                     squadId={squad?.id || ''} 
                     squadOrganiserId={squad?.organiser_id || ''} 
+                    chatMessages={chatMessages}
+                    chatInput={chatInput}
+                    setChatInput={setChatInput}
+                    handleSendMessage={handleSendMessage}
+                    isSendingMessage={isSendingMessage}
+                    chatContainerRef={chatContainerRef}
+                    membersPaidCount={members.filter(m => m.payment_status === 'paid').length}
+                    currentUser={user}
+                    getHostInitials={getHostInitials}
+                    formatChatTime={formatChatTime}
                   />
                 </div>
               </div>
